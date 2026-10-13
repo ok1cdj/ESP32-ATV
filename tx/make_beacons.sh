@@ -13,8 +13,15 @@ FREQ=${2:-2300.500}
 FRAMES=${3:-$([ "$BAUD" -lt 125000 ] && echo 2 || echo 4)}
 KS=$(( (BAUD + 500) / 1000 ))
 OUT="$ROOT/tx/beacons/$(echo "$CALL" | tr A-Z a-z)-${KS}k$([ "$AMP" = 13 ] || echo "-a$AMP")"
+# A Python with numpy and Pillow: after ". export.sh" of ESP-IDF, python3 is IDF's venv, which has neither.
+PY=${PYTHON:-}
+for c in python3 /usr/bin/python3; do
+  [ -n "$PY" ] && break
+  "$c" -c "import numpy, PIL" 2>/dev/null && PY=$c
+done
+[ -n "$PY" ] || { echo "no python3 with numpy and Pillow (pip install -r third_party/ESP32-DATV-SA/host/requirements.txt)"; exit 1; }
 mkdir -p "$OUT"
-python3 "$ROOT/third_party/ESP32-DATV-SA/host/make_beacon.py" \
+"$PY" "$ROOT/third_party/ESP32-DATV-SA/host/make_beacon.py" \
   --freq "$FREQ" --baud "$BAUD" --fec 3/4 --frames "$FRAMES" --amp "$AMP" \
   --card-text "$CALL" "ESP32-ATV beacon  $FREQ MHz" "DVB-S2 QPSK 3/4  $KS kS/s" \
   --service-name "$CALL" --service-provider "$CALL ESP32-ATV" \
