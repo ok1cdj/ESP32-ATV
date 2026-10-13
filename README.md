@@ -24,7 +24,7 @@ Aktualizace z upstreamu: `git -C third_party/<repo> fetch upstream && git -C thi
 | Fork | Změny |
 |---|---|
 | ESP32-DATV-SA | maják 40–500 kS/s (tabulka rychlostí, výchozí rychlost z `BEACON_BAUD`, `make_beacon.py`) |
-| ESP32-DATV-RX | `rx_dvbs2.py --sampler auto/linear/rrc`, `--rrc-rej` (RRC pod 100 kS/s) |
+| ESP32-DATV-RX | `rx_dvbs2.py --sampler auto/linear/rrc`, `--rrc-rej` (RRC pod 100 kS/s), `--decimate` (experimentální) |
 
 ## Jednorázová příprava
 ```sh
