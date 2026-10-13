@@ -24,7 +24,7 @@ Aktualizace z upstreamu: `git -C third_party/<repo> fetch upstream && git -C thi
 | Fork | Změny |
 |---|---|
 | ESP32-DATV-SA | maják 40–500 kS/s (tabulka rychlostí, výchozí rychlost z `BEACON_BAUD`, `make_beacon.py`) |
-| ESP32-DATV-RX | `rx_dvbs2.py --sampler auto/linear/rrc`, `--rrc-rej` (RRC pod 125 kS/s) |
+| ESP32-DATV-RX | `rx_dvbs2.py --sampler auto/linear/rrc`, `--rrc-rej` (RRC pod 100 kS/s) |
 
 ## Jednorázová příprava
 ```sh
@@ -60,7 +60,7 @@ Alternativa bez reflashe: PC režim `tx/tx_pc.sh 33000 --port /dev/ttyACM0`.
 3. Příjem:
    - `rx/rx.sh` – maják 333 kS/s, režim `--wide` (500 ksps, 4 bit)
    - `rx/rx.sh 125000` – 125 kS/s (333 ksps, 8 bit)
-   - `rx/rx.sh 66666` / `50000` / `40000` – nízké rychlosti: 8 bit, `rx_dvbs2.py` pod 125 kS/s zapne RRC sampler leandvb (`--sampler`);
+   - `rx/rx.sh 66666` / `50000` / `40000` – nízké rychlosti: 8 bit, `rx_dvbs2.py` pod 100 kS/s zapne RRC sampler leandvb (`--sampler`);
      první obraz po ~32 rámcích (66 kS/s ≈ 16 s), s `--ldpc bitflip` hned, ale o ~5 dB méně citlivé
    - doplňky: `--gain 10` (výchozí; při velkém signálu méně), `--ppm X`, `--record x.ts`, `-v`
 4. Volitelně spektrum: `rx/spectrum.sh` a SDR++ / SDRangel na `127.0.0.1:1234` (rtl_tcp).
