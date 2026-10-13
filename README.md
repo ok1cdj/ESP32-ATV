@@ -9,7 +9,7 @@ XIAO ESP32-S3 Plus (ESP32-DATV-RX firmware: radio dump 16 MS/s → 500 ksps cs4 
    → rx_dvbs2.py → leandvb (+ ldpc_tool) → ffplay
 ```
 
-dává živý obraz testkarty.
+dává živý obraz testkarty. **Stav a další kroky: [docs/STAV.md](docs/STAV.md).**
 
 | Část | Projekt | Licence |
 |---|---|---|
