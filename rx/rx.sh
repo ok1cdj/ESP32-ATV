@@ -9,7 +9,8 @@
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 RX="$ROOT/third_party/ESP32-DATV-RX"
+. "$ROOT/boards.sh"
 SR=${1:-333000}; [ $# -gt 0 ] && shift
 MODE=
 [ "$SR" -gt 200000 ] && MODE=--wide
-exec "$RX/.venv/bin/python" "$RX/rx_dvbs2.py" --freq 2300.5 --sr "$SR" $MODE --cr 3/4 --const QPSK "$@"
+exec "$RX/.venv/bin/python" "$RX/rx_dvbs2.py" --freq 2300.5 --sr "$SR" $MODE --cr 3/4 --const QPSK --device "$RX_PORT" "$@"
