@@ -23,7 +23,7 @@ Aktualizace z upstreamu: `git -C third_party/<repo> fetch upstream && git -C thi
 
 | Fork | Změny |
 |---|---|
-| ESP32-DATV-SA | maják 40–500 kS/s (tabulka rychlostí, výchozí rychlost z `BEACON_BAUD`, `make_beacon.py`) |
+| ESP32-DATV-SA | maják 40–500 kS/s (tabulka rychlostí, výchozí rychlost z `BEACON_BAUD`, `make_beacon.py`); DC/IQ korekce majáku (`--cal`, příkaz `BDC`) |
 | ESP32-DATV-RX | `rx_dvbs2.py --sampler auto/linear/rrc`, `--rrc-rej` (RRC pod 100 kS/s), `--decimate` (experimentální) |
 
 ## Jednorázová příprava
@@ -53,6 +53,14 @@ tx/flash_tx.sh tx/beacons/sv0syh-67k
 Smyčka běží na 8 MS/s s celým počtem 16–232 vzorků/symbol, proto jen tyto rychlosti (nejníž 40 kS/s, S = 200).
 Pod 125 kS/s má smyčka 2 PLFRAMEs, aby se tabulky modulátoru (256 B × S) vešly na heap – na HW ověřit, že nehlásí `ERR beacon no memory`.
 Alternativa bez reflashe: PC režim `tx/tx_pc.sh 33000 --port /dev/ttyACM0`.
+
+### DC korekce (únik nosné)
+C3 má únik nosné (tón uprostřed signálu), který s úrovní neklesá → pod ~−20 dB příjem končí. Kalibrace naším přijímačem:
+```sh
+AMP=13 tx/make_beacons.sh 40000 && tx/flash_tx.sh tx/beacons/sv0syh-40k   # nízká úroveň: únik je dobře vidět
+third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py --save            # BDC i q → měření → fit; uloží do C3 (NVS) i tx/cal_c3.json
+```
+`tx/make_beacons.sh` pak `tx/cal_c3.json` zapéká do každého majáku. Ručně: příkaz `BDC [i q | SAVE | RESET]` na USB C3.
 
 ## Přijímač – XIAO ESP32-S3 Plus (jeden USB-C port)
 1. U.FL anténa. BOOT držet, RESET ťuknout, BOOT pustit.
