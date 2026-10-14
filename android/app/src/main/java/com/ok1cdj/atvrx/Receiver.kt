@@ -281,7 +281,25 @@ class Receiver(
                 out[2 * j + 1] = -p.buf[o + 2 * j + 1] / 128f
             }
         }
+        removeDc(out)
         return out
+    }
+
+    // The receiver's own DC (LO leakage, ADC offset) sits at 0 Hz; cs8 keeps it (cs4 removes it on the chip). With the
+    // carrier only a few kHz off the LO it lands inside the signal and nothing decodes (seen: MER -4 dB at 27 dB SNR).
+    // A running mean over packets (~0.1 s) taken off every sample: a notch a few Hz wide at 0 Hz.
+    private var dcI = 0f
+    private var dcQ = 0f
+    private fun removeDc(iq: FloatArray) {
+        var si = 0f; var sq = 0f
+        var i = 0
+        while (i < iq.size) { si += iq[i]; sq += iq[i + 1]; i += 2 }
+        val n = iq.size / 2
+        if (n == 0) return
+        dcI += (si / n - dcI) * 0.02f
+        dcQ += (sq / n - dcQ) * 0.02f
+        i = 0
+        while (i < iq.size) { iq[i] -= dcI; iq[i + 1] -= dcQ; i += 2 }
     }
 
     /** rx_dvbs2.py search: averaged 1024-point spectrum, 9-bin smoothing, 95th vs 10th percentile, centre of the -3 dB band. */
