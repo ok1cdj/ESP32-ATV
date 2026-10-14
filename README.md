@@ -17,8 +17,10 @@ dává živý obraz testkarty. **Stav a další kroky: [docs/STAV.md](docs/STAV.
 | RX | [barisdinc/ESP32-DATV-RX](https://github.com/barisdinc/ESP32-DATV-RX) (`third_party/`) | BSD-3 / 0BSD, leansdr GPL-3 |
 
 ## Forky
-Oba projekty v `third_party/` jsou naše lokální forky: větev **`esp32-atv`** s našimi commity, původní repo je remote `upstream`.
-Zatím nejsou nikde publikované – URL v `.gitmodules` ukazují na upstream, takže čerstvý klon naše commity nedostane.
+Oba projekty v `third_party/` jsou naše forky: větev **`esp32-atv`** s našimi commity, původní repo je remote `upstream`.
+- ESP32-DATV-SA je publikovaný jako [ok1cdj/ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA) (remote `origin`,
+  URL v `.gitmodules`).
+- ESP32-DATV-RX zatím jen lokálně – URL v `.gitmodules` ukazuje na upstream, čerstvý klon naše commity nedostane.
 Aktualizace z upstreamu: `git -C third_party/<repo> fetch upstream && git -C third_party/<repo> rebase upstream/main`.
 
 | Fork | Změny |

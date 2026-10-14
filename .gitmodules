@@ -1,6 +1,6 @@
 [submodule "third_party/ESP32-DATV-SA"]
 	path = third_party/ESP32-DATV-SA
-	url = https://github.com/barisdinc/ESP32-DATV-SA
+	url = https://github.com/ok1cdj/ESP32-DATV-SA
 	branch = esp32-atv
 [submodule "third_party/ESP32-DATV-RX"]
 	path = third_party/ESP32-DATV-RX
