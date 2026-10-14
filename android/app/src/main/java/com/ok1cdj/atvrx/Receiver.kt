@@ -56,6 +56,8 @@ class Receiver(
     }
 
     val status = Status()
+    /** leandvb --fd-const lines ("CONST ...", "SYMBOLS ..."), for the constellation view */
+    @Volatile var onConstellation: ((String) -> Unit)? = null
     val demux = TsDemux { type, au -> video.feed(type, au) }
     @Volatile var link: EspLink? = null; private set
 
@@ -79,6 +81,7 @@ class Receiver(
     @Volatile private var lastFrameLock = 0L
     private var lastTrack = 0L
     private var infoFd: java.io.FileDescriptor? = null
+    private var constFd: java.io.FileDescriptor? = null
     // ~4 s of samples to leandvb: it stops reading while ldpc_tool works on a batch of 32 frames
     private val queue = ArrayBlockingQueue<ByteArray>(4096)
     private var proc: Process? = null
@@ -148,6 +151,7 @@ class Receiver(
     fun stop() {
         running = false
         try { infoFd?.let { android.system.Os.close(it) } } catch (_: Throwable) {}
+        try { constFd?.let { android.system.Os.close(it) } } catch (_: Throwable) {}
         try { link?.send(EspLink.ESP_STOP) } catch (_: Throwable) {}
         try { link?.await(EspLink.ESP_RUN, 2000) } catch (_: Throwable) {}
         proc?.destroy()
@@ -268,22 +272,27 @@ class Receiver(
     private fun startDemod() {
         val modcod = MODCODS[cfg.const to cfg.cr] ?: throw IOException("no MODCOD for ${cfg.const} ${cfg.cr}")
         // --fd-info goes to a FIFO (fd 3 through sh), so that stderr carries only leandvb's frame marks and messages
-        val fifo = File(workDir, "leandvb-info")
-        fifo.delete()
-        android.system.Os.mkfifo(fifo.path, "600".toInt(8))
-        val fd = android.system.Os.open(fifo.path, android.system.OsConstants.O_RDWR, 0)   // O_RDWR: no blocking open
-        infoFd = fd
+        fun fifo(name: String): Pair<File, java.io.FileDescriptor> {
+            val f = File(workDir, name)
+            f.delete()
+            android.system.Os.mkfifo(f.path, "600".toInt(8))
+            return f to android.system.Os.open(f.path, android.system.OsConstants.O_RDWR, 0)   // O_RDWR: no blocking open
+        }
+        val (infoFifo, fd) = fifo("leandvb-info")
+        val (constFifo, cfd) = fifo("leandvb-const")
+        infoFd = fd; constFd = cfd
         val cmd = mutableListOf(
-            "/system/bin/sh", "-c", "exec \"\$0\" \"\$@\" 3>\"\$INFO_FIFO\"",
+            "/system/bin/sh", "-c", "exec \"\$0\" \"\$@\" 3>\"\$INFO_FIFO\" 4>\"\$CONST_FIFO\"",
             File(nativeDir, "libleandvb.so").path, "--f32", "--float-scale", if (wide) "512" else "128",
             "-f", fs.toInt().toString(), "--sr", cfg.sr.toString(), "--standard", "DVB-S2",
             "--const", cfg.const, "--cr", cfg.cr, "--fastdrift", "-d",
             "--modcods", (1L shl modcod).toString(), "--framesizes", cfg.frameSizes.toString(),
-            "--ldpc-helper", File(nativeDir, "libldpc_tool.so").path, "--fd-info", "3")
+            "--ldpc-helper", File(nativeDir, "libldpc_tool.so").path, "--fd-info", "3", "--fd-const", "4")
         if (cfg.sr < 100_000) cmd += listOf("--sampler", "rrc", "--rrc-rej", "50")
         if (fs > 3 * cfg.sr) cmd += "--cnr"
         val pb = ProcessBuilder(cmd)
-        pb.environment()["INFO_FIFO"] = fifo.path
+        pb.environment()["INFO_FIFO"] = infoFifo.path
+        pb.environment()["CONST_FIFO"] = constFifo.path
         val p = pb.start()
         proc = p
         status.state = "demodulating"
@@ -293,6 +302,11 @@ class Receiver(
         thread("rx-fdinfo") {
             try {
                 java.io.FileInputStream(fd).bufferedReader(Charsets.ISO_8859_1).forEachLine { info(it) }
+            } catch (_: Throwable) {}
+        }
+        thread("rx-const") {
+            try {
+                java.io.FileInputStream(cfd).bufferedReader(Charsets.ISO_8859_1).forEachLine { l -> onConstellation?.invoke(l) }
             } catch (_: Throwable) {}
         }
         thread("rx-watch") {

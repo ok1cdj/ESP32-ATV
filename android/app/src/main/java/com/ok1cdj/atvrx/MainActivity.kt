@@ -47,6 +47,7 @@ class MainActivity : Activity() {
     private val frameChoices = listOf(Receiver.FRAMES_NORMAL, Receiver.FRAMES_SHORT, Receiver.FRAMES_BOTH)
     private lateinit var startStop: Button
     private lateinit var info: TextView
+    private lateinit var constView: ConstellationView
     private lateinit var logView: TextView
     private lateinit var logScroll: ScrollView
     private lateinit var surface: SurfaceView
@@ -79,8 +80,14 @@ class MainActivity : Activity() {
         val w = resources.displayMetrics.widthPixels - 48
         root.addView(surface, LinearLayout.LayoutParams(MATCH_PARENT, w * 9 / 16))
 
-        info = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 13f; setPadding(0, 12, 0, 12) }
-        root.addView(info)
+        info = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 12f; setPadding(0, 12, 12, 12) }
+        constView = ConstellationView(this)
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(info, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(constView, LinearLayout.LayoutParams((resources.displayMetrics.widthPixels * 0.3).toInt(), WRAP_CONTENT)
+                .apply { topMargin = 12 })
+        })
 
         freq = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
@@ -144,7 +151,8 @@ class MainActivity : Activity() {
     }
 
     private fun rateList(c: String) = Receiver.MODCODS.keys.filter { it.first == c }.map { it.second }
-    private fun adapter(items: List<String>) = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, items)
+    private fun adapter(items: List<String>) = ArrayAdapter(this, android.R.layout.simple_spinner_item, items)
+        .apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
     private fun spinner(items: List<String>, sel: String) = Spinner(this).apply {
         adapter = adapter(items); setSelection(items.indexOf(sel).coerceAtLeast(0))
     }
@@ -195,6 +203,7 @@ class MainActivity : Activity() {
         val r = Receiver(conn, dev, applicationInfo.nativeLibraryDir, cacheDir,
             Receiver.Config(freqHz = Math.round(mhz * 1e6), sr = sr, const = c, cr = cr, gainDb = g.toDouble(), frameSizes = fr), v, ::say)
         video = v; receiver = r
+        constView.clear(); r.onConstellation = constView::line
         startedAt = System.nanoTime(); tsHistory.clear()
         r.start()
         startStop.text = "Stop"
@@ -213,6 +222,7 @@ class MainActivity : Activity() {
             Receiver.Config(freqHz = 0, sr = sr, const = constel.selectedItem as String, cr = codeRate.selectedItem as String,
                 gainDb = 0.0, frameSizes = frameChoices[frames.selectedItemPosition], replay = f), v, ::say)
         video = v; receiver = r
+        constView.clear(); r.onConstellation = constView::line
         startedAt = System.nanoTime(); tsHistory.clear()
         r.start()
         startStop.text = "Stop"
