@@ -29,11 +29,12 @@ def unit():
     rng = np.random.default_rng(0)
     for sr in (66666, 50000, 40000):
         d = int(FS // (2 * sr))
-        data = rng.integers(0, 256, 2 * 200_000, dtype=np.uint8).tobytes()
+        b = rng.integers(0, 256, 2 * 200_000, dtype=np.uint8).astype(np.float32) - 128.0
+        data = (b[0::2] + 1j * b[1::2]).astype(np.complex64)      # as rx_dvbs2.DcBlock delivers it
         ref = np.frombuffer(rx_dvbs2.Decimator(FS, sr, d).process(data), np.complex64)
         dec, out, i = rx_dvbs2.Decimator(FS, sr, d), [], 0
         while i < len(data):
-            n = int(rng.integers(1, 9000))
+            n = int(rng.integers(1, 4500))
             out.append(dec.process(data[i:i + n]))
             i += n
         got = np.frombuffer(b"".join(out), np.complex64)
@@ -64,6 +65,7 @@ def chain(a):
     x = add_noise(x, 1e6, a.baud, a.esn0, np.random.default_rng(a.seed))
     x = resample(x, 1e6, FS)
     x *= a.rms / np.sqrt(np.mean(np.abs(x) ** 2) / 2)                    # per-component RMS in u8 steps, like the gain sets it
+    x += a.dc * (1 + 0.5j)                                                 # the receiver's own DC (cs8 keeps it)
     u8 = np.clip(np.round(np.stack((x.real, x.imag), 1).ravel() + 127.5), 0, 255).astype(np.uint8).tobytes()
 
     sr = int(a.baud)
@@ -72,7 +74,8 @@ def chain(a):
     src = rx_dvbs2.NarrowSource(None)
     src.dec = None if a.no_decim else dec
     modcod = rx_dvbs2.MODCODS[("QPSK", "3/4")]
-    cmd = ([os.path.join(RX, "build", "leansdr", "src", "apps", "leandvb")] + src.leandvb_input()
+    cmd = ([os.path.join(RX, "build", "leansdr", "src", "apps", "leandvb")]
+           + (["--u8", "-f", str(FS)] if a.raw_u8 else src.leandvb_input())
            + ["--sr", str(sr), "--standard", "DVB-S2", "--const", "QPSK", "--cr", "3/4", "--fastdrift", "-d",
               "--modcods", str(1 << modcod), "--framesizes", "1",
               "--ldpc-helper", os.path.join(RX, "build", "LDPC", "ldpc_tool"), "--sampler", "rrc", "--rrc-rej", "50"])
@@ -83,9 +86,11 @@ def chain(a):
     for t in readers:
         t.start()
     rng, i = np.random.default_rng(1), 0
+    dc = rx_dvbs2.DcBlock()
     while i < len(u8):                                                      # chunks like socket reads (odd sizes too)
         n = int(rng.integers(1000, 65537))
-        p.stdin.write(u8[i:i + n] if a.no_decim else dec.process(u8[i:i + n]))
+        y = dc.process(u8[i:i + n]) if not a.raw_u8 else None              # as NarrowSource.start does
+        p.stdin.write(u8[i:i + n] if a.raw_u8 else y.tobytes() if a.no_decim else dec.process(y))
         i += n
     p.stdin.close()
     p.wait(600)
@@ -112,6 +117,8 @@ def main():
     c.add_argument("--offset", type=float, default=4000, help="carrier offset left after tuning [Hz] (default 4000)")
     c.add_argument("--no-decim", action="store_true", help="feed the 333 ksps cu8 stream as it is (rx_dvbs2.py --decimate off)")
     c.add_argument("--rms", type=float, default=20, help="per-component RMS of the cu8 stream in steps (default 20)")
+    c.add_argument("--dc", type=float, default=0, help="the receiver's DC added to the cu8 stream [steps] (default 0)")
+    c.add_argument("--raw-u8", action="store_true", help="feed cu8 to leandvb --u8 as before (no DC removal, no decimation)")
     a = ap.parse_args()
     unit() if a.cmd == "unit" else chain(a)
 
