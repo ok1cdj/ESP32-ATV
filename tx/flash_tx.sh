@@ -14,7 +14,9 @@ FW="$ROOT/build/tx-firmware"
 mkdir -p "$FW"
 rsync -a --delete --exclude build --exclude sdkconfig --exclude sdkconfig.old "$ROOT/third_party/ESP32-DATV-SA/firmware/" "$FW/src/"
 cp "$BEACON/beacon.bin" "$BEACON/beacon_cfg.h" "$BEACON/beacon_fec.h" "$FW/src/main/"
+echo "CONFIG_DATV_BOARD_XIAO_C3=y" >> "$FW/src/sdkconfig.defaults"   # front panel OLED on D2/D0 (GPIO4/2)
 cd "$FW/src"
 [ -f sdkconfig ] || idf.py set-target esp32c3
+grep -q "^CONFIG_DATV_BOARD_XIAO_C3=y" sdkconfig || idf.py reconfigure   # an sdkconfig from before the board choice
 idf.py build
 [ "$PORT" = "-" ] || idf.py -p "$PORT" flash
