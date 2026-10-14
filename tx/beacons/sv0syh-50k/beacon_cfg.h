@@ -11,7 +11,7 @@
 #define BEACON_PILOTS     1
 #define BEACON_SERVICE    "SV0SYH"
 #define BEACON_PROVIDER   "SV0SYH ESP32-ATV"
-#define BEACON_DC_I       -5.806f   /* DC correction [DAC codes]: nulls the carrier leakage; the BDC command changes it at run time */
-#define BEACON_DC_Q       -4.290f
+#define BEACON_DC_I       0.576f   /* DC correction [DAC codes]: nulls the carrier leakage; the BDC command changes it at run time */
+#define BEACON_DC_Q       -3.829f
 #define BEACON_IQ_GAIN    1.00000f
 #define BEACON_IQ_PHASE   0.000f   /* degrees */

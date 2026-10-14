@@ -1,9 +1,9 @@
 {
   "iq_gain": 1.0,
   "iq_phase_deg": 0.0,
-  "note": "Carrier leakage of our XIAO ESP32-C3, nulled with rx/cal_dc.py on 2026-10-14 (+14.2 -> +3.0 dB against the signal around it).",
+  "note": "Carrier leakage of our XIAO ESP32-C3, nulled with rx/cal_dc.py on 2026-10-14 (+23.1 -> +2.2 dB against the signal around it).",
   "dc": [
-    -5.806,
-    -4.29
+    0.576,
+    -3.829
   ]
 }
