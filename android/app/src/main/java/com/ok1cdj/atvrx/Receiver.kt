@@ -372,7 +372,8 @@ class Receiver(
         status.state = "demodulating"
         status.demodSince = System.nanoTime()
         lastFrameLock = status.demodSince
-        log("leandvb started: ${cfg.const} ${cfg.cr}, frames ${frameSizeName(cfg.frameSizes)}${if (fs > 3 * cfg.sr) ", CNR" else ""}")
+        log("leandvb started: ${cfg.const} ${cfg.cr}, frames ${frameSizeName(cfg.frameSizes)}${if (fs > 3 * cfg.sr) ", CNR" else ""}; " +
+            "first picture after about %.0f s (ldpc_tool decodes 32 frames at a time)".format(batchNs / 1e9))
         thread("rx-fdinfo") {
             try {
                 java.io.FileInputStream(fd).bufferedReader(Charsets.ISO_8859_1).forEachLine { info(it) }

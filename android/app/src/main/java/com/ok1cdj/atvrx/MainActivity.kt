@@ -52,6 +52,8 @@ class MainActivity : Activity() {
     }
     private val builtIn = listOf(40_000 to "40k", 50_000 to "50k", 66_666 to "66.7k", 125_000 to "125k", 333_000 to "333k")
         .map { (sr, n) -> Preset("Beacon $n QPSK 3/4", DEFAULT_FREQ, sr, "QPSK", "3/4", Receiver.FRAMES_NORMAL) } +
+        listOf(40_000 to "40k", 50_000 to "50k", 66_666 to "66.7k")
+            .map { (sr, n) -> Preset("Beacon $n QPSK 3/4 short", DEFAULT_FREQ, sr, "QPSK", "3/4", Receiver.FRAMES_SHORT) } +
         Preset("PC 8PSK 3/5 333k", DEFAULT_FREQ, 333_000, "8PSK", "3/5", Receiver.FRAMES_NORMAL)
     private lateinit var presetSpinner: Spinner
     private fun userPresets() = (prefs.getString("presets", "") ?: "").lines().mapNotNull { Preset.decode(it) }
