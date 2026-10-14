@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ESP32-S3 native USB Serial/JTAG (receiver firmware ESP32-DATV-RX / esp32-sdr-trx) -->
+<resources>
+    <usb-device vendor-id="12346" product-id="4097" />
+</resources>
