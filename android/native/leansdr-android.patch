@@ -1,0 +1,27 @@
+--- a/src/leansdr/bch.h
++++ b/src/leansdr/bch.h
+@@ -111,7 +111,9 @@
+       // TBD More efficient to work with logs of syndromes ?
+ 
+       int NN = 2*npolys;
+-      TGF C[NN]={1,}, B[NN]={1,};
++      TGF C[NN], B[NN];  // clang: no initialiser on a variable-length array
++      for ( int i=0; i<NN; ++i ) C[i] = B[i] = 0;
++      C[0] = B[0] = 1;
+       int L=0, m=1;
+       TGF b = 1;
+       for ( int n=0; n<NN; ++n ) {
+--- a/src/leansdr/dvbs2.h
++++ b/src/leansdr/dvbs2.h
+@@ -2321,6 +2321,11 @@
+ 	  pipesize = maxsize;
+ 	fclose(pms);
+       }
++      // Android: pipe-max-size is not readable for apps; halve until the kernel takes it (1 MiB by default).
++      while ( pipesize > 65536 &&
++	      (fcntl(tx[0], F_SETPIPE_SZ, pipesize) < 0 || fcntl(rx[0], F_SETPIPE_SZ, pipesize) < 0) )
++	pipesize /= 2;
++      fprintf(stderr, "LDPC helper pipes: %d bytes\n", pipesize);
+       if ( fcntl(tx[0], F_SETPIPE_SZ, pipesize) < 0 ||
+ 	   fcntl(rx[0], F_SETPIPE_SZ, pipesize) < 0 ||
+ 	   fcntl(tx[1], F_SETPIPE_SZ, pipesize) < 0 ||
