@@ -35,7 +35,8 @@ fetch() {
 echo "== sources: leansdr ${LEANSDR_COMMIT%${LEANSDR_COMMIT#???????}}, LDPC ${LDPC_COMMIT%${LDPC_COMMIT#???????}}"
 fetch "$SRC/leansdr" "$LEANSDR_URL" "$LEANSDR_COMMIT"
 git -C "$SRC/leansdr" apply "$HELPER_PATCH"
-# clang rejects GCC's initialised VLAs; pipe sizes when pipe-max-size cannot be read (docs/android-log.md, F2)
+# clang rejects GCC's initialised VLAs; apps cannot read pipe-max-size, so the helper pipes stayed at 64 kB and the
+# scheduler stopped at 333 kS/s: the patch halves the size until the kernel takes it (1 MiB)
 patch -s -d "$SRC/leansdr" -p1 < "$ROOT/android/native/leansdr-android.patch"
 fetch "$SRC/LDPC" "$LDPC_URL" "$LDPC_COMMIT"
 
@@ -50,7 +51,7 @@ for o in tables_handler itls_handler mods_handler; do
   "$CXX" $F -c "$SRC/LDPC/$o.cc" -o "$OBJ/$o.o"
 done
 # NEON: LDPC's simd.hh tests __ARM_NEON__, which aarch64 compilers do not define; the NEON build is bit-exact with
-# the generic one and twice as fast (docs/android-log.md, F2). The generic one stays in build/ for comparison.
+# the generic one and twice as fast on a Snapdragon 8 Gen 1. The generic one stays in build/ for comparison.
 "$CXX" $F -D__ARM_NEON__ "$SRC/LDPC/ldpc_tool.cc" "$OBJ"/tables_handler.o "$OBJ"/itls_handler.o "$OBJ"/mods_handler.o \
   -o "$OUT/libldpc_tool.so"
 "$CXX" $F "$SRC/LDPC/ldpc_tool.cc" "$OBJ"/tables_handler.o "$OBJ"/itls_handler.o "$OBJ"/mods_handler.o -o "$OBJ/ldpc_tool_generic"
