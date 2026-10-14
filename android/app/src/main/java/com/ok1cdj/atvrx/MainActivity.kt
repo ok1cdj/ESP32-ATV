@@ -147,12 +147,11 @@ class MainActivity : Activity() {
             }
             override fun onNothingSelected(a: android.widget.AdapterView<*>?) {}
         }
+        // preset and frequency share a row; Save / Delete live in the ⋮ menu
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
             addView(presetSpinner, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(button("Save") { savePreset() }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { leftMargin = 8 })
-            addView(button("Delete") { deletePreset() }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { leftMargin = 8 })
         })
         root.addView(row(label("MHz"), freq, label("SR"), rate))
         constel = spinner(consts, prefs.getString("const", "QPSK")!!)
@@ -176,10 +175,16 @@ class MainActivity : Activity() {
         })
         startStop = button("Start") { if (receiver == null) start() else stop() }
         track = android.widget.CheckBox(this).apply { text = "drift"; isChecked = prefs.getBoolean("track", true) }
-        root.addView(row(label("gain dB"), gain, track, startStop))
-        root.addView(row(button("Replay") { startReplay() }, button("USB test") {
-            stop(); startActivity(Intent(this, BenchActivity::class.java))
-        }, button("About") { startActivity(Intent(this, AboutActivity::class.java)) }))
+        val more = button("⋮") { v -> showMenu(v) }.apply { minWidth = 0; minimumWidth = 0; setPadding(36, 0, 36, 0) }
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            addView(label("gain dB"))
+            addView(gain, LinearLayout.LayoutParams(0, WRAP_CONTENT, 0.8f))
+            addView(track)
+            addView(startStop, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.4f))
+            addView(more, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { leftMargin = 8 })
+        })
 
         logView = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 11f; setTextIsSelectable(true) }
         logScroll = ScrollView(this).apply { addView(logView) }
@@ -208,6 +213,21 @@ class MainActivity : Activity() {
         unbindService(connection)
         unregisterReceiver(permissionReceiver)
         super.onDestroy()
+    }
+
+    /** Everything that is not needed while receiving: presets, replay, USB test, about. */
+    private fun showMenu(anchor: android.view.View) {
+        val m = android.widget.PopupMenu(this, anchor)
+        val items = listOf<Pair<String, () -> Unit>>(
+            "Save preset" to ::savePreset,
+            "Delete preset" to ::deletePreset,
+            "Replay recording" to ::startReplay,
+            "USB test" to { stop(); startActivity(Intent(this, BenchActivity::class.java)) },
+            "About" to { startActivity(Intent(this, AboutActivity::class.java)) },
+        )
+        items.forEachIndexed { i, (t, _) -> m.menu.add(0, i, i, t) }
+        m.setOnMenuItemClickListener { items[it.itemId].second(); true }
+        m.show()
     }
 
     private fun refreshPresets() {
@@ -275,10 +295,10 @@ class MainActivity : Activity() {
     }
 
     // plain coloured views: the device theme draws the stock buttons invisible on Android 16
-    private fun button(t: String, onClick: () -> Unit) = Button(this).apply {
+    private fun button(t: String, onClick: (android.view.View) -> Unit) = Button(this).apply {
         text = t; isAllCaps = false; setTextColor(Color.WHITE)
         background = GradientDrawable().apply { setColor(Color.rgb(0x1E, 0x5A, 0xA8)); cornerRadius = 16f }
-        setOnClickListener { onClick() }
+        setOnClickListener(onClick)
     }
 
     private fun say(s: String) = service?.say(s) ?: runOnUiThread { appendLog(s) }
