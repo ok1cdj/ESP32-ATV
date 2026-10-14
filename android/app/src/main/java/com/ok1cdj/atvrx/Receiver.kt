@@ -47,6 +47,7 @@ class Receiver(
         @Volatile var framesOk = 0L          // '_' clean
         @Volatile var framesFixed = 0L       // '.' corrected by BCH
         @Volatile var framesBad = 0L         // '!' (ldpc_tool) or ':' (built-in LDPC): dropped
+        @Volatile var tsCrcBad = 0L          // 'C': TS packet with a bad CRC
         @Volatile var driftSteps = 0L
         @Volatile var researches = 0L
         @Volatile var demodSince = 0L        // System.nanoTime() when leandvb started
@@ -360,23 +361,31 @@ class Receiver(
             if (running) { status.state = "leandvb ended"; log("leandvb ended (exit ${try { p.exitValue() } catch (_: Throwable) { "?" }})") }
         }
         thread("rx-info") {
-            // leandvb -d: one mark per frame, no newline: '_' clean, '.' corrected, '!' / ':' failed; then message lines
+            // leandvb -d: marks without newlines – '_' clean frame, '.' corrected, '!' / ':' failed, 'C' TS packet with a bad
+            // CRC – mixed with messages that need not start on a new line ("____Start TS at 0", "_!___CUnsupported ...").
+            // A mark is a mark at the start of a line or right after another mark; anything else starts a message.
             try {
                 val r = p.errorStream.bufferedReader(Charsets.ISO_8859_1)
                 val line = StringBuilder()
+                var inMarks = true
+                var ended = false        // after "sch stopped" leandvb dumps its pipes, lines starting with '.'
                 while (true) {
                     val c = r.read()
                     if (c < 0) break
                     val ch = c.toChar()
-                    if (line.isEmpty() && ch in "_.!:") {
+                    if (ch == '\n') {
+                        if (line.isNotEmpty()) { message(line.toString()); if ("sch stopped" in line) ended = true }
+                        line.setLength(0); inMarks = true
+                    } else if (inMarks && !ended && ch in "_.!:C") {
                         when (ch) {
                             '_' -> { status.framesOk++; lastFrameLock = System.nanoTime() }
                             '.' -> { status.framesFixed++; lastFrameLock = System.nanoTime() }
+                            'C' -> status.tsCrcBad++
                             else -> status.framesBad++
                         }
-                    } else if (ch == '\n') {
-                        message(line.toString()); line.setLength(0)
-                    } else line.append(ch)
+                    } else {
+                        line.append(ch); inMarks = false
+                    }
                 }
             } catch (_: Throwable) {}
         }
@@ -411,9 +420,10 @@ class Receiver(
         val now = System.nanoTime()
         if (now - lastTrack < 500_000_000L) return
         lastTrack = now
-        if (kotlin.math.abs(freq) < 300) return
-        val maxStep = maxOf(200.0, cfg.sr * 0.002)
-        val step = kotlin.math.sign(freq) * minOf(kotlin.math.abs(freq) * 0.5, maxStep)
+        // leandvb follows a few kHz itself; steps of 200 Hz upset its lock at 50 kS/s (replay: 58 -> 8 good frames), so:
+        // a 1 kHz dead band and at most 50 Hz per 0.5 s – the C3 drifts some 20 Hz/s while warming up
+        if (kotlin.math.abs(freq) < 1000) return
+        val step = kotlin.math.sign(freq) * minOf(kotlin.math.abs(freq) * 0.25, 50.0)
         ncoOffset += step
         status.offsetHz = ncoOffset
         status.driftSteps++
