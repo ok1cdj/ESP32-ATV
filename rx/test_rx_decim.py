@@ -77,7 +77,7 @@ def chain(a):
     cmd = ([os.path.join(RX, "build", "leansdr", "src", "apps", "leandvb")]
            + (["--u8", "-f", str(FS)] if a.raw_u8 else src.leandvb_input())
            + ["--sr", str(sr), "--standard", "DVB-S2", "--const", "QPSK", "--cr", "3/4", "--fastdrift", "-d",
-              "--modcods", str(1 << modcod), "--framesizes", "1",
+              "--modcods", str(1 << modcod), "--framesizes", {"normal": "1", "short": "2", "auto": "3"}[a.frame],
               "--ldpc-helper", os.path.join(RX, "build", "LDPC", "ldpc_tool"), "--sampler", "rrc", "--rrc-rej", "50"])
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     res = {}
@@ -119,6 +119,7 @@ def main():
     c.add_argument("--rms", type=float, default=20, help="per-component RMS of the cu8 stream in steps (default 20)")
     c.add_argument("--dc", type=float, default=0, help="the receiver's DC added to the cu8 stream [steps] (default 0)")
     c.add_argument("--raw-u8", action="store_true", help="feed cu8 to leandvb --u8 as before (no DC removal, no decimation)")
+    c.add_argument("--frame", choices=("normal", "short", "auto"), default="normal", help="FECFRAME size of the beacon (default normal)")
     a = ap.parse_args()
     unit() if a.cmd == "unit" else chain(a)
 
