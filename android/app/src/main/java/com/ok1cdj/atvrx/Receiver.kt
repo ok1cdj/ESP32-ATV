@@ -78,7 +78,11 @@ class Receiver(
     private var ncoFor = Double.NaN
     private var ncoRe = 1f; private var ncoIm = 0f
     private var stepRe = 1f; private var stepIm = 0f
-    @Volatile private var lastFrameLock = 0L
+    @Volatile private var lastFrameLock = 0L          // last good frame ('_' or '.') or start / new search
+    // ldpc_tool returns frames in batches of 32: the receiver is alive while a good frame came within 2.5 batches
+    private val batchNs = (32 * frameSymbols() / cfg.sr * 1e9).toLong()
+    private val aliveNs = maxOf(10_000_000_000L, batchNs * 5 / 2)
+    fun alive() = System.nanoTime() - lastFrameLock < aliveNs
     private var lastTrack = 0L
     private var infoFd: java.io.FileDescriptor? = null
     private var constFd: java.io.FileDescriptor? = null
@@ -267,6 +271,13 @@ class Receiver(
         return true
     }
 
+    /** Symbols of one PLFRAME (the longer size enabled): data slots, PLHEADER, pilot blocks. */
+    private fun frameSymbols(): Double {
+        val bits = if (cfg.frameSizes and FRAMES_NORMAL != 0) 64800 else 16200
+        val slots = bits / (if (cfg.const == "8PSK") 3 else 2) / 90
+        return 90.0 + slots * 90 + (slots - 1) / 16 * 36
+    }
+
     // ---- leandvb
 
     private fun startDemod() {
@@ -314,12 +325,12 @@ class Receiver(
             try {
                 while (running) {
                     Thread.sleep(1000)
-                    // leandvb prints FRAMELOCK only when it changes: the last state it reported holds
-                    if (status.frameLock) lastFrameLock = System.nanoTime()
-                    if (!searching && !searchBusy && System.nanoTime() - lastFrameLock > 10_000_000_000L) {
+                    // leandvb prints FRAMELOCK only on a change, so it can stay "1" after the signal is gone:
+                    // what counts is good frames coming out of the LDPC/BCH decoders
+                    if (!searching && !searchBusy && !alive()) {
                         status.researches++
                         status.state = "lost: searching again"
-                        log("no frame lock for 10 s: searching again")
+                        log("no good frame for %.0f s: searching again".format(aliveNs / 1e9))
                         searchFill = 0
                         searching = true
                     }
@@ -359,8 +370,8 @@ class Receiver(
                     val ch = c.toChar()
                     if (line.isEmpty() && ch in "_.!:") {
                         when (ch) {
-                            '_' -> status.framesOk++
-                            '.' -> status.framesFixed++
+                            '_' -> { status.framesOk++; lastFrameLock = System.nanoTime() }
+                            '.' -> { status.framesFixed++; lastFrameLock = System.nanoTime() }
                             else -> status.framesBad++
                         }
                     } else if (ch == '\n') {
@@ -386,7 +397,7 @@ class Receiver(
             "SS" -> status.ss = v
             "FREQ" -> { status.freq = v; track(v) }
             "LOCK" -> status.lock = v != 0.0
-            "FRAMELOCK" -> { status.frameLock = v != 0.0; if (v != 0.0) lastFrameLock = System.nanoTime() }
+            "FRAMELOCK" -> status.frameLock = v != 0.0
         }
     }
 
@@ -395,7 +406,8 @@ class Receiver(
      * carrier leandvb reports, in small steps (at most every 0.5 s) that its own tracking follows without losing lock.
      */
     private fun track(freq: Double) {
-        if (!status.frameLock || searching) return
+        // only on a live signal: a stale FRAMELOCK on noise would walk the NCO away (MER -13 dB seen when the TX stopped)
+        if (searching || !alive() || !(status.mer > 3.0)) return
         val now = System.nanoTime()
         if (now - lastTrack < 500_000_000L) return
         lastTrack = now

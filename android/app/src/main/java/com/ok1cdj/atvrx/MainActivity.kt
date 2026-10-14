@@ -109,7 +109,8 @@ class MainActivity : Activity() {
                 val keep = codeRate.selectedItem as String?
                 val list = rateList(consts[pos])
                 codeRate.adapter = adapter(list)
-                codeRate.setSelection(list.indexOf(keep).coerceAtLeast(list.indexOf("3/4").coerceAtLeast(0)))
+                val i = list.indexOf(keep)
+                codeRate.setSelection(if (i >= 0) i else maxOf(0, list.indexOf("3/4")))
             }
             override fun onNothingSelected(a: android.widget.AdapterView<*>?) {}
         }
@@ -248,10 +249,12 @@ class MainActivity : Activity() {
             val tsRate = if (now > t0) (s.tsBytes - b0) * 8 / ((now - t0) / 1e9) / 1e3 else 0.0
             val d = r.demux; val v = video
             val usb = r.link?.stats
-            val carrier = s.offsetHz + (if (s.freq.isNaN()) 0.0 else s.freq)
+            // leandvb's FREQ means something only while frames come through (it reports noise as well)
+            val live = r.alive() && s.mer > 3.0
+            val carrier = s.offsetHz + (if (s.freq.isNaN() || !live) 0.0 else s.freq)
             buildString {
                 append("%s   %.0f s\n".format(s.state, (now - startedAt) / 1e9))
-                append("carrier %+.2f kHz  (NCO %+.2f, residual %s Hz)\n".format(carrier / 1e3, s.offsetHz / 1e3, num(s.freq, "%.0f")))
+                append("carrier %+.2f kHz  (NCO %+.2f, residual %s Hz)\n".format(carrier / 1e3, s.offsetHz / 1e3, if (live) num(s.freq, "%.0f") else "–"))
                 append("drift steps %d  re-searches %d  search %.0f dB\n".format(s.driftSteps, s.researches, s.searchDb))
                 append("LOCK %s  FRAME %s  MER %s dB  CNR %s dB\n".format(yn(s.lock), yn(s.frameLock), num(s.mer, "%.1f"), num(s.cnr, "%.1f")))
                 append("frames ok %d  fixed %d  bad %d  locks %d\n".format(s.framesOk, s.framesFixed, s.framesBad, s.locks))
