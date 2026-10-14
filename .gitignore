@@ -1,2 +1,4 @@
 build/
 __pycache__/
+# internal notes (Czech): state, plans, measurement logs – not published
+notes/
