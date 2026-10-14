@@ -60,7 +60,9 @@ def reference(sr, frame, seconds, offset):
 
 
 def run(ref, sr, frame, esn0=None, seed=1, realtime=False):
-    cmd = [PY, os.path.join(RX, "tools", "sim_wide.py"), ref, "--fs-in", str(SPS * sr), "--fs-out", "333333", "--sr", str(sr),
+    # 66666 x 5 = 333330: no resampling for a 0.001 % difference (the ratio has no small fraction for the resampler)
+    fs_out = SPS * sr if abs(SPS * sr - 333333) < 333 else 333333
+    cmd = [PY, os.path.join(RX, "tools", "sim_wide.py"), ref, "--fs-in", str(SPS * sr), "--fs-out", str(fs_out), "--sr", str(sr),
            "--bits", "8", "--scale", "fixed", "--target", "20", "--repeat", "1", "--seed", str(seed), "--frame", frame,
            "--ldpc-helper", os.path.join(LDPC, "ldpc_tool_iter"), "--extra", "--sampler rrc --rrc-rej 50"]
     if esn0 is not None:
