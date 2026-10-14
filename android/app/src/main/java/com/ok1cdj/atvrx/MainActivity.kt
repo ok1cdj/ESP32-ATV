@@ -61,10 +61,23 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 24, 24, 24) }
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        buttons = listOf(Button(this).apply { text = "USB bench 10 s"; setOnClickListener { start { bench(it) } } }) +
-            modes.map { m -> Button(this).apply { text = m.label; setOnClickListener { start { stream(it, m) } } } }
-        buttons.forEach { row.addView(it) }
+        val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        // plain coloured views: the device theme drew the stock buttons invisible on Android 16
+        fun button(label: String, onClick: () -> Unit) = Button(this).apply {
+            text = label
+            isAllCaps = false
+            setTextColor(android.graphics.Color.WHITE)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(android.graphics.Color.rgb(0x1E, 0x5A, 0xA8)); cornerRadius = 16f
+            }
+            setOnClickListener { onClick() }
+        }
+        buttons = listOf(button("USB bench 10 s") { start { bench(it) } }) +
+            modes.map { m -> button("${m.label} – 60 s") { start { stream(it, m) } } }
+        buttons.forEach {
+            row.addView(it, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { bottomMargin = 12 })
+        }
         save = CheckBox(this).apply { text = "save raw packets (for the PC)" }
         val screen = CheckBox(this).apply {
             text = "keep screen on"
@@ -78,6 +91,12 @@ class MainActivity : Activity() {
         root.addView(row); root.addView(save); root.addView(screen)
         root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
+        // Android 15+ draws edge to edge: keep the content clear of the status, title and navigation bars
+        root.setOnApplyWindowInsetsListener { v, insets ->
+            val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+            v.setPadding(24 + bars.left, 24 + bars.top, 24 + bars.right, 24 + bars.bottom)
+            insets
+        }
         val filter = IntentFilter(permissionAction)
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(permissionReceiver, filter, RECEIVER_NOT_EXPORTED)
         else registerReceiver(permissionReceiver, filter)
@@ -109,7 +128,7 @@ class MainActivity : Activity() {
             return
         }
         busy = true
-        buttons.forEach { it.isEnabled = false }
+        buttons.forEach { it.isEnabled = false; it.alpha = 0.4f }
         Thread {
             val wake = (getSystemService(POWER_SERVICE) as PowerManager)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "atvrx:f1").apply { acquire(10 * 60 * 1000L) }
@@ -125,7 +144,7 @@ class MainActivity : Activity() {
                 link?.close()
                 wake.release()
                 busy = false
-                runOnUiThread { buttons.forEach { it.isEnabled = true } }
+                runOnUiThread { buttons.forEach { it.isEnabled = true; it.alpha = 1f } }
             }
         }.start()
     }
