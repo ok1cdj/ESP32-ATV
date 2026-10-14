@@ -13,7 +13,8 @@ DIR="$ROOT/build/sweep"; mkdir -p "$DIR"
 OUT="$DIR/${K}k.txt"
 : > "$OUT"
 . ~/esp/esp-idf-v6.1/export.sh >/dev/null 2>&1
-FREQ=2300.5; misses=0
+. "$ROOT/boards.sh"
+FREQ=$ATV_FREQ; misses=0
 for AMP in "$@"; do
   DB=$(python3 -c "import math; print(f'{20*math.log10($AMP/300):+.1f}')")
   AMP=$AMP OUTDIR="$DIR/beacons" "$ROOT/tx/make_beacons.sh" "$BAUD" >/dev/null

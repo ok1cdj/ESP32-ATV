@@ -91,7 +91,7 @@ class MainActivity : Activity() {
 
         freq = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setText(prefs.getString("freq", "2300.500")); hint = "MHz"
+            setText(prefs.getString("freq", "2340.000")); hint = "MHz"
         }
         rate = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, rates.map { "%.1f kS/s".format(it / 1e3) })

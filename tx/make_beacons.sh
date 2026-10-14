@@ -10,7 +10,8 @@ CALL=${CALL:-SV0SYH}
 AMP=${AMP:-13}               # DAC amplitude 1..480: 13 = -27 dB (upstream default), 300 = 0 dB (full level, a few mW)
 CAL=${CAL:-$ROOT/tx/cal_c3.json}   # DC / I/Q trims of our C3 (carrier leakage), measured with rx/cal_dc.py
 BAUD=${1:-333000}
-FREQ=${2:-2300.500}
+. "$ROOT/boards.sh"
+FREQ=${2:-$ATV_FREQ}
 FRAMES=${3:-$([ "$BAUD" -lt 125000 ] && echo 2 || echo 4)}
 KS=$(( (BAUD + 500) / 1000 ))
 OUT="${OUTDIR:-$ROOT/tx/beacons}/$(echo "$CALL" | tr A-Z a-z)-${KS}k$([ "$AMP" = 13 ] || echo "-a$AMP")"

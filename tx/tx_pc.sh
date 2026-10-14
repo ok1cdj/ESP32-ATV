@@ -6,5 +6,6 @@ set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CALL=${CALL:-SV0SYH}
 BAUD=${1:-125000}; [ $# -gt 0 ] && shift
-exec python3 "$ROOT/third_party/ESP32-DATV-SA/host/tx_dvbs.py" --freq 2300.500 --baud "$BAUD" \
+. "$ROOT/boards.sh"
+exec python3 "$ROOT/third_party/ESP32-DATV-SA/host/tx_dvbs.py" --freq "$ATV_FREQ" --baud "$BAUD" \
   --dvbs2 --fec 3/4 --pilots --test --service-name "$CALL" --service-provider "$CALL ESP32-ATV" "$@"

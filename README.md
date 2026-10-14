@@ -3,7 +3,7 @@
 Cílem je terestriální DATV maják na 13 cm (značka **SV0SYH**). Ve fázi 0 ověřujeme, že řetězec
 
 ```
-XIAO ESP32-C3 (ESP32-DATV-SA, DVB-S2 QPSK 3/4, 2300.500 MHz)
+XIAO ESP32-C3 (ESP32-DATV-SA, DVB-S2 QPSK 3/4, 2340.000 MHz)
    → vzduch →
 XIAO ESP32-S3 Plus (ESP32-DATV-RX firmware: radio dump 16 MS/s → 500 ksps cs4 / 333 ksps cs8, USB-Serial-JTAG)
    → rx_dvbs2.py → leandvb (+ ldpc_tool) → ffplay
@@ -45,7 +45,10 @@ tx/make_beacons.sh                 # testkarta + SDT se značkou SV0SYH → tx/b
 . ~/esp/esp-idf-v6.1/export.sh
 tx/flash_tx.sh                     # build v build/tx-firmware (submodul zůstává čistý) + flash /dev/ttyACM0
 ```
-Kontrola: na sériové konzoli C3 příkaz `INFO` → 2300.500 MHz, 333000 Bd.
+Kontrola: na sériové konzoli C3 příkaz `INFO` → 2340.000 MHz, 333000 Bd.
+
+**Kmitočet** je na jednom místě: `ATV_FREQ` v `boards.sh` (2340.000 MHz – ATV segment 2322–2355 MHz band plánu IARU R1;
+do 14. 10. 2026 se používalo 2300.500 MHz). Platí pro `tx/make_beacons.sh`, `tx/tx_pc.sh`, `rx/rx.sh`, `rx/level_sweep.sh`, `rx/cal_dc.py`.
 
 Nižší rychlosti majáku (náš fork, větev `esp32-atv`):
 ```sh

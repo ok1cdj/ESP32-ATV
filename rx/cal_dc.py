@@ -2,7 +2,7 @@
 """Null the carrier leakage of the C3 beacon: set its DC correction with "BDC i q" over the transmitter's USB, measure the leakage
 tone with the S3 receiver, fit, repeat; then save it in the C3 (BDC SAVE) and in tx/cal_c3.json (used by tx/make_beacons.sh).
 
-    third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py [--freq 2300.53] [--step 4] [--rounds 3] [--save]
+    third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py [--freq 2340.03] [--step 4] [--rounds 3] [--save]
 
 The leakage is a fixed tone at the transmitter's carrier, i.e. in the middle of the signal; its complex amplitude is linear in the
 correction, so its power is a paraboloid P = c |d - d*|^2 + floor. Per round: measure at d, d +- step on I and on Q, put the vertex of
@@ -27,9 +27,9 @@ RX_OFFSET = 50e3                   # receiver LO above the carrier
 
 
 def ports():
-    out = subprocess.run(["sh", "-c", '. "$0"; echo "$TX_PORT"; echo "$RX_PORT"', os.path.join(ROOT, "boards.sh")],
+    out = subprocess.run(["sh", "-c", '. "$0"; echo "$TX_PORT"; echo "$RX_PORT"; echo "$ATV_FREQ"', os.path.join(ROOT, "boards.sh")],
                          capture_output=True, text=True, check=True).stdout.split()
-    return out[0], out[1]
+    return out[0], out[1], float(out[2]) * 1e6
 
 
 class Beacon:
@@ -110,7 +110,7 @@ def null(measure, d, step, rounds):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--freq", type=float, help="carrier [MHz] (default: the strongest line near 2300.5 MHz)")
+    ap.add_argument("--freq", type=float, help="carrier [MHz] (default: the strongest line near ATV_FREQ of boards.sh)")
     ap.add_argument("--start", type=float, nargs=2, default=(0.0, 0.0), metavar=("I", "Q"), help="starting correction [codes]")
     ap.add_argument("--step", type=float, default=4.0, help="first step [DAC codes] (default 4)")
     ap.add_argument("--rounds", type=int, default=3)
@@ -119,18 +119,18 @@ def main():
     ap.add_argument("--save", action="store_true", help="BDC SAVE in the C3 and write tx/cal_c3.json")
     a = ap.parse_args()
 
-    tx_port, rx_port = ports()
+    tx_port, rx_port, freq0 = ports()
     tx = Beacon(tx_port)
     d = np.array(a.start, float)
     tx.set_dc(*d)
     time.sleep(0.5)
     if a.freq:
         carrier = a.freq * 1e6
-    else:                                   # find it: the leakage is the strongest narrow line near 2300.5 MHz
-        x = capture(rx_port, 2300.5e6 + 30e3, a.gain, a.seconds)
+    else:                                   # find it: the leakage is the strongest narrow line near ATV_FREQ
+        x = capture(rx_port, freq0 + 30e3, a.gain, a.seconds)
         f, p = spectrum(x)
         ok = np.abs(f) > 2e3                # not the receiver's own DC
-        carrier = 2300.5e6 + 30e3 + f[ok][np.argmax(p[ok])]
+        carrier = freq0 + 30e3 + f[ok][np.argmax(p[ok])]
     lo = carrier + RX_OFFSET
 
     def measure(i, q):
