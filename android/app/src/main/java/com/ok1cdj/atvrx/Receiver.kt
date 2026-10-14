@@ -31,7 +31,7 @@ class Receiver(
 ) {
     /** replay: raw packets recorded by the USB test (F1) instead of the ESP32-S3, played at their sample rate */
     data class Config(val freqHz: Long, val sr: Int, val const: String = "QPSK", val cr: String = "3/4", val gainDb: Double,
-                      val frameSizes: Int = FRAMES_NORMAL, val replay: File? = null)
+                      val frameSizes: Int = FRAMES_NORMAL, val replay: File? = null, val track: Boolean = true)
 
     /** What the screen shows; written by the worker threads. */
     class Status {
@@ -93,6 +93,7 @@ class Receiver(
     private val threads = mutableListOf<Thread>()
 
     fun start() {
+        thread("rx-spectrum") { specWorker() }
         if (cfg.replay != null) return startReplay(cfg.replay)
         thread("rx-control") {
             try {
@@ -153,6 +154,48 @@ class Receiver(
         }
     }
 
+    // ---- spectrum: the raw samples (before the NCO, as the search sees them), averaged FFT a few times a second
+
+    /** dB per bin, -fs/2 .. +fs/2 (SPEC_N bins), smoothed; empty until the first update */
+    @Volatile var spectrum = FloatArray(0); private set
+    private val specBuf = FloatArray(2 * SPEC_N * SPEC_SEGS)
+    private var specFill = 0
+    @Volatile private var specReady = false
+    private val specLock = Object()
+
+    private fun specFeed(iq: FloatArray) {
+        if (specReady) return                          // the worker has not taken the last block yet
+        val k = minOf(iq.size, specBuf.size - specFill)
+        System.arraycopy(iq, 0, specBuf, specFill, k)
+        specFill += k
+        if (specFill == specBuf.size) { specReady = true; synchronized(specLock) { specLock.notify() } }
+    }
+
+    private fun specWorker() {
+        val win = FloatArray(SPEC_N) { (0.5 - 0.5 * cos(2 * PI * it / SPEC_N)).toFloat() }
+        val re = FloatArray(SPEC_N); val im = FloatArray(SPEC_N)
+        var avg: FloatArray? = null
+        try {
+            while (running) {
+                synchronized(specLock) { if (!specReady) specLock.wait(500) }
+                if (!specReady) continue
+                val pow = FloatArray(SPEC_N)
+                for (sg in 0 until SPEC_SEGS) {
+                    val o = 2 * sg * SPEC_N
+                    for (k in 0 until SPEC_N) { re[k] = specBuf[o + 2 * k] * win[k]; im[k] = specBuf[o + 2 * k + 1] * win[k] }
+                    fft(re, im)
+                    for (k in 0 until SPEC_N) { val m = (k + SPEC_N / 2) % SPEC_N; pow[k] += re[m] * re[m] + im[m] * im[m] }
+                }
+                specFill = 0; specReady = false
+                val db = FloatArray(SPEC_N) { (10 * log10(pow[it] / SPEC_SEGS + 1e-12)).toFloat() }
+                val a = avg?.let { prev -> FloatArray(SPEC_N) { prev[it] * 0.7f + db[it] * 0.3f } } ?: db
+                avg = a
+                spectrum = a
+                Thread.sleep(200)                       // ~4 updates a second
+            }
+        } catch (_: InterruptedException) {}
+    }
+
     fun stop() {
         running = false
         try { infoFd?.let { android.system.Os.close(it) } } catch (_: Throwable) {}
@@ -172,6 +215,7 @@ class Receiver(
 
     private fun onPacket(p: EspLink.Packet) {
         val iq = samples(p)
+        specFeed(iq)
         if (searching) {
             if (searchBusy) return                   // the last second is still being analysed
             val k = minOf(iq.size, search.size - searchFill)
@@ -416,7 +460,7 @@ class Receiver(
      */
     private fun track(freq: Double) {
         // only on a live signal: a stale FRAMELOCK on noise would walk the NCO away (MER -13 dB seen when the TX stopped)
-        if (searching || !alive() || !(status.mer > 3.0)) return
+        if (!cfg.track || searching || !alive() || !(status.mer > 3.0)) return
         val now = System.nanoTime()
         if (now - lastTrack < 500_000_000L) return
         lastTrack = now
@@ -430,6 +474,7 @@ class Receiver(
     }
 
     companion object {
+        const val SPEC_N = 1024; const val SPEC_SEGS = 8
         const val FRAMES_NORMAL = 1; const val FRAMES_SHORT = 2; const val FRAMES_BOTH = 3   // leandvb --framesizes
         fun frameSizeName(f: Int) = when (f) { FRAMES_NORMAL -> "normal"; FRAMES_SHORT -> "short"; else -> "normal+short" }
         private val CS4_MANT = floatArrayOf(256f, 279f, 304f, 332f, 362f, 395f, 431f, 470f)

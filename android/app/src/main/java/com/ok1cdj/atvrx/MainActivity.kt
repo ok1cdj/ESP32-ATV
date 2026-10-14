@@ -68,6 +68,8 @@ class MainActivity : Activity() {
     private lateinit var startStop: Button
     private lateinit var info: TextView
     private lateinit var constView: ConstellationView
+    private lateinit var specView: SpectrumView
+    private lateinit var track: android.widget.CheckBox
     private lateinit var logView: TextView
     private lateinit var logScroll: ScrollView
     private lateinit var surface: SurfaceView
@@ -113,13 +115,16 @@ class MainActivity : Activity() {
         val w = resources.displayMetrics.widthPixels - 48
         root.addView(surface, LinearLayout.LayoutParams(MATCH_PARENT, w * 9 / 16))
 
-        info = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 12f; setPadding(0, 12, 12, 12) }
+        info = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 12f; setPadding(0, 12, 0, 8) }
+        root.addView(info)
+        // spectrum (wide) and constellation (square) side by side
         constView = ConstellationView(this)
+        specView = SpectrumView(this)
+        val side = (resources.displayMetrics.widthPixels * 0.3).toInt()
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(info, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(constView, LinearLayout.LayoutParams((resources.displayMetrics.widthPixels * 0.3).toInt(), WRAP_CONTENT)
-                .apply { topMargin = 12 })
+            addView(specView, LinearLayout.LayoutParams(0, side, 1f).apply { rightMargin = 8 })
+            addView(constView, LinearLayout.LayoutParams(side, side))
         })
 
         freq = EditText(this).apply {
@@ -170,7 +175,8 @@ class MainActivity : Activity() {
             addView(frames, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.6f))
         })
         startStop = button("Start") { if (receiver == null) start() else stop() }
-        root.addView(row(label("gain dB"), gain, startStop))
+        track = android.widget.CheckBox(this).apply { text = "drift"; isChecked = prefs.getBoolean("track", true) }
+        root.addView(row(label("gain dB"), gain, track, startStop))
         root.addView(row(button("Replay") { startReplay() }, button("USB test") {
             stop(); startActivity(Intent(this, BenchActivity::class.java))
         }, button("About") { startActivity(Intent(this, AboutActivity::class.java)) }))
@@ -251,8 +257,11 @@ class MainActivity : Activity() {
     }
 
     private fun rateList(c: String) = Receiver.MODCODS.keys.filter { it.first == c }.map { it.second }
-    private fun adapter(items: List<String>) = ArrayAdapter(this, android.R.layout.simple_spinner_item, items)
-        .apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+    // the closed spinner with little padding and one line, so that "QPSK" or "normal+short" fits
+    private fun adapter(items: List<String>) = object : ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, items) {
+        override fun getView(position: Int, convertView: android.view.View?, parent: android.view.ViewGroup) =
+            (super.getView(position, convertView, parent) as TextView).apply { setPadding(4, 0, 0, 0); isSingleLine = true }
+    }.apply { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
     private fun spinner(items: List<String>, sel: String) = Spinner(this).apply {
         adapter = adapter(items); setSelection(items.indexOf(sel).coerceAtLeast(0))
     }
@@ -297,10 +306,11 @@ class MainActivity : Activity() {
         val cr = codeRate.selectedItem as String
         val fr = frameChoices[frames.selectedItemPosition]
         prefs.edit().putString("freq", freq.text.toString()).putInt("sr", sr).putInt("gain", g)
-            .putString("const", c).putString("cr", cr).putInt("frames", fr).apply()
-        val cfg = Receiver.Config(freqHz = Math.round(mhz * 1e6), sr = sr, const = c, cr = cr, gainDb = g.toDouble(), frameSizes = fr)
+            .putString("const", c).putString("cr", cr).putInt("frames", fr).putBoolean("track", track.isChecked).apply()
+        val cfg = Receiver.Config(freqHz = Math.round(mhz * 1e6), sr = sr, const = c, cr = cr, gainDb = g.toDouble(), frameSizes = fr,
+            track = track.isChecked)
         val svc = service ?: return run { pendingStart = ::start }
-        constView.clear(); tsHistory.clear()
+        constView.clear(); specView.clear(); tsHistory.clear()
         svc.startRx(cfg, dev)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
@@ -312,9 +322,9 @@ class MainActivity : Activity() {
             ?: return say("no recording: USB test (F1) with 'save raw packets'")
         val sr = rates[rate.selectedItemPosition]
         val svc = service ?: return
-        constView.clear(); tsHistory.clear()
+        constView.clear(); specView.clear(); tsHistory.clear()
         svc.startRx(Receiver.Config(freqHz = 0, sr = sr, const = constel.selectedItem as String, cr = codeRate.selectedItem as String,
-            gainDb = 0.0, frameSizes = frameChoices[frames.selectedItemPosition], replay = f), null)
+            gainDb = 0.0, frameSizes = frameChoices[frames.selectedItemPosition], replay = f, track = track.isChecked), null)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
@@ -334,6 +344,7 @@ class MainActivity : Activity() {
             while (now - tsHistory.first().first > 10_000_000_000L) tsHistory.removeFirst()
             val (t0, b0) = tsHistory.first()
             val tsRate = if (now > t0) (s.tsBytes - b0) * 8 / ((now - t0) / 1e9) / 1e3 else 0.0
+            specView.update(r.spectrum, r.fs, if (s.searchDb >= 6) s.offsetHz else Double.NaN, r.cfg.sr)
             val d = r.demux; val v = service?.video
             val usb = r.link?.stats
             // leandvb's FREQ means something only while frames come through (it reports noise as well)
@@ -342,7 +353,8 @@ class MainActivity : Activity() {
             buildString {
                 append("%s   %.0f s\n".format(s.state, (now - (service?.startedAt ?: now)) / 1e9))
                 append("carrier %+.2f kHz  (NCO %+.2f, residual %s Hz)\n".format(carrier / 1e3, s.offsetHz / 1e3, if (live) num(s.freq, "%.0f") else "–"))
-                append("drift steps %d  re-searches %d  search %.0f dB\n".format(s.driftSteps, s.researches, s.searchDb))
+                append("drift %s  steps %d  re-searches %d  search %.0f dB\n".format(if (r.cfg.track) "on" else "off",
+                    s.driftSteps, s.researches, s.searchDb))
                 append("LOCK %s  FRAME %s  MER %s dB  CNR %s dB\n".format(yn(s.lock), yn(s.frameLock), num(s.mer, "%.1f"), num(s.cnr, "%.1f")))
                 append("frames ok %d  fixed %d  bad %d  locks %d\n".format(s.framesOk, s.framesFixed, s.framesBad, s.locks))
                 append("TS %.0f kb/s (10 s)  %d pkts  TEI %d  CC %d\n".format(tsRate, d.packets, d.errorPackets, d.ccErrors))
