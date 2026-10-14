@@ -31,4 +31,7 @@ for o in tables_handler itls_handler mods_handler; do
   "$CXX" $F -c "$SRC/LDPC/$o.cc" -o "$OBJ/$o.o"
 done
 "$CXX" $F "$SRC/LDPC/ldpc_tool.cc" "$OBJ"/tables_handler.o "$OBJ"/itls_handler.o "$OBJ"/mods_handler.o -o "$OUT/libldpc_tool.so"
+# the same with LDPC's NEON code (simd.hh tests __ARM_NEON__, which aarch64 compilers do not define), for comparison
+"$CXX" $F -D__ARM_NEON__ "$SRC/LDPC/ldpc_tool.cc" "$OBJ"/tables_handler.o "$OBJ"/itls_handler.o "$OBJ"/mods_handler.o \
+  -o "$OBJ/ldpc_tool_neon"
 ls -la "$OUT"
