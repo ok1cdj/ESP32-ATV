@@ -1,0 +1,80 @@
+# ATV RX (android/): native leandvb + ldpc_tool with the NDK, then the APK.
+# Every push: the APK as a workflow artifact. A tag v* (e.g. v0.4-beta): a GitHub pre-release with the APK and its SHA-256.
+# Release signing needs the secrets KEYSTORE_B64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD; without them (forks,
+# pull requests) a debug APK is built instead.
+name: Android APK
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  NDK_VERSION: 30.0.16248370
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true          # ESP32-DATV-RX: leandvb-ldpc-helper.patch
+          fetch-depth: 0            # git describe for the version
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: leandvb + ldpc_tool (arm64)
+        run: android/native/build-native.sh
+
+      - name: Version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then v=${GITHUB_REF_NAME#v}; else v=$(git describe --tags --always)-ci; fi
+          echo "APP_VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            { echo "ATVRX_KEYSTORE=$RUNNER_TEMP/release.jks"; echo "ATVRX_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+              echo "ATVRX_KEY_ALIAS=$KEY_ALIAS"; echo "ATVRX_KEY_PASSWORD=$KEY_PASSWORD"; } >> "$GITHUB_ENV"
+          fi
+
+      - name: APK
+        working-directory: android
+        run: |
+          if [ -n "$ATVRX_KEYSTORE" ]; then task=assembleRelease; dir=release; else task=assembleDebug; dir=debug; fi
+          ./gradlew --no-daemon "$task" -PappVersion="$APP_VERSION" -PappCode="${{ github.run_number }}"
+          mkdir -p ../dist
+          cp "app/build/outputs/apk/$dir/app-$dir.apk" "../dist/atvrx-$APP_VERSION.apk"
+          cd ../dist && sha256sum ./*.apk > SHA256SUMS && cat SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atvrx-${{ env.APP_VERSION }}
+          path: dist/
+
+      - name: Pre-release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --prerelease --title "ATV RX $APP_VERSION" --notes \
+            "Beta of the ATV RX receiver app (Android 9+, arm64). Install: see the guide https://ok1cdj.github.io/ESP32-ATV/ – licensed radio amateurs only. SHA-256 in SHA256SUMS."

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ATV RX Flasher</title>
+  <link rel="stylesheet" href="../style.css">
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+</head>
+<body>
+<main>
+  <h1>ESP32-S3 receiver firmware</h1>
+  <p>Writes the receiver firmware of <a href="https://github.com/ok1cdj/ESP32-DATV-RX">ESP32-DATV-RX</a>
+     (esp32-sdr-trx 1.0.0-rc4 with the cs4 format) into the flash of a <b>Seeed XIAO ESP32-S3 / S3 Plus</b>.
+     Once written, the board starts the receiver by itself every time it gets power, and the ATV RX app finds it.</p>
+  <ol>
+    <li>Use <b>Chrome or Edge</b> on a computer (Web Serial). Connect the XIAO with a USB-C <b>data</b> cable.</li>
+    <li>Put it in download mode: hold <b>BOOT</b>, tap <b>RESET</b>, release BOOT.</li>
+    <li>Click the button, choose the port (“USB JTAG/serial debug unit”), confirm; erasing is fine.</li>
+    <li>When it is done, tap <b>RESET</b> (or unplug and plug in). The board now enumerates as <code>303a:1001</code>.</li>
+  </ol>
+  <p><esp-web-install-button manifest="manifest.json">
+    <button slot="activate">Install the receiver firmware</button>
+    <span slot="unsupported">This browser cannot talk to serial ports: use Chrome or Edge on a computer.</span>
+    <span slot="not-allowed">Web Serial needs HTTPS.</span>
+  </esp-web-install-button></p>
+  <h2>Česky</h2>
+  <p>Zapíše firmware přijímače do flash <b>XIAO ESP32-S3</b>. Chrome nebo Edge na počítači, USB-C datový kabel;
+     držet <b>BOOT</b>, ťuknout <b>RESET</b>, pustit BOOT; tlačítko výše, vybrat port, potvrdit. Po dokončení <b>RESET</b>.</p>
+  <p class="muted">Images: bootloader 0x0, partition table 0x8000, receiver 0x10000 (DIO). Licences: esp32-sdr-trx 0BSD,
+     ESP32-DATV-RX BSD-3-Clause; the image links Espressif's PHY library. <a href="../">Back</a></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,53 @@
+# GitHub Pages: the guide (docs/rx-android.*.md -> HTML) and the web flasher of the ESP32-S3 receiver firmware
+# (ESP Web Tools; the images come from the ESP32-DATV-RX submodule, checked against its SHA256SUMS).
+name: Pages
+
+on:
+  push:
+    branches: [master]
+    paths: ['site/**', 'docs/rx-android.*', 'docs/img/**', 'third_party/ESP32-DATV-RX', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Site
+        run: |
+          sudo apt-get install -y -q pandoc > /dev/null
+          mkdir -p public && cp -r site/* public/
+          mkdir -p public/img && cp docs/img/*.png public/img/ 2>/dev/null || true
+          for l in cs en; do
+            pandoc "docs/rx-android.$l.md" -s --metadata lang=$l --css style.css \
+              --metadata pagetitle="ATV RX – $([ $l = cs ] && echo návod || echo guide)" -o "public/$l.html"
+          done
+          fw=third_party/ESP32-DATV-RX/firmware
+          (cd "$fw" && sha256sum -c --ignore-missing SHA256SUMS)
+          mkdir -p public/flasher/firmware
+          cp "$fw/bootloader.bin" "$fw/partition-table.bin" "$fw/rx.bin" public/flasher/firmware/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
