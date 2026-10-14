@@ -37,6 +37,22 @@ import android.widget.TextView
 class MainActivity : Activity() {
     private val rates = listOf(40_000, 50_000, 66_666, 100_000, 125_000, 250_000, 333_000, 400_000, 500_000)
 
+    /** Receiver settings by name; the gain stays as it is (it depends on the distance, not on the transmission). */
+    data class Preset(val name: String, val freq: String, val sr: Int, val const: String, val cr: String, val frames: Int) {
+        fun encode() = listOf(name, freq, sr, const, cr, frames).joinToString("|")
+        companion object {
+            fun decode(l: String) = l.split('|').takeIf { it.size == 6 }?.let {
+                Preset(it[0], it[1], it[2].toIntOrNull() ?: return null, it[3], it[4], it[5].toIntOrNull() ?: return null)
+            }
+        }
+    }
+    private val builtIn = listOf(40_000 to "40k", 50_000 to "50k", 66_666 to "66.7k", 125_000 to "125k", 333_000 to "333k")
+        .map { (sr, n) -> Preset("Beacon $n QPSK 3/4", DEFAULT_FREQ, sr, "QPSK", "3/4", Receiver.FRAMES_NORMAL) } +
+        Preset("PC 8PSK 3/5 333k", DEFAULT_FREQ, 333_000, "8PSK", "3/5", Receiver.FRAMES_NORMAL)
+    private lateinit var presetSpinner: Spinner
+    private fun userPresets() = (prefs.getString("presets", "") ?: "").lines().mapNotNull { Preset.decode(it) }
+    private fun allPresets() = builtIn + userPresets()
+
     private lateinit var freq: EditText
     private lateinit var rate: Spinner
     private lateinit var gain: EditText
@@ -91,7 +107,7 @@ class MainActivity : Activity() {
 
         freq = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setText(prefs.getString("freq", "2340.000")); hint = "MHz"
+            setText(prefs.getString("freq", DEFAULT_FREQ)); hint = "MHz"
         }
         rate = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, rates.map { "%.1f kS/s".format(it / 1e3) })
@@ -101,6 +117,21 @@ class MainActivity : Activity() {
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
             setText(prefs.getInt("gain", 30).toString()); hint = "dB"
         }
+        presetSpinner = Spinner(this)
+        refreshPresets()
+        presetSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(a: android.widget.AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
+                if (pos > 0) { applyPreset(allPresets()[pos - 1]); presetSpinner.setSelection(0) }
+            }
+            override fun onNothingSelected(a: android.widget.AdapterView<*>?) {}
+        }
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            addView(presetSpinner, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(button("Save") { savePreset() }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { leftMargin = 8 })
+            addView(button("Delete") { deletePreset() }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { leftMargin = 8 })
+        })
         root.addView(row(label("MHz"), freq, label("SR"), rate))
         constel = spinner(consts, prefs.getString("const", "QPSK")!!)
         codeRate = spinner(rateList(constel.selectedItem as String), prefs.getString("cr", "3/4")!!)
@@ -149,6 +180,52 @@ class MainActivity : Activity() {
         stop()
         unregisterReceiver(permissionReceiver)
         super.onDestroy()
+    }
+
+    private fun refreshPresets() {
+        presetSpinner.adapter = adapter(listOf("Preset…") + allPresets().map { it.name })
+    }
+
+    /** Puts a preset into the fields; a running receiver restarts with it. */
+    private fun applyPreset(p: Preset) {
+        freq.setText(p.freq)
+        rate.setSelection(rates.indexOf(p.sr).coerceAtLeast(0))
+        constel.setSelection(consts.indexOf(p.const).coerceAtLeast(0))
+        // the code rates of the new constellation now, so that its listener keeps this one
+        val list = rateList(p.const)
+        codeRate.adapter = adapter(list)
+        codeRate.setSelection(list.indexOf(p.cr).coerceAtLeast(0))
+        frames.setSelection(frameChoices.indexOf(p.frames).coerceAtLeast(0))
+        say("preset: ${p.name}")
+        if (receiver != null) { stop(); ui.postDelayed({ start() }, 1500) }
+    }
+
+    private fun currentPreset(): Preset? {
+        val f = freq.text.toString().replace(',', '.').toDoubleOrNull() ?: return null
+        val sr = rates[rate.selectedItemPosition]
+        val c = constel.selectedItem as String; val cr = codeRate.selectedItem as String
+        val fr = frameChoices[frames.selectedItemPosition]
+        val name = "%.3f %s %s %s%s".format(f, if (sr % 1000 == 0) "${sr / 1000}k" else "%.1fk".format(sr / 1e3), c, cr,
+            if (fr == Receiver.FRAMES_NORMAL) "" else " " + Receiver.frameSizeName(fr))
+        return Preset(name, "%.3f".format(java.util.Locale.US, f), sr, c, cr, fr)
+    }
+
+    private fun savePreset() {
+        val p = currentPreset() ?: return say("frequency?")
+        if (allPresets().any { it.name == p.name }) return say("preset exists: ${p.name}")
+        prefs.edit().putString("presets", (userPresets() + p).joinToString("\n") { it.encode() }).apply()
+        refreshPresets()
+        say("preset saved: ${p.name}")
+    }
+
+    /** Deletes the user preset that matches the current settings (the built-in ones stay). */
+    private fun deletePreset() {
+        val p = currentPreset() ?: return
+        val left = userPresets().filter { it.name != p.name }
+        if (left.size == userPresets().size) return say("no saved preset ${p.name}")
+        prefs.edit().putString("presets", left.joinToString("\n") { it.encode() }).apply()
+        refreshPresets()
+        say("preset deleted: ${p.name}")
     }
 
     private fun rateList(c: String) = Receiver.MODCODS.keys.filter { it.first == c }.map { it.second }
@@ -270,4 +347,9 @@ class MainActivity : Activity() {
 
     private fun yn(b: Boolean) = if (b) "yes" else "no"
     private fun num(x: Double, f: String) = if (x.isNaN()) "–" else f.format(x)
+
+    companion object {
+        /** IARU R1 13 cm ATV segment 2322-2355 MHz; ATV_FREQ of boards.sh on the PC side */
+        const val DEFAULT_FREQ = "2340.000"
+    }
 }
