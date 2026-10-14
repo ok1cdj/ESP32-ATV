@@ -37,6 +37,7 @@ class Beacon:
         self.s = serial.Serial()
         self.s.port, self.s.timeout, self.s.dtr, self.s.rts = port, 0.2, False, False
         self.s.open()
+        self.cmd("", wait=3)       # opening the port resets the C3: let it boot, a command sent during boot gets "ERR ?"
 
     def cmd(self, line, wait=0.8):
         self.s.reset_input_buffer()
@@ -114,7 +115,7 @@ def main():
     ap.add_argument("--step", type=float, default=4.0, help="first step [DAC codes] (default 4)")
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--gain", type=int, default=60, help="espdr gain selector (default 60)")
-    ap.add_argument("--seconds", type=float, default=1.5)
+    ap.add_argument("--seconds", type=int, default=2)
     ap.add_argument("--save", action="store_true", help="BDC SAVE in the C3 and write tx/cal_c3.json")
     a = ap.parse_args()
 
