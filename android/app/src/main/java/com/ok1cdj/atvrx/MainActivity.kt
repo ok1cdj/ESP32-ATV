@@ -31,8 +31,8 @@ import android.widget.Spinner
 import android.widget.TextView
 
 /**
- * Phase F3 receiver screen: frequency, symbol rate, gain, start / stop; the picture; lock, MER, frames, service.
- * DVB-S2 QPSK 3/4 for now (MODCOD choice comes in F4).
+ * Receiver screen: frequency, symbol rate, gain, DVB-S2 modulation / code rate / frame size, start / stop; the picture;
+ * lock, MER / CNR, carrier offset with drift tracking, frames, TS, service and video.
  */
 class MainActivity : Activity() {
     private val rates = listOf(40_000, 50_000, 66_666, 100_000, 125_000, 250_000, 333_000, 400_000, 500_000)
@@ -40,6 +40,11 @@ class MainActivity : Activity() {
     private lateinit var freq: EditText
     private lateinit var rate: Spinner
     private lateinit var gain: EditText
+    private lateinit var constel: Spinner
+    private lateinit var codeRate: Spinner
+    private lateinit var frames: Spinner
+    private val consts = listOf("QPSK", "8PSK")
+    private val frameChoices = listOf(Receiver.FRAMES_NORMAL, Receiver.FRAMES_SHORT, Receiver.FRAMES_BOTH)
     private lateinit var startStop: Button
     private lateinit var info: TextView
     private lateinit var logView: TextView
@@ -50,9 +55,7 @@ class MainActivity : Activity() {
     private var receiver: Receiver? = null
     private var video: VideoDecoder? = null
     private var startedAt = 0L
-    private var lastTs = 0L
-    private var lastTsAt = 0L
-    private var tsRate = 0.0
+    private val tsHistory = ArrayDeque<Pair<Long, Long>>()   // (time, TS bytes): rate over the last 10 s
     private val ui = Handler(Looper.getMainLooper())
     private val prefs by lazy { getSharedPreferences("rx", MODE_PRIVATE) }
 
@@ -92,6 +95,24 @@ class MainActivity : Activity() {
             setText(prefs.getInt("gain", 30).toString()); hint = "dB"
         }
         root.addView(row(label("MHz"), freq, label("SR"), rate))
+        constel = spinner(consts, prefs.getString("const", "QPSK")!!)
+        codeRate = spinner(rateList(constel.selectedItem as String), prefs.getString("cr", "3/4")!!)
+        constel.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(a: android.widget.AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
+                val keep = codeRate.selectedItem as String?
+                val list = rateList(consts[pos])
+                codeRate.adapter = adapter(list)
+                codeRate.setSelection(list.indexOf(keep).coerceAtLeast(list.indexOf("3/4").coerceAtLeast(0)))
+            }
+            override fun onNothingSelected(a: android.widget.AdapterView<*>?) {}
+        }
+        frames = spinner(frameChoices.map { Receiver.frameSizeName(it) }, Receiver.frameSizeName(prefs.getInt("frames", Receiver.FRAMES_NORMAL)))
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(constel, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(codeRate, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(frames, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.6f))
+        })
         startStop = button("Start") { if (receiver == null) start() else stop() }
         root.addView(row(label("gain dB"), gain, startStop))
         root.addView(row(button("Replay recording") { startReplay() }, button("USB test (F1)") {
@@ -111,7 +132,7 @@ class MainActivity : Activity() {
         val filter = IntentFilter(permissionAction)
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(permissionReceiver, filter, RECEIVER_NOT_EXPORTED)
         else registerReceiver(permissionReceiver, filter)
-        say("ATV RX 0.2-f3 · ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
+        say("ATV RX 0.3-f4 · ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
         say(findDevice()?.let { "ESP32-S3 connected" } ?: "ESP32-S3 (303a:1001) not connected")
         refresh()
     }
@@ -120,6 +141,12 @@ class MainActivity : Activity() {
         stop()
         unregisterReceiver(permissionReceiver)
         super.onDestroy()
+    }
+
+    private fun rateList(c: String) = Receiver.MODCODS.keys.filter { it.first == c }.map { it.second }
+    private fun adapter(items: List<String>) = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, items)
+    private fun spinner(items: List<String>, sel: String) = Spinner(this).apply {
+        adapter = adapter(items); setSelection(items.indexOf(sel).coerceAtLeast(0))
     }
 
     private fun label(t: String) = TextView(this).apply { text = t; setPadding(8, 0, 8, 0) }
@@ -138,6 +165,7 @@ class MainActivity : Activity() {
     }
 
     private fun say(s: String) = runOnUiThread {
+        android.util.Log.i("atvrx", s)
         logView.append(s + "\n")
         logScroll.post { logScroll.fullScroll(ScrollView.FOCUS_DOWN) }
     }
@@ -157,13 +185,17 @@ class MainActivity : Activity() {
         val mhz = freq.text.toString().replace(',', '.').toDoubleOrNull() ?: return say("frequency?")
         val g = gain.text.toString().toIntOrNull() ?: return say("gain?")
         val sr = rates[rate.selectedItemPosition]
-        prefs.edit().putString("freq", freq.text.toString()).putInt("sr", sr).putInt("gain", g).apply()
+        val c = constel.selectedItem as String
+        val cr = codeRate.selectedItem as String
+        val fr = frameChoices[frames.selectedItemPosition]
+        prefs.edit().putString("freq", freq.text.toString()).putInt("sr", sr).putInt("gain", g)
+            .putString("const", c).putString("cr", cr).putInt("frames", fr).apply()
         val conn = usbManager.openDevice(dev) ?: return say("openDevice failed")
         val v = VideoDecoder(surface.holder.surface)
-        val r = Receiver(conn, dev, applicationInfo.nativeLibraryDir,
-            Receiver.Config(freqHz = Math.round(mhz * 1e6), sr = sr, gainDb = g.toDouble()), v, ::say)
+        val r = Receiver(conn, dev, applicationInfo.nativeLibraryDir, cacheDir,
+            Receiver.Config(freqHz = Math.round(mhz * 1e6), sr = sr, const = c, cr = cr, gainDb = g.toDouble(), frameSizes = fr), v, ::say)
         video = v; receiver = r
-        startedAt = System.nanoTime(); lastTs = 0; lastTsAt = startedAt; tsRate = 0.0
+        startedAt = System.nanoTime(); tsHistory.clear()
         r.start()
         startStop.text = "Stop"
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -177,10 +209,11 @@ class MainActivity : Activity() {
             ?: return say("no recording: USB test (F1) with 'save raw packets'")
         val sr = rates[rate.selectedItemPosition]
         val v = VideoDecoder(surface.holder.surface)
-        val r = Receiver(null, null, applicationInfo.nativeLibraryDir,
-            Receiver.Config(freqHz = 0, sr = sr, gainDb = 0.0, replay = f), v, ::say)
+        val r = Receiver(null, null, applicationInfo.nativeLibraryDir, cacheDir,
+            Receiver.Config(freqHz = 0, sr = sr, const = constel.selectedItem as String, cr = codeRate.selectedItem as String,
+                gainDb = 0.0, frameSizes = frameChoices[frames.selectedItemPosition], replay = f), v, ::say)
         video = v; receiver = r
-        startedAt = System.nanoTime(); lastTs = 0; lastTsAt = startedAt; tsRate = 0.0
+        startedAt = System.nanoTime(); tsHistory.clear()
         r.start()
         startStop.text = "Stop"
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -199,22 +232,24 @@ class MainActivity : Activity() {
         info.text = if (r == null) "stopped" else {
             val s = r.status
             val now = System.nanoTime()
-            if (now - lastTsAt > 1_000_000_000L) {
-                tsRate = (s.tsBytes - lastTs) * 8 / ((now - lastTsAt) / 1e9) / 1e3
-                lastTs = s.tsBytes; lastTsAt = now
-            }
+            tsHistory.addLast(now to s.tsBytes)
+            while (now - tsHistory.first().first > 10_000_000_000L) tsHistory.removeFirst()
+            val (t0, b0) = tsHistory.first()
+            val tsRate = if (now > t0) (s.tsBytes - b0) * 8 / ((now - t0) / 1e9) / 1e3 else 0.0
             val d = r.demux; val v = video
             val usb = r.link?.stats
+            val carrier = s.offsetHz + (if (s.freq.isNaN()) 0.0 else s.freq)
             buildString {
                 append("%s   %.0f s\n".format(s.state, (now - startedAt) / 1e9))
-                append("offset %+.1f kHz (search %.0f dB)  FREQ %s\n".format(s.offsetHz / 1e3, s.searchDb, num(s.freq, "%.0f")))
-                append("LOCK %s  FRAME %s  MER %s dB  SS %s\n".format(yn(s.lock), yn(s.frameLock), num(s.mer, "%.1f"), num(s.ss, "%.2f")))
-                append("frames ok %d  bad %d  locks %d\n".format(s.framesOk, s.framesBad, s.locks))
-                append("TS %.1f kb/s  %d pkts  TEI %d  CC %d\n".format(tsRate, d.packets, d.errorPackets, d.ccErrors))
+                append("carrier %+.2f kHz  (NCO %+.2f, residual %s Hz)\n".format(carrier / 1e3, s.offsetHz / 1e3, num(s.freq, "%.0f")))
+                append("drift steps %d  re-searches %d  search %.0f dB\n".format(s.driftSteps, s.researches, s.searchDb))
+                append("LOCK %s  FRAME %s  MER %s dB  CNR %s dB\n".format(yn(s.lock), yn(s.frameLock), num(s.mer, "%.1f"), num(s.cnr, "%.1f")))
+                append("frames ok %d  fixed %d  bad %d  locks %d\n".format(s.framesOk, s.framesFixed, s.framesBad, s.locks))
+                append("TS %.0f kb/s (10 s)  %d pkts  TEI %d  CC %d\n".format(tsRate, d.packets, d.errorPackets, d.ccErrors))
                 append("service %s / %s\n".format(d.service ?: "–", d.provider ?: "–"))
                 append("video %s %dx%d  %d frames%s\n".format(v?.mime?.substringAfter('/') ?: "–", v?.width ?: 0, v?.height ?: 0,
                     v?.frames ?: 0, v?.error?.let { "  ERR $it" } ?: ""))
-                append("USB lost %d  ESP dropped %d  queue drops %d".format(usb?.lost ?: 0, usb?.dropped ?: 0, s.queueDrops))
+                append("USB lost %d  jumps %d  ESP dropped %d  queue drops %d".format(usb?.lost ?: 0, usb?.jumps ?: 0, usb?.dropped ?: 0, s.queueDrops))
             }
         }
         ui.postDelayed(::refresh, 500)

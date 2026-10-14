@@ -24,13 +24,14 @@ class Receiver(
     private val conn: UsbDeviceConnection?,
     private val device: UsbDevice?,
     private val nativeDir: String,
+    private val workDir: File,
     val cfg: Config,
     private val video: VideoDecoder,
     private val log: (String) -> Unit,
 ) {
     /** replay: raw packets recorded by the USB test (F1) instead of the ESP32-S3, played at their sample rate */
     data class Config(val freqHz: Long, val sr: Int, val const: String = "QPSK", val cr: String = "3/4", val gainDb: Double,
-                      val replay: File? = null)
+                      val frameSizes: Int = FRAMES_NORMAL, val replay: File? = null)
 
     /** What the screen shows; written by the worker threads. */
     class Status {
@@ -42,8 +43,13 @@ class Receiver(
         @Volatile var mer = Double.NaN
         @Volatile var ss = Double.NaN
         @Volatile var freq = Double.NaN
-        @Volatile var framesOk = 0L
-        @Volatile var framesBad = 0L
+        @Volatile var cnr = Double.NaN
+        @Volatile var framesOk = 0L          // '_' clean
+        @Volatile var framesFixed = 0L       // '.' corrected by BCH
+        @Volatile var framesBad = 0L         // '!' (ldpc_tool) or ':' (built-in LDPC): dropped
+        @Volatile var driftSteps = 0L
+        @Volatile var researches = 0L
+        @Volatile var demodSince = 0L        // System.nanoTime() when leandvb started
         @Volatile var locks = 0L
         @Volatile var tsBytes = 0L
         @Volatile var queueDrops = 0L
@@ -65,8 +71,14 @@ class Receiver(
     @Volatile private var searchBusy = false
     private val search = FloatArray(2 * fs.toInt())
     private var searchFill = 0
-    private var ncoPhase = 0.0
-    private var ncoStep = 0.0
+    // NCO as a rotating phasor (no trig per sample); offset changes come from the search and the drift tracking
+    @Volatile private var ncoOffset = 0.0
+    private var ncoFor = Double.NaN
+    private var ncoRe = 1f; private var ncoIm = 0f
+    private var stepRe = 1f; private var stepIm = 0f
+    @Volatile private var lastFrameLock = 0L
+    private var lastTrack = 0L
+    private var infoFd: java.io.FileDescriptor? = null
     // ~4 s of samples to leandvb: it stops reading while ldpc_tool works on a batch of 32 frames
     private val queue = ArrayBlockingQueue<ByteArray>(4096)
     private var proc: Process? = null
@@ -78,11 +90,16 @@ class Receiver(
             try {
                 val l = EspLink(UsbCdc(conn!!, device!!))
                 link = l
+                // a run may still be streaming (the app was killed without ESP_STOP): end it first
+                l.send(EspLink.ESP_STOP)
+                try { l.await(EspLink.ESP_RUN, 1500) } catch (_: IOException) {}
                 l.checkFirmware()
                 val lo = l.configure(cfg.freqHz, decim, format, EspLink.gainSelector(cfg.gainDb))
                 log("LO %.6f MHz, %.0f ksps %s, SR %d, gain %.0f dB".format(lo / 1e6, fs / 1e3, if (wide) "cs4" else "cs8", cfg.sr, cfg.gainDb))
                 status.state = "searching"
                 l.onPacket = ::onPacket
+                l.onJump = { e, f -> log("USB: packet index %d, expected %d (%+d)".format(f, e, f - e)) }
+                l.resetStats()
                 l.send(EspLink.ESP_RUN, 0)
                 // the run's answer comes when it ends: after stop(), or when the ESP fails
                 while (running) {
@@ -130,6 +147,7 @@ class Receiver(
 
     fun stop() {
         running = false
+        try { infoFd?.let { android.system.Os.close(it) } } catch (_: Throwable) {}
         try { link?.send(EspLink.ESP_STOP) } catch (_: Throwable) {}
         try { link?.await(EspLink.ESP_RUN, 2000) } catch (_: Throwable) {}
         proc?.destroy()
@@ -156,7 +174,10 @@ class Receiver(
                 // off the USB reader thread: the FFTs take a moment and the ESP's FIFO is small
                 thread("rx-search") {
                     try {
-                        if (findSignal()) { startDemod(); searching = false }
+                        if (findSignal()) {
+                            if (proc == null) startDemod() else { status.state = "demodulating"; lastFrameLock = System.nanoTime() }
+                            searching = false
+                        }
                     } catch (t: Throwable) { status.state = "error: ${t.message}"; log(status.state) }
                     searchBusy = false
                 }
@@ -164,15 +185,25 @@ class Receiver(
             return
         }
         // NCO: move the signal to 0 Hz
-        val bb = ByteBuffer.allocate(iq.size * 4).order(ByteOrder.LITTLE_ENDIAN)
-        var ph = ncoPhase
-        for (i in iq.indices step 2) {
-            val c = cos(ph).toFloat(); val s = sin(ph).toFloat()
-            val re = iq[i]; val im = iq[i + 1]
-            bb.putFloat(re * c - im * s); bb.putFloat(re * s + im * c)
-            ph += ncoStep
+        val off = ncoOffset
+        if (off != ncoFor) {
+            ncoFor = off
+            val w = -2 * PI * off / fs
+            stepRe = cos(w).toFloat(); stepIm = sin(w).toFloat()
         }
-        ncoPhase = ph % (2 * PI)
+        var cr = ncoRe; var ci = ncoIm
+        val sr = stepRe; val si = stepIm
+        var i = 0
+        while (i < iq.size) {
+            val re = iq[i]; val im = iq[i + 1]
+            iq[i] = re * cr - im * ci; iq[i + 1] = re * ci + im * cr
+            val t = cr * sr - ci * si; ci = cr * si + ci * sr; cr = t
+            i += 2
+        }
+        val g = 1f / kotlin.math.sqrt(cr * cr + ci * ci)      // keep |phasor| = 1
+        ncoRe = cr * g; ncoIm = ci * g
+        val bb = ByteBuffer.allocate(iq.size * 4).order(ByteOrder.LITTLE_ENDIAN)
+        bb.asFloatBuffer().put(iq)
         if (!queue.offer(bb.array())) status.queueDrops++
     }
 
@@ -226,7 +257,7 @@ class Receiver(
         val occ = usable.filter { sm[it] > peak - 3 }
         val centre = ((occ.first() + occ.last()) / 2.0 - n / 2) * fs / n
         status.offsetHz = centre
-        ncoStep = -2 * PI * centre / fs
+        ncoOffset = centre
         log("signal %.0f dB above the floor, -3 dB width %.0f kHz, centre %+.1f kHz".format(
             peak - floor, (occ.last() - occ.first()) * fs / n / 1e3, centre / 1e3))
         return true
@@ -236,17 +267,51 @@ class Receiver(
 
     private fun startDemod() {
         val modcod = MODCODS[cfg.const to cfg.cr] ?: throw IOException("no MODCOD for ${cfg.const} ${cfg.cr}")
+        // --fd-info goes to a FIFO (fd 3 through sh), so that stderr carries only leandvb's frame marks and messages
+        val fifo = File(workDir, "leandvb-info")
+        fifo.delete()
+        android.system.Os.mkfifo(fifo.path, "600".toInt(8))
+        val fd = android.system.Os.open(fifo.path, android.system.OsConstants.O_RDWR, 0)   // O_RDWR: no blocking open
+        infoFd = fd
         val cmd = mutableListOf(
+            "/system/bin/sh", "-c", "exec \"\$0\" \"\$@\" 3>\"\$INFO_FIFO\"",
             File(nativeDir, "libleandvb.so").path, "--f32", "--float-scale", if (wide) "512" else "128",
             "-f", fs.toInt().toString(), "--sr", cfg.sr.toString(), "--standard", "DVB-S2",
             "--const", cfg.const, "--cr", cfg.cr, "--fastdrift", "-d",
-            "--modcods", (1L shl modcod).toString(), "--framesizes", "1",
-            "--ldpc-helper", File(nativeDir, "libldpc_tool.so").path, "--fd-info", "2")
+            "--modcods", (1L shl modcod).toString(), "--framesizes", cfg.frameSizes.toString(),
+            "--ldpc-helper", File(nativeDir, "libldpc_tool.so").path, "--fd-info", "3")
         if (cfg.sr < 100_000) cmd += listOf("--sampler", "rrc", "--rrc-rej", "50")
-        val p = ProcessBuilder(cmd).start()
+        if (fs > 3 * cfg.sr) cmd += "--cnr"
+        val pb = ProcessBuilder(cmd)
+        pb.environment()["INFO_FIFO"] = fifo.path
+        val p = pb.start()
         proc = p
         status.state = "demodulating"
-        log("leandvb started")
+        status.demodSince = System.nanoTime()
+        lastFrameLock = status.demodSince
+        log("leandvb started: ${cfg.const} ${cfg.cr}, frames ${frameSizeName(cfg.frameSizes)}${if (fs > 3 * cfg.sr) ", CNR" else ""}")
+        thread("rx-fdinfo") {
+            try {
+                java.io.FileInputStream(fd).bufferedReader(Charsets.ISO_8859_1).forEachLine { info(it) }
+            } catch (_: Throwable) {}
+        }
+        thread("rx-watch") {
+            // no frame lock for 10 s: the signal has moved further than the drift tracking follows; search again
+            try {
+                while (running) {
+                    Thread.sleep(1000)
+                    // leandvb prints FRAMELOCK only when it changes: the last state it reported holds
+                    if (status.frameLock) lastFrameLock = System.nanoTime()
+                    if (!searching && !searchBusy && System.nanoTime() - lastFrameLock > 10_000_000_000L) {
+                        status.researches++
+                        status.state = "lost: searching again"
+                        log("no frame lock for 10 s: searching again")
+                        searchFill = 0
+                        searching = true
+                    }
+                }
+            } catch (_: InterruptedException) {}
+        }
         thread("rx-feed") {
             try {
                 val out = p.outputStream
@@ -270,41 +335,67 @@ class Receiver(
             if (running) { status.state = "leandvb ended"; log("leandvb ended (exit ${try { p.exitValue() } catch (_: Throwable) { "?" }})") }
         }
         thread("rx-info") {
+            // leandvb -d: one mark per frame, no newline: '_' clean, '.' corrected, '!' / ':' failed; then message lines
             try {
                 val r = p.errorStream.bufferedReader(Charsets.ISO_8859_1)
                 val line = StringBuilder()
                 while (true) {
                     val c = r.read()
                     if (c < 0) break
-                    when (c.toChar()) {
-                        '_' -> status.framesOk++
-                        '!', ':' -> status.framesBad++
-                        '\n' -> { info(line.toString()); line.setLength(0) }
-                        else -> line.append(c.toChar())
-                    }
+                    val ch = c.toChar()
+                    if (line.isEmpty() && ch in "_.!:") {
+                        when (ch) {
+                            '_' -> status.framesOk++
+                            '.' -> status.framesFixed++
+                            else -> status.framesBad++
+                        }
+                    } else if (ch == '\n') {
+                        message(line.toString()); line.setLength(0)
+                    } else line.append(ch)
                 }
             } catch (_: Throwable) {}
         }
     }
 
-    /** --fd-info lines ("MER 10.6", "LOCK 1", ...) and leandvb's own messages. */
+    private fun message(l: String) {
+        if ("LOCKED" in l) status.locks++
+        if (l.startsWith("***") || "fatal" in l.lowercase() || l.startsWith("Spawning")) log("leandvb: $l")
+    }
+
+    /** --fd-info lines: "MER 10.6", "LOCK 1", "FREQ -2342" (residual carrier offset after the NCO, Hz), ... */
     private fun info(l: String) {
-        val m = INFO.find(l) ?: run {
-            if ("LOCKED" in l) status.locks++
-            if (l.startsWith("***") || "fatal" in l.lowercase()) log("leandvb: $l")
-            return
-        }
+        val m = INFO.find(l) ?: return
         val v = m.groupValues[2].toDoubleOrNull() ?: return
         when (m.groupValues[1]) {
             "MER" -> status.mer = v
+            "CNR" -> status.cnr = v
             "SS" -> status.ss = v
-            "FREQ" -> status.freq = v
+            "FREQ" -> { status.freq = v; track(v) }
             "LOCK" -> status.lock = v != 0.0
-            "FRAMELOCK" -> status.frameLock = v != 0.0
+            "FRAMELOCK" -> { status.frameLock = v != 0.0; if (v != 0.0) lastFrameLock = System.nanoTime() }
         }
     }
 
+    /**
+     * Drift tracking: the oscillators (no TCXO) walk by kHz as they warm up. While locked, move the NCO towards the
+     * carrier leandvb reports, in small steps (at most every 0.5 s) that its own tracking follows without losing lock.
+     */
+    private fun track(freq: Double) {
+        if (!status.frameLock || searching) return
+        val now = System.nanoTime()
+        if (now - lastTrack < 500_000_000L) return
+        lastTrack = now
+        if (kotlin.math.abs(freq) < 300) return
+        val maxStep = maxOf(200.0, cfg.sr * 0.002)
+        val step = kotlin.math.sign(freq) * minOf(kotlin.math.abs(freq) * 0.5, maxStep)
+        ncoOffset += step
+        status.offsetHz = ncoOffset
+        status.driftSteps++
+    }
+
     companion object {
+        const val FRAMES_NORMAL = 1; const val FRAMES_SHORT = 2; const val FRAMES_BOTH = 3   // leandvb --framesizes
+        fun frameSizeName(f: Int) = when (f) { FRAMES_NORMAL -> "normal"; FRAMES_SHORT -> "short"; else -> "normal+short" }
         private val CS4_MANT = floatArrayOf(256f, 279f, 304f, 332f, 362f, 395f, 431f, 470f)
         private val INFO = Regex("""\b(MER|SS|FREQ|LOCK|FRAMELOCK|CNR|VBER)\s+(-?[0-9.]+)""")
 

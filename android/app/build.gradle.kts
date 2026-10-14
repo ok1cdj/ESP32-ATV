@@ -9,8 +9,8 @@ android {
         applicationId = "com.ok1cdj.atvrx"
         minSdk = 28                       // aligned_alloc in the native ldpc_tool; requestWait(timeout) needs 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2-f3"
+        versionCode = 3
+        versionName = "0.3-f4"
     }
     // leandvb and ldpc_tool are executables shipped as lib*.so (android/native/build-native.sh): they must be
     // extracted to nativeLibraryDir, the one place an app may exec files from

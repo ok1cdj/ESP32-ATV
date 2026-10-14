@@ -18,11 +18,13 @@ class EspLink(private val usb: UsbCdc) {
                  val buf: ByteArray, val off: Int, val size: Int)
 
     class Stats {
+        var jumps = 0L                       // packet index out of sequence (not a gap)
         var packets = 0L; var samples = 0L; var lost = 0L; var dropped = 0; var skipped = 0L; var bad = 0L
         var bytes = 0L; var benchBlocks = 0L; var benchBad = 0L
     }
 
     @Volatile var onPacket: ((Packet) -> Unit)? = null
+    @Volatile var onJump: ((expected: Long, first: Long) -> Unit)? = null
     @Volatile var bench = false
     val stats = Stats()
 
@@ -113,7 +115,7 @@ class EspLink(private val usb: UsbCdc) {
 
     fun resetStats() = synchronized(this) {
         stats.packets = 0; stats.samples = 0; stats.lost = 0; stats.dropped = 0; stats.skipped = 0; stats.bad = 0
-        stats.bytes = 0; stats.benchBlocks = 0; stats.benchBad = 0
+        stats.bytes = 0; stats.benchBlocks = 0; stats.benchBad = 0; stats.jumps = 0
         expected = -1; benchCounter = -1
     }
 
@@ -155,7 +157,12 @@ class EspLink(private val usb: UsbCdc) {
                     val size = NB_HEADER + count * (BYTES_PER_SAMPLE[fmt] ?: 4)
                     if (end - start < size) return
                     val first = u32(start + 12)
-                    if (expected >= 0 && first != expected) stats.lost += (first - expected) and 0xFFFFFFFFL
+                    if (first == 0L) expected = -1      // a new run starts counting at 0
+                    if (expected >= 0 && first != expected) {
+                        val gap = (first - expected) and 0xFFFFFFFFL
+                        // a gap is samples the ESP or USB lost; a jump backwards or by more than a minute is not
+                        if (gap < 60_000_000L) stats.lost += gap else { stats.jumps++; onJump?.invoke(expected, first) }
+                    }
                     expected = (first + count) and 0xFFFFFFFFL
                     stats.packets++; stats.samples += count.toLong(); stats.dropped = u16(start + 6)
                     onPacket?.invoke(Packet(fmt, count, u16(start + 6), u32(start + 8), first, u16(start + 16), buf, start, size))
