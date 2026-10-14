@@ -6,212 +6,220 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Bundle
-import android.os.PowerManager
-import android.os.Process
+import android.os.Handler
+import android.os.Looper
+import android.text.InputType
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.WindowInsets
 import android.view.WindowManager
+import android.widget.ArrayAdapter
 import android.widget.Button
-import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Spinner
 import android.widget.TextView
-import java.io.BufferedOutputStream
-import java.io.File
-import java.io.FileOutputStream
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
- * Phase F1: does the phone's USB keep up with the ESP32-S3 receiver? Pure USB bench (NB_BENCH) and real sample
- * streams (cs8 333 ksps, cs4 500 ksps, cs8 250 ksps) for 60 s: MB/s, lost samples, units dropped by the ESP, CPU;
- * optionally the raw packets to a file for checking on the PC (rx/raw2cf32.py -> leandvb).
+ * Phase F3 receiver screen: frequency, symbol rate, gain, start / stop; the picture; lock, MER, frames, service.
+ * DVB-S2 QPSK 3/4 for now (MODCOD choice comes in F4).
  */
 class MainActivity : Activity() {
-    private data class Mode(val label: String, val decim: Int, val format: Int)
+    private val rates = listOf(40_000, 50_000, 66_666, 100_000, 125_000, 250_000, 333_000, 400_000, 500_000)
 
-    private val modes = listOf(
-        Mode("cs8 333k", 3, EspLink.FMT_CS8),
-        Mode("cs4 500k", 2, EspLink.FMT_CS4),
-        Mode("cs8 250k", 4, EspLink.FMT_CS8),
-    )
-    private val freqHz = 2_300_500_000L
-    private val seconds = 60
+    private lateinit var freq: EditText
+    private lateinit var rate: Spinner
+    private lateinit var gain: EditText
+    private lateinit var startStop: Button
+    private lateinit var info: TextView
+    private lateinit var logView: TextView
+    private lateinit var logScroll: ScrollView
+    private lateinit var surface: SurfaceView
+    private var surfaceReady = false
 
-    private lateinit var log: TextView
-    private lateinit var scroll: ScrollView
-    private lateinit var save: CheckBox
-    private lateinit var buttons: List<Button>
-    @Volatile private var busy = false
+    private var receiver: Receiver? = null
+    private var video: VideoDecoder? = null
+    private var startedAt = 0L
+    private var lastTs = 0L
+    private var lastTsAt = 0L
+    private var tsRate = 0.0
+    private val ui = Handler(Looper.getMainLooper())
+    private val prefs by lazy { getSharedPreferences("rx", MODE_PRIVATE) }
 
     private val usbManager by lazy { getSystemService(USB_SERVICE) as UsbManager }
     private val permissionAction by lazy { "$packageName.USB_PERMISSION" }
-    private var pending: (() -> Unit)? = null
     private val permissionReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
-            if (i.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) pending?.invoke()
-            else say("USB permission denied")
-            pending = null
+            if (i.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) start() else say("USB permission denied")
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 24, 24, 24) }
-        val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        // plain coloured views: the device theme drew the stock buttons invisible on Android 16
-        fun button(label: String, onClick: () -> Unit) = Button(this).apply {
-            text = label
-            isAllCaps = false
-            setTextColor(android.graphics.Color.WHITE)
-            background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(android.graphics.Color.rgb(0x1E, 0x5A, 0xA8)); cornerRadius = 16f
-            }
-            setOnClickListener { onClick() }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        surface = SurfaceView(this)
+        surface.holder.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(h: SurfaceHolder) { surfaceReady = true }
+            override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) {}
+            override fun surfaceDestroyed(h: SurfaceHolder) { surfaceReady = false; stop() }
+        })
+        val w = resources.displayMetrics.widthPixels - 48
+        root.addView(surface, LinearLayout.LayoutParams(MATCH_PARENT, w * 9 / 16))
+
+        info = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 13f; setPadding(0, 12, 0, 12) }
+        root.addView(info)
+
+        freq = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setText(prefs.getString("freq", "2300.500")); hint = "MHz"
         }
-        buttons = listOf(button("USB bench 10 s") { start { bench(it) } }) +
-            modes.map { m -> button("${m.label} – 60 s") { start { stream(it, m) } } }
-        buttons.forEach {
-            row.addView(it, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                .apply { bottomMargin = 12 })
+        rate = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, rates.map { "%.1f kS/s".format(it / 1e3) })
+            setSelection(rates.indexOf(prefs.getInt("sr", 50_000)).coerceAtLeast(0))
         }
-        save = CheckBox(this).apply { text = "save raw packets (for the PC)" }
-        val screen = CheckBox(this).apply {
-            text = "keep screen on"
-            setOnCheckedChangeListener { _, on ->
-                if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            }
+        gain = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
+            setText(prefs.getInt("gain", 30).toString()); hint = "dB"
         }
-        log = TextView(this).apply { textSize = 12f; setTextIsSelectable(true); typeface = android.graphics.Typeface.MONOSPACE }
-        scroll = ScrollView(this).apply { addView(log) }
-        root.addView(row); root.addView(save); root.addView(screen)
-        root.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(row(label("MHz"), freq, label("SR"), rate))
+        startStop = button("Start") { if (receiver == null) start() else stop() }
+        root.addView(row(label("gain dB"), gain, startStop))
+        root.addView(row(button("Replay recording") { startReplay() }, button("USB test (F1)") {
+            stop(); startActivity(Intent(this, BenchActivity::class.java))
+        }))
+
+        logView = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 11f; setTextIsSelectable(true) }
+        logScroll = ScrollView(this).apply { addView(logView) }
+        root.addView(logScroll, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f).apply { topMargin = 12 })
+
         setContentView(root)
-        // Android 15+ draws edge to edge: keep the content clear of the status, title and navigation bars
         root.setOnApplyWindowInsetsListener { v, insets ->
-            val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout())
+            val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout() or WindowInsets.Type.ime())
             v.setPadding(24 + bars.left, 24 + bars.top, 24 + bars.right, 24 + bars.bottom)
             insets
         }
         val filter = IntentFilter(permissionAction)
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(permissionReceiver, filter, RECEIVER_NOT_EXPORTED)
         else registerReceiver(permissionReceiver, filter)
-        say("ATV RX ${BuildConfigInfo.version} – F1 USB test. ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
-        say(findDevice()?.let { "ESP32-S3 found: ${it.deviceName}" } ?: "ESP32-S3 (303a:1001) not connected")
+        say("ATV RX 0.2-f3 · ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
+        say(findDevice()?.let { "ESP32-S3 connected" } ?: "ESP32-S3 (303a:1001) not connected")
+        refresh()
     }
 
     override fun onDestroy() {
+        stop()
         unregisterReceiver(permissionReceiver)
         super.onDestroy()
     }
 
+    private fun label(t: String) = TextView(this).apply { text = t; setPadding(8, 0, 8, 0) }
+
+    private fun row(vararg v: android.view.View) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = android.view.Gravity.CENTER_VERTICAL
+        v.forEach { addView(it, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, if (it is TextView && it !is EditText && it !is Button) 0f else 1f)) }
+    }
+
+    // plain coloured views: the device theme draws the stock buttons invisible on Android 16
+    private fun button(t: String, onClick: () -> Unit) = Button(this).apply {
+        text = t; isAllCaps = false; setTextColor(Color.WHITE)
+        background = GradientDrawable().apply { setColor(Color.rgb(0x1E, 0x5A, 0xA8)); cornerRadius = 16f }
+        setOnClickListener { onClick() }
+    }
+
     private fun say(s: String) = runOnUiThread {
-        log.append(s + "\n")
-        scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
+        logView.append(s + "\n")
+        logScroll.post { logScroll.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 
     private fun findDevice(): UsbDevice? =
         usbManager.deviceList.values.firstOrNull { it.vendorId == 0x303A && it.productId == 0x1001 }
 
-    /** Runs job on a worker thread once the USB permission is there. */
-    private fun start(job: (EspLink) -> Unit) {
-        if (busy) return
+    private fun start() {
+        if (receiver != null) return
         val dev = findDevice() ?: return say("ESP32-S3 (303a:1001) not connected")
+        if (!surfaceReady) return say("no picture surface yet")
         if (!usbManager.hasPermission(dev)) {
-            pending = { start(job) }
             val flags = if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
             usbManager.requestPermission(dev, PendingIntent.getBroadcast(this, 0, Intent(permissionAction).setPackage(packageName), flags))
             return
         }
-        busy = true
-        buttons.forEach { it.isEnabled = false; it.alpha = 0.4f }
-        Thread {
-            val wake = (getSystemService(POWER_SERVICE) as PowerManager)
-                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "atvrx:f1").apply { acquire(10 * 60 * 1000L) }
-            var link: EspLink? = null
-            try {
-                val conn = usbManager.openDevice(dev) ?: throw java.io.IOException("openDevice failed")
-                link = EspLink(UsbCdc(conn, dev))
-                link.checkFirmware()
-                job(link)
-            } catch (t: Throwable) {
-                say("ERROR: ${t.message}")
-            } finally {
-                link?.close()
-                wake.release()
-                busy = false
-                runOnUiThread { buttons.forEach { it.isEnabled = true; it.alpha = 1f } }
-            }
-        }.start()
+        val mhz = freq.text.toString().replace(',', '.').toDoubleOrNull() ?: return say("frequency?")
+        val g = gain.text.toString().toIntOrNull() ?: return say("gain?")
+        val sr = rates[rate.selectedItemPosition]
+        prefs.edit().putString("freq", freq.text.toString()).putInt("sr", sr).putInt("gain", g).apply()
+        val conn = usbManager.openDevice(dev) ?: return say("openDevice failed")
+        val v = VideoDecoder(surface.holder.surface)
+        val r = Receiver(conn, dev, applicationInfo.nativeLibraryDir,
+            Receiver.Config(freqHz = Math.round(mhz * 1e6), sr = sr, gainDb = g.toDouble()), v, ::say)
+        video = v; receiver = r
+        startedAt = System.nanoTime(); lastTs = 0; lastTsAt = startedAt; tsRate = 0.0
+        r.start()
+        startStop.text = "Stop"
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
-    private fun bench(link: EspLink) {
-        say("\n== USB bench 10 s (64-byte blocks, ESP sends as fast as USB takes them)")
-        link.bench = true
-        link.resetStats()
-        val t0 = System.nanoTime()
-        link.send(EspLink.NB_BENCH, 10)
-        val r = link.await(EspLink.NB_BENCH, 20_000)
-        val dt = (System.nanoTime() - t0) / 1e9
-        link.bench = false
-        val got = link.stats.benchBlocks * 64
-        say("%d bytes in %.2f s = %.3f MB/s; ESP sent %d bytes; %d bad blocks".format(got, dt, got / dt / 1e6, r.value, link.stats.benchBad))
-        say("=> 8-bit IQ up to %.0f ksps".format(got / dt / 2 / 1e3))
+    /** The newest raw recording of the USB test (F1) through the whole chain, without the ESP32-S3. */
+    private fun startReplay() {
+        if (receiver != null) return
+        if (!surfaceReady) return say("no picture surface yet")
+        val f = getExternalFilesDir(null)?.listFiles { x -> x.name.endsWith(".raw") }?.maxByOrNull { it.lastModified() }
+            ?: return say("no recording: USB test (F1) with 'save raw packets'")
+        val sr = rates[rate.selectedItemPosition]
+        val v = VideoDecoder(surface.holder.surface)
+        val r = Receiver(null, null, applicationInfo.nativeLibraryDir,
+            Receiver.Config(freqHz = 0, sr = sr, gainDb = 0.0, replay = f), v, ::say)
+        video = v; receiver = r
+        startedAt = System.nanoTime(); lastTs = 0; lastTsAt = startedAt; tsRate = 0.0
+        r.start()
+        startStop.text = "Stop"
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
-    private fun stream(link: EspLink, m: Mode) {
-        val rate = 1e6 / m.decim
-        val need = rate * EspLink.BYTES_PER_SAMPLE.getValue(m.format) / 1e6
-        say("\n== ${m.label}: %.0f ksps, %.2f MB/s needed, %d s, %.4f MHz".format(rate / 1e3, need, seconds, freqHz / 1e6))
-        val lo = link.configure(freqHz, m.decim, m.format, EspLink.gainSelector(30.0))
-        say("LO %.6f MHz".format(lo / 1e6))
-        var out: BufferedOutputStream? = null
-        var file: File? = null
-        if (save.isChecked) {
-            val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-            file = File(getExternalFilesDir(null), "f1-${m.label.replace(' ', '-')}-$stamp.raw")
-            out = BufferedOutputStream(FileOutputStream(file), 1 shl 20)
-        }
-        link.onPacket = { p -> out?.write(p.buf, p.off, p.size) }
-        link.resetStats()
-        val cpu0 = Process.getElapsedCpuTime()
-        val t0 = System.nanoTime()
-        link.send(EspLink.ESP_RUN, seconds.toLong())
-        // progress once a second until the run's answer arrives
-        var last = 0L
-        var r: EspLink.Response? = null
-        while (r == null) {
-            r = try { link.await(EspLink.ESP_RUN, 1000) } catch (_: java.io.IOException) {
-                link.error?.let { throw it }
-                if ((System.nanoTime() - t0) / 1e9 > seconds + 15) throw java.io.IOException("no end of run")
-                null
-            }
-            val s = link.stats
-            val dt = (System.nanoTime() - t0) / 1e9
-            val rateNow = (s.bytes - last) / 1e6
-            last = s.bytes
-            if (r == null) say("%4.0f s  %.3f MB/s  lost %d  dropped %d".format(dt, rateNow, s.lost, s.dropped))
-        }
-        val dt = (System.nanoTime() - t0) / 1e9
-        val cpu = (Process.getElapsedCpuTime() - cpu0) / 10.0 / dt
-        link.onPacket = null
-        out?.close()
-        val s = link.stats
-        say("%d samples in %d packets, %.1f s = %.3f MB/s (%.0f ksps)".format(s.samples, s.packets, dt, s.bytes / dt / 1e6, s.samples / dt / 1e3))
-        say("lost %d samples, %d units dropped by the ESP, %d stray bytes, %d bad headers; app CPU %.0f %% of one core".format(s.lost, s.dropped, s.skipped, s.bad, cpu))
-        if (r.value != 0L) say("RUN FAILED: code ${r.value}")
-        try {
-            say("ESP: dropped %d, FIFO peak %d bytes, worst service %d / %d cycles".format(
-                link.stat(EspLink.NB_STAT_DROPPED), link.stat(EspLink.NB_STAT_FIFO_PEAK),
-                link.stat(EspLink.ESP_STAT_SERVICE_MAX0), link.stat(EspLink.ESP_STAT_SERVICE_MAX1)))
-        } catch (t: Throwable) { say("(stats: ${t.message})") }
-        say(if (s.lost == 0L && s.dropped == 0) "RESULT ${m.label}: OK, no loss" else "RESULT ${m.label}: LOSS")
-        file?.let { say("raw: ${it.absolutePath} (%.1f MB)".format(it.length() / 1e6)) }
+    private fun stop() {
+        val r = receiver ?: return
+        receiver = null
+        Thread { r.stop() }.start()
+        startStop.text = "Start"
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
+
+    private fun refresh() {
+        val r = receiver
+        info.text = if (r == null) "stopped" else {
+            val s = r.status
+            val now = System.nanoTime()
+            if (now - lastTsAt > 1_000_000_000L) {
+                tsRate = (s.tsBytes - lastTs) * 8 / ((now - lastTsAt) / 1e9) / 1e3
+                lastTs = s.tsBytes; lastTsAt = now
+            }
+            val d = r.demux; val v = video
+            val usb = r.link?.stats
+            buildString {
+                append("%s   %.0f s\n".format(s.state, (now - startedAt) / 1e9))
+                append("offset %+.1f kHz (search %.0f dB)  FREQ %s\n".format(s.offsetHz / 1e3, s.searchDb, num(s.freq, "%.0f")))
+                append("LOCK %s  FRAME %s  MER %s dB  SS %s\n".format(yn(s.lock), yn(s.frameLock), num(s.mer, "%.1f"), num(s.ss, "%.2f")))
+                append("frames ok %d  bad %d  locks %d\n".format(s.framesOk, s.framesBad, s.locks))
+                append("TS %.1f kb/s  %d pkts  TEI %d  CC %d\n".format(tsRate, d.packets, d.errorPackets, d.ccErrors))
+                append("service %s / %s\n".format(d.service ?: "–", d.provider ?: "–"))
+                append("video %s %dx%d  %d frames%s\n".format(v?.mime?.substringAfter('/') ?: "–", v?.width ?: 0, v?.height ?: 0,
+                    v?.frames ?: 0, v?.error?.let { "  ERR $it" } ?: ""))
+                append("USB lost %d  ESP dropped %d  queue drops %d".format(usb?.lost ?: 0, usb?.dropped ?: 0, s.queueDrops))
+            }
+        }
+        ui.postDelayed(::refresh, 500)
+    }
+
+    private fun yn(b: Boolean) = if (b) "yes" else "no"
+    private fun num(x: Double, f: String) = if (x.isNaN()) "–" else f.format(x)
 }
-
-object BuildConfigInfo { const val version = "0.1-f1" }

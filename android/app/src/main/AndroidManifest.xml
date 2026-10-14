@@ -22,5 +22,8 @@
                 android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
                 android:resource="@xml/usb_device_filter" />
         </activity>
+        <activity
+            android:name=".BenchActivity"
+            android:exported="false" />
     </application>
 </manifest>
