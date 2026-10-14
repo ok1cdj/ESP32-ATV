@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- launcher foreground (108dp canvas, 66dp safe zone): a screen with a test-card bar and an antenna -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF" android:pathData="M30,40h48a4,4 0,0 1,4 4v28a4,4 0,0 1,-4 4H30a4,4 0,0 1,-4 -4V44a4,4 0,0 1,4 -4z" />
+    <path android:fillColor="#1E5AA8" android:pathData="M31,45h46v26H31z" />
+    <path android:fillColor="#FFD60A" android:pathData="M31,45h9.2v18H31z" />
+    <path android:fillColor="#30D158" android:pathData="M40.2,45h9.2v18h-9.2z" />
+    <path android:fillColor="#5AC8FA" android:pathData="M49.4,45h9.2v18h-9.2z" />
+    <path android:fillColor="#FF375F" android:pathData="M58.6,45h9.2v18h-9.2z" />
+    <path android:fillColor="#BF5AF2" android:pathData="M67.8,45H77v18h-9.2z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M53,40l-9,-10 2.2,-2 8.8,9.8 8.8,-9.8 2.2,2 -9,10z" />
+</vector>

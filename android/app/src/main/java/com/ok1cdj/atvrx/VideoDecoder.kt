@@ -8,8 +8,9 @@ import android.view.Surface
  * Hardware video decoder on a Surface. Every access unit is shown as soon as it is decoded, ignoring the PCR/PTS
  * time base: the beacon restarts its time base on every loop (the PC chain does the same with ffmpeg setpts).
  * The codec starts at the first parameter set (H.264 SPS / HEVC VPS), so decoding begins on a clean picture.
+ * The Surface can come and go (screen off, app in the background): without one nothing is decoded, the TS still flows.
  */
-class VideoDecoder(private val surface: Surface) {
+class VideoDecoder(private var surface: Surface? = null) {
     @Volatile var width = 0; private set
     @Volatile var height = 0; private set
     @Volatile var mime: String? = null; private set
@@ -20,7 +21,16 @@ class VideoDecoder(private val surface: Surface) {
     private var pts = 0L
     private val info = MediaCodec.BufferInfo()
 
+    @Synchronized
+    fun setSurface(s: Surface?) {
+        if (s === surface) return
+        release()
+        surface = s
+    }
+
+    @Synchronized
     fun feed(streamType: Int, au: ByteArray) {
+        if (surface == null) return
         try {
             val c = codec ?: start(streamType, au) ?: return
             val i = c.dequeueInputBuffer(20_000)
@@ -82,6 +92,7 @@ class VideoDecoder(private val surface: Surface) {
         }
     }
 
+    @Synchronized
     fun release() {
         try { codec?.stop() } catch (_: Exception) {}
         try { codec?.release() } catch (_: Exception) {}
