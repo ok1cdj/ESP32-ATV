@@ -43,8 +43,8 @@ def build_iter():
 def beacon(sr, frame):
     d = os.path.join(OUT, "beacons")
     subprocess.run([os.path.join(ROOT, "tx", "make_beacons.sh"), str(sr)], check=True, stdout=subprocess.DEVNULL,
-                   env=dict(os.environ, CALL="SV0SYH", FRAME=frame, OUTDIR=d))
-    return os.path.join(d, f"sv0syh-{(sr + 500) // 1000}k" + ("-short" if frame == "short" else ""))
+                   env=dict(os.environ, CALL="N0CALL", FRAME=frame, OUTDIR=d))
+    return os.path.join(d, f"n0call-{(sr + 500) // 1000}k" + ("-short" if frame == "short" else ""))
 
 
 def reference(sr, frame, seconds, offset):

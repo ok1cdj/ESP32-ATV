@@ -2,7 +2,7 @@
 """Tests of the Decimator in our ESP32-DATV-RX fork (rx_dvbs2.py), without hardware.
 
     third_party/ESP32-DATV-RX/.venv/bin/python rx/test_rx_decim.py unit
-    third_party/ESP32-DATV-RX/.venv/bin/python rx/test_rx_decim.py chain tx/beacons/sv0syh-67k/beacon.bin 66666.6667 --esn0 6
+    third_party/ESP32-DATV-RX/.venv/bin/python rx/test_rx_decim.py chain tx/beacons/yourcall-67k/beacon.bin 66666.6667 --esn0 6
 
 unit:  streaming in odd-sized chunks gives the same output as one block; passband flat, stopband down.
 chain: beacon -> RRC 0.35 at 1 MS/s -> AWGN -> 333 ksps -> cu8 (as espdr-rx sends it) -> rx_dvbs2.Decimator in random

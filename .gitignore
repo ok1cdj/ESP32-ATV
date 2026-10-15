@@ -2,3 +2,5 @@ build/
 __pycache__/
 # internal notes (Czech): state, plans, measurement logs – not published
 notes/
+# generated beacons carry the operator's callsign: make your own (CALL=YOURCALL tx/make_beacons.sh)
+tx/beacons/

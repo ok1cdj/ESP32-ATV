@@ -3,7 +3,7 @@
 RRC 0.35 pulse shaping -> frequency offset -> cf32 reference, which ESP32-DATV-RX's tools/sim_wide.py then
 resamples to the receiver rate, quantises (cs4 in --wide mode), adds noise to and decodes with leandvb.
 
-    rx/sim_beacon.py tx/beacons/sv0syh-333k/beacon.bin -o build/beacon_ref.cf32
+    rx/sim_beacon.py tx/beacons/yourcall-333k/beacon.bin -o build/beacon_ref.cf32
     third_party/ESP32-DATV-RX/.venv/bin/python third_party/ESP32-DATV-RX/tools/sim_wide.py build/beacon_ref.cf32 \
         --fs-in 1332000 --fs-out 500000 --sr 333000 --bits 4 --esn0 12
 

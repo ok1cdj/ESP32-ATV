@@ -120,8 +120,8 @@ Other tools: `rx/level_sweep.sh` (sensitivity sweep, `FRAME=short` for short fra
 ## Test without hardware
 ```sh
 PY=third_party/ESP32-DATV-RX/.venv/bin/python
-NS=$(grep -oP 'BEACON_SYMBOLS\s+\K[0-9]+' tx/beacons/sv0syh-333k/beacon_cfg.h)
-$PY rx/sim_beacon.py tx/beacons/sv0syh-333k/beacon.bin -o build/beacon_ref.cf32 --loops 20 --sps 3 --baud 333333.3333 --symbols $NS
+NS=$(grep -oP 'BEACON_SYMBOLS\s+\K[0-9]+' tx/beacons/yourcall-333k/beacon_cfg.h)
+$PY rx/sim_beacon.py tx/beacons/yourcall-333k/beacon.bin -o build/beacon_ref.cf32 --loops 20 --sps 3 --baud 333333.3333 --symbols $NS
 $PY third_party/ESP32-DATV-RX/tools/sim_wide.py build/beacon_ref.cf32 --fs-in 1000000 --fs-out 500000 --sr 333333 \
     --bits 4 --esn0 9 --repeat 1 --ldpc-helper third_party/ESP32-DATV-RX/build/LDPC/ldpc_tool
 ```
