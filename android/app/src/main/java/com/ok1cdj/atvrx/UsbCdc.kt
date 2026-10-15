@@ -38,6 +38,15 @@ class UsbCdc(private val conn: UsbDeviceConnection, device: UsbDevice) {
         if (conn.bulkTransfer(epOut, b, b.size, 1000) != b.size) throw IOException("USB write failed")
     }
 
+    /** SET_CONTROL_LINE_STATE: DTR bit 0, RTS bit 1 (the ESP32's USB-Serial/JTAG maps them to its boot and reset logic). */
+    fun setLines(dtr: Boolean, rts: Boolean) {
+        val v = (if (dtr) 1 else 0) or (if (rts) 2 else 0)
+        if (conn.controlTransfer(0x21, 0x22, v, comm.id, null, 0, 1000) < 0) throw IOException("SET_CONTROL_LINE_STATE failed")
+    }
+
+    /** One synchronous read (for request / response protocols); the bytes read, 0 on timeout. */
+    fun read(b: ByteArray, timeoutMs: Int): Int = maxOf(0, conn.bulkTransfer(epIn, b, b.size, timeoutMs))
+
     /**
      * Reads until [running] turns false, with [depth] requests of [size] bytes in flight so that the host never
      * leaves the endpoint idle; every completed transfer goes to [sink] (array, length).

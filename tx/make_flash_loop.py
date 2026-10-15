@@ -9,7 +9,8 @@ loop joins up), our DVB-S2 encoder (build/s2enc/s2enc --loop) makes the symbols.
     esptool --chip esp32c3 write-flash 0x110000 loop.bin          (the firmware stays; the C3 plays it after a reset)
 
 Header (4096 bytes, little endian, as video_hdr_t in the firmware): "DATVVID1", version 3, symbols, baud, data bytes
-(symbols / 4 + 64), CRC32 of the data, pilots, MODCOD, flags (bit 0 short frames), 0, service[32], provider[32]. Then the
+(symbols / 4 + 64), CRC32 of the data, pilots, MODCOD, flags (bit 0 short frames), 0, service[32], provider[32], frequency
+[kHz], DAC amplitude, 0 (the C3 sends the loop there, whatever its panel says). Then the
 symbols 4 per byte (first in the low bits, bit 0 = I > 0, bit 1 = Q > 0) and the first 64 bytes again.
 The C3's actual symbol rate is 160 MHz / round(160 MHz / baud): give a baud that divides 160 MHz (40000, 50000, 100000,
 125000, 250000, 333333) and receive with exactly that.
@@ -49,6 +50,8 @@ def main():
     ap.add_argument("--width", type=int, default=0, help="picture width (default: 320 below 100 kb/s of video, else 480)")
     ap.add_argument("--fps", type=int, default=0, help="frames per second (default: 5 below 100 kb/s of video, else 15)")
     ap.add_argument("--call", default="SV0SYH", help="service name; provider '<call> ESP32-ATV'")
+    ap.add_argument("--freq", type=float, default=2340.000, help="MHz the C3 sends the loop on (2300..2450)")
+    ap.add_argument("--amp", type=int, default=300, help="DAC amplitude 1..480 (300 = 0 dB, 13 = -27 dB)")
     ap.add_argument("-o", "--out", required=True)
     a = ap.parse_args()
     pilots = not a.no_pilots
@@ -104,8 +107,10 @@ def main():
     modcod = 1 + QPSK_RATES.index(a.rate)
     name = a.call.encode()[:31]
     prov = f"{a.call} ESP32-ATV".encode()[:31]
-    hdr = struct.pack("<8s5I4B32s32s", b"DATVVID1", 3, nsym, round(baud), len(data), zlib.crc32(data) & 0xFFFFFFFF,
-                      int(pilots), modcod, 1 if a.frame == "short" else 0, 0, name, prov)
+    if not 2300 <= a.freq <= 2450 or not 1 <= a.amp <= 480:
+        sys.exit("--freq 2300..2450 MHz, --amp 1..480")
+    hdr = struct.pack("<8s5I4B32s32sIHH", b"DATVVID1", 3, nsym, round(baud), len(data), zlib.crc32(data) & 0xFFFFFFFF,
+                      int(pilots), modcod, 1 if a.frame == "short" else 0, 0, name, prov, round(a.freq * 1000), a.amp, 0)
     open(a.out, "wb").write(hdr.ljust(HEADER, b"\0") + data)
     os.remove(sym)
     if got < npk * 0.9 or got > npk * 1.25:

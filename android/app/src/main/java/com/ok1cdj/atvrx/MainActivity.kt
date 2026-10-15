@@ -243,6 +243,7 @@ class MainActivity : Activity() {
             "Delete preset" to ::deletePreset,
             "Replay recording" to ::startReplay,
             "USB test" to { stop(); startActivity(Intent(this, BenchActivity::class.java)) },
+            "Firmware (S3 / C3)" to { stop(); startActivity(Intent(this, FirmwareActivity::class.java)) },
             "About" to { startActivity(Intent(this, AboutActivity::class.java)) },
         )
         items.forEachIndexed { i, (t, _) -> m.menu.add(0, i, i, t) }
