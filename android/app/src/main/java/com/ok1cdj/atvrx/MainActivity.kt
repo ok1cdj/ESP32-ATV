@@ -387,8 +387,8 @@ class MainActivity : Activity() {
             buildString {
                 append("%s   %.0f s\n".format(s.state, (now - (service?.startedAt ?: now)) / 1e9))
                 append("carrier %+.2f kHz  (NCO %+.2f, residual %s Hz)\n".format(carrier / 1e3, s.offsetHz / 1e3, if (live) num(s.freq, "%.0f") else "–"))
-                append("drift %s  steps %d  re-searches %d  search %.0f dB\n".format(if (r.cfg.track) "on" else "off",
-                    s.driftSteps, s.researches, s.searchDb))
+                append("drift %s %+.0f Hz/s  re-searches %d  search %.0f dB\n".format(if (r.cfg.track) "on" else "off",
+                    s.driftRate, s.researches, s.searchDb))
                 append("LOCK %s  FRAME %s  MER %s dB  CNR %s dB\n".format(yn(s.lock), yn(s.frameLock), num(s.mer, "%.1f"), num(s.cnr, "%.1f")))
                 append("frames ok %d  fixed %d  bad %d  locks %d\n".format(s.framesOk, s.framesFixed, s.framesBad, s.locks))
                 append("TS %.0f kb/s (10 s)  %d pkts  TEI %d  CC %d\n".format(tsRate, d.packets, d.errorPackets, d.ccErrors))

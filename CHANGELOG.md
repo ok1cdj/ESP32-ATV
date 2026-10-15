@@ -6,6 +6,8 @@ ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the
 
 - PC receiver (`rx_dvbs2.py`): follows the transmitter's drift with a software NCO (`--no-track` turns it off): the
   ESP32-C3 drifts by some 260 Hz/s after a reset and leandvb alone loses it beyond ±sr/4.
+- The app follows the drift the same way (a smooth ramp instead of 50 Hz steps, which kept up with about 100 Hz/s only);
+  the status shows the rate (`drift on +46 Hz/s`).
 - The app warns about modes leandvb does not decode even from a clean signal: QPSK 3/5 and 5/6 with normal frames,
   8PSK with short frames (RX and TX).
 

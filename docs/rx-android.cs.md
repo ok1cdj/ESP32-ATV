@@ -62,7 +62,7 @@ v aplikaci nebo v oznámení.
 | řádek | význam |
 |---|---|
 | `carrier` | odchylka nosné od naladěného kmitočtu; `NCO` = softwarové doladění, `residual` = zbytek, který hlásí demodulátor |
-| `drift steps` | kolikrát aplikace dorovnala drift oscilátorů (ESP32 nemají TCXO, při zahřívání se posouvají o kHz) |
+| `drift … Hz/s` | jak rychle aplikace dolaďuje drift oscilátorů (ESP32 nemají TCXO; C3 se při zahřívání posouvá o kHz, až asi 260 Hz/s) |
 | `re-searches` | kolikrát se signál ztratil a hledal znovu (10 s – u nízkých rychlostí 2,5 dávky LDPC – bez dobrého rámce) |
 | `LOCK`, `FRAME` | zámek demodulátoru a rámcové synchronizace DVB-S2 |
 | `MER` | modulation error ratio v dB – hlavní míra kvality; QPSK 3/4 potřebuje zhruba > 5 dB, 8PSK 3/5 > 10 dB |

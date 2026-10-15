@@ -63,7 +63,7 @@ app or in the notification.
 | line | meaning |
 |---|---|
 | `carrier` | carrier offset from the tuned frequency; `NCO` = software correction, `residual` = what the demodulator still sees |
-| `drift steps` | how often the app followed the oscillator drift (ESP32 boards have no TCXO; they move by kHz while warming up) |
+| `drift … Hz/s` | how fast the app is following the oscillator drift (ESP32 boards have no TCXO; the C3 moves by kHz, up to some 260 Hz/s, while warming up) |
 | `re-searches` | how often the signal was lost and searched again (10 s – at low rates 2.5 LDPC batches – without a good frame) |
 | `LOCK`, `FRAME` | demodulator lock and DVB-S2 frame sync |
 | `MER` | modulation error ratio in dB – the main quality figure; QPSK 3/4 needs about > 5 dB, 8PSK 3/5 > 10 dB |

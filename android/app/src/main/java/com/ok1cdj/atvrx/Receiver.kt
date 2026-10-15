@@ -48,7 +48,7 @@ class Receiver(
         @Volatile var framesFixed = 0L       // '.' corrected by BCH
         @Volatile var framesBad = 0L         // '!' (ldpc_tool) or ':' (built-in LDPC): dropped
         @Volatile var tsCrcBad = 0L          // 'C': TS packet with a bad CRC
-        @Volatile var driftSteps = 0L
+        @Volatile var driftRate = 0.0       // Hz/s the NCO is ramping at (drift tracking)
         @Volatile var researches = 0L
         @Volatile var demodSince = 0L        // System.nanoTime() when leandvb started
         @Volatile var locks = 0L
@@ -84,7 +84,7 @@ class Receiver(
     private val batchNs = (32 * frameSymbols() / cfg.sr * 1e9).toLong()
     private val aliveNs = maxOf(10_000_000_000L, batchNs * 5 / 2)
     fun alive() = System.nanoTime() - lastFrameLock < aliveNs
-    private var lastTrack = 0L
+    @Volatile private var ncoRate = 0.0                       // Hz/s, set by track(), applied packet by packet
     private var infoFd: java.io.FileDescriptor? = null
     private var constFd: java.io.FileDescriptor? = null
     // ~4 s of samples to leandvb: it stops reading while ldpc_tool works on a batch of 32 frames
@@ -237,7 +237,12 @@ class Receiver(
             }
             return
         }
-        // NCO: move the signal to 0 Hz
+        // NCO: move the signal to 0 Hz; drift tracking ramps its frequency packet by packet (the phasor stays continuous)
+        val rate = ncoRate
+        if (rate != 0.0 && !searching && alive()) {          // no FREQ reports without frames: do not keep ramping
+            ncoOffset += rate * (iq.size / 2) / fs
+            status.offsetHz = ncoOffset
+        }
         val off = ncoOffset
         if (off != ncoFor) {
             ncoFor = off
@@ -485,22 +490,17 @@ class Receiver(
     }
 
     /**
-     * Drift tracking: the oscillators (no TCXO) walk by kHz as they warm up. While locked, move the NCO towards the
-     * carrier leandvb reports, in small steps (at most every 0.5 s) that its own tracking follows without losing lock.
+     * Drift tracking: the oscillators (no TCXO) walk by kHz as they warm up - the C3 up to some 260 Hz/s after power-up.
+     * A first-order loop on the carrier leandvb reports (FREQ, left after the NCO): the NCO ramps at 0.5 x FREQ Hz/s,
+     * at most 600 Hz/s, smoothly (steps of 200 Hz upset leandvb's lock at 50 kS/s: replay 58 -> 8 good frames). A drift
+     * of r Hz/s stays r / 0.5 behind (260 Hz/s: about 500 Hz, well inside what leandvb follows). As rx_dvbs2.py's Nco.
      */
     private fun track(freq: Double) {
         // only on a live signal: a stale FRAMELOCK on noise would walk the NCO away (MER -13 dB seen when the TX stopped)
-        if (!cfg.track || searching || !alive() || !(status.mer > 3.0)) return
-        val now = System.nanoTime()
-        if (now - lastTrack < 500_000_000L) return
-        lastTrack = now
-        // leandvb follows a few kHz itself; steps of 200 Hz upset its lock at 50 kS/s (replay: 58 -> 8 good frames), so:
-        // a 1 kHz dead band and at most 50 Hz per 0.5 s – the C3 drifts some 20 Hz/s while warming up
-        if (kotlin.math.abs(freq) < 1000) return
-        val step = kotlin.math.sign(freq) * minOf(kotlin.math.abs(freq) * 0.25, 50.0)
-        ncoOffset += step
-        status.offsetHz = ncoOffset
-        status.driftSteps++
+        val rate = if (!cfg.track || searching || !alive() || !(status.mer > 3.0)) 0.0
+                   else (0.5 * freq).coerceIn(-600.0, 600.0)
+        ncoRate = rate
+        status.driftRate = rate
     }
 
     companion object {
