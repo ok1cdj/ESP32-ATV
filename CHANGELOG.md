@@ -2,7 +2,7 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
-## Unreleased
+## 0.5-beta – 2026-10-15
 
 ### DVB-S2 short frames
 At low symbol rates the first picture comes about 3.5× sooner: on the bench at 40 kS/s 8.4–9.0 s instead of 28–35 s,

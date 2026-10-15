@@ -10,7 +10,7 @@ spolu s MER, konstelací a údaji o streamu. Protějškem je samostatný maják 
 > **Beta.** Vysílat smí jen radioamatéři s platným oprávněním, na kmitočtech podle národních podmínek a band plánu.
 > Přijímač je ke stažení zdarma pod GNU GPL v3.
 
-![ATV RX na telefonu: obraz majáku, stav příjmu a konstelace](img/atvrx-app.png)
+![ATV RX na telefonu: obraz majáku, stav příjmu, spektrum a konstelace](img/atvrx-app.png)
 
 ## Co potřebuješ
 

@@ -10,7 +10,7 @@ with MER, constellation and stream information. Its counterpart is the stand-alo
 > **Beta.** Transmitting is for licensed radio amateurs only, on frequencies allowed by your licence and band plan.
 > The receiver is free software under the GNU GPL v3.
 
-![ATV RX on a phone: the beacon picture, reception status and constellation](img/atvrx-app.png)
+![ATV RX on a phone: the beacon picture, reception status, spectrum and constellation](img/atvrx-app.png)
 
 ## What you need
 
