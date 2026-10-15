@@ -362,7 +362,9 @@ class Receiver(
             "--const", cfg.const, "--cr", cfg.cr, "--fastdrift", "-d",
             "--modcods", (1L shl modcod).toString(), "--framesizes", cfg.frameSizes.toString(),
             "--ldpc-helper", File(nativeDir, "libldpc_tool.so").path, "--fd-info", "3", "--fd-const", "4")
-        if (cfg.sr < 100_000) cmd += listOf("--sampler", "rrc", "--rrc-rej", "50")
+        // --fastlock: no ~5 normal frames of data thrown away before each new search (4 s at 40 kS/s); the first lock on
+        // normal frames is often a false one (MER < 0), and this gets out of it sooner (rx/sim_lock.py)
+        if (cfg.sr < 100_000) cmd += listOf("--sampler", "rrc", "--rrc-rej", "50", "--fastlock")
         if (fs > 3 * cfg.sr) cmd += "--cnr"
         val pb = ProcessBuilder(cmd)
         pb.environment()["INFO_FIFO"] = infoFifo.path

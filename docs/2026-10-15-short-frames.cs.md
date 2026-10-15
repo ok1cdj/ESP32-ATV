@@ -92,3 +92,31 @@ stole. C3 se zahříváním odjel o +20 až +30 kHz od LO přijímače. Časy od
 - Přijímač nastavený na normální rámce maják s krátkými nedekóduje (0 rámců, MER v pořádku) – zvol správnou předvolbu
   nebo *normal+short*.
 - Práh se na stole neměřil (blízké pole); podle simulace je stejný.
+
+## Falešný první zámek (simulace, 15. 10. 2026)
+
+`rx/sim_lock.py` krmí leandvb v reálném čase se stejnými volbami jako přijímače a zapisuje FRAMELOCK, FREQ a MER, takže
+falešný zámek je vidět přímo. 40 kS/s, Es/N0 20 dB, 3 semínka na případ:
+
+- **Normální rámce se zamykají falešně i bez čehokoli navíc** – v 9 z 12 běhů (nosná 300 nebo 3000 Hz mimo, drift 0 nebo
+  70 Hz/s); první TS za 32–50 s, dvakrát ne do 50 s. **Krátké rámce: 12 z 12 hned správně**, první TS 8,4 s.
+- **Není to únik nosné:** tón −40, −20 nebo −10 dBc na nosné (únik C3) nebo na 0 Hz (zbytek DC přijímače) nic nemění.
+  Kalibrovaný únik C3 je při 0 dB stejně kolem −54 dBc.
+- **Proč** (leansdr `s2_frame_receiver`): kmitočet nosné se nejdřív odhadne z 90 symbolů PLHEADER, pak se zpřesňuje
+  z fáze pilotů vzdálených 1476 symbolů. Špatný start se může udržet – piloty sedí, data rotují (MER < 0) – a kontroluje
+  se jen jednou za rámec: každých 0,83 s u normálních, 0,21 s u krátkých rámců. Sledování smí až do ±Rs/4
+  (`--freq-tol 0.25`), odtud ±10 kHz na stole. Po ztrátě zámku leandvb zahodí asi 5 normálních rámců dat (4 s při
+  40 kS/s), než začne znovu hledat.
+- **`--fastlock`** to zahazování vypne. Falešnému prvnímu zámku nezabrání, ale leandvb se z něj dostane dřív: první TS
+  31–40 s ve všech 6 bězích proti 34–44 s a 2 během bez obrazu; u prahu (Es/N0 5–6 dB) dekódoval stejně nebo víc.
+  Užší `--freq-tol` jen přesune falešný zámek na novou mez a ztratí skutečný signál, který driftuje – nepoužito.
+  PC přijímač i aplikace teď pod 100 kS/s spouštějí leandvb s `--fastlock`.
+
+Krátké rámce zůstávají pro nízké symbolové rychlosti lepší volbou.
+
+```sh
+PY=third_party/ESP32-DATV-RX/.venv/bin/python
+$PY rx/sim_lock.py --frame normal short --offset 300 3000 --drift 0 70        # výsledek po bězích; logy v build/sim-lock/
+$PY rx/sim_lock.py --frame normal --tone -40 -20 -10 --tone-at carrier lo
+$PY rx/sim_lock.py --frame normal --drift 70 --extra - fastlock freq-tol=0.1
+```

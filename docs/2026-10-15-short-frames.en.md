@@ -92,3 +92,31 @@ same desk. The C3 drifted +20 to +30 kHz from the receiver's LO while warming up
 - A receiver set to normal frames does not decode a short-frame beacon (0 frames, MER fine) – pick the right preset or
   *normal+short*.
 - The threshold was not measured on the bench (near field); the simulation says it is the same.
+
+## The false first lock (simulation, 2026-10-15)
+
+`rx/sim_lock.py` feeds leandvb in real time with the receivers' options and logs FRAMELOCK, FREQ and MER, so a false
+lock shows up directly. At 40 kS/s, Es/N0 20 dB, 3 seeds per case:
+
+- **Normal frames lock falsely without anything added** – in 9 of 12 runs (carrier 300 or 3000 Hz off, drift 0 or
+  70 Hz/s); the first TS came after 32–50 s, twice not in 50 s. **Short frames: 12 of 12 right at once**, first TS 8.4 s.
+- **Not the carrier leakage:** a tone of −40, −20 or −10 dBc at the carrier (the C3's leakage) or at 0 Hz (DC left in the
+  receiver) changes nothing. The C3's calibrated leakage is about −54 dBc at 0 dB anyway.
+- **Why** (leansdr `s2_frame_receiver`): the carrier frequency is first estimated from the 90 symbols of the PLHEADER,
+  then refined from the phase of the pilots, 1476 symbols apart. A wrong start can hold – the pilots line up, the data
+  rotate (MER < 0) – and is checked only once per frame: every 0.83 s with normal frames, 0.21 s with short ones.
+  Tracking may go as far as ±Rs/4 (`--freq-tol 0.25`), hence the ±10 kHz seen on the bench. After losing a lock,
+  leandvb throws away about 5 normal frames of data (4 s at 40 kS/s) before it searches again.
+- **`--fastlock`** stops that throwing away. It does not prevent the false first lock, but leandvb gets out of it sooner:
+  first TS 31–40 s in all 6 runs, against 34–44 s and 2 runs without a picture; near the threshold (Es/N0 5–6 dB) it
+  decoded as much or more. A narrower `--freq-tol` only moves the false lock to the new limit and loses real signals
+  that drift – not used. The PC receiver and the app now run leandvb with `--fastlock` below 100 kS/s.
+
+Short frames remain the better choice at low symbol rates.
+
+```sh
+PY=third_party/ESP32-DATV-RX/.venv/bin/python
+$PY rx/sim_lock.py --frame normal short --offset 300 3000 --drift 0 70        # results per run; logs in build/sim-lock/
+$PY rx/sim_lock.py --frame normal --tone -40 -20 -10 --tone-at carrier lo
+$PY rx/sim_lock.py --frame normal --drift 70 --extra - fastlock freq-tol=0.1
+```
