@@ -111,7 +111,7 @@ class C3Link(private val usb: UsbCdc) : AutoCloseable {
     /** Starts a transmission: returns the firmware's "OK QPSKT ..." line, throws on ERR or silence. */
     fun start(cmd: String): String {
         command(cmd)
-        val l = waitLine(8000) { it.startsWith("OK ") || it.startsWith("ERR") } ?: throw IOException("no answer from the C3")
+        val l = waitLine(8000) { it.startsWith("OK QPSKT") || it.startsWith("ERR") } ?: throw IOException("no answer from the C3")
         if (l.startsWith("ERR")) throw IOException("C3: $l")
         sentSince = 0
         return l
@@ -151,6 +151,28 @@ class C3Link(private val usb: UsbCdc) : AutoCloseable {
             }
             best?.let { return it.second }
             return if (baud * 16L <= 4_000_000) 16 else if (baud * 8L <= 4_000_000) 8 else 4
+        }
+
+        private const val P8_MIN_PERIOD = 75L
+
+        /**
+         * Samples per symbol for 8PSK (tx_dvbs.py auto_sps_8psk): the 8 MS/s loop with 16..64 samples per symbol when
+         * that hits the rate within 1 % (125..500 kS/s), below that a C loop with at least 75 cycles per DAC sample.
+         */
+        fun psk8Sps(baud: Int): Int {
+            val sps = Math.round(CPU_HZ.toDouble() / (20 * baud)).toInt()
+            if (sps in 16..64 && Math.abs(CPU_HZ.toDouble() / (20 * sps) / baud - 1) <= 0.01) return sps
+            for (s in 64 downTo 16) if (CPU_HZ / (baud.toLong() * s) >= P8_MIN_PERIOD) return s
+            throw IllegalArgumentException("8PSK: symbol rate too high for the C3")
+        }
+
+        /** The symbol rate the firmware sends for 8PSK at that sps (tx_dvbs.py output_baud). */
+        fun psk8Baud(baud: Int, sps: Int): Double {
+            val sampleHz = baud.toLong() * sps
+            val period = (CPU_HZ + sampleHz / 2) / sampleHz
+            if (period != 20L && sps in 16..64 && CPU_HZ / sampleHz >= P8_MIN_PERIOD) return baud.toDouble()
+            if (sps in 16..64 && period == 20L && CPU_HZ / baud == period * sps) return baud.toDouble()
+            return CPU_HZ.toDouble() / (period * sps)
         }
 
         /** The symbol rate the firmware actually sends for QPSK at that sps (its clock is 160 MHz / whole cycles). */

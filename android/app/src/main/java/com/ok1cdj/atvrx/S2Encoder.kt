@@ -36,5 +36,6 @@ class S2Encoder(val const: String, val rate: String, val shortFrame: Boolean, va
         @JvmStatic private external fun nativeStreamFrame(h: Long, out: ByteArray): Int
 
         val QPSK_RATES = listOf("1/4", "1/3", "2/5", "1/2", "3/5", "2/3", "3/4", "4/5", "5/6", "8/9", "9/10")
+        val PSK8_RATES = listOf("3/5", "2/3", "3/4", "5/6", "8/9", "9/10")
     }
 }

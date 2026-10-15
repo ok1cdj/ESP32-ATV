@@ -12,6 +12,9 @@ ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the
 - **TX from the camera:** picture *camera (back)* / *camera (front)*: the phone's camera (Camera2), turned upright for
   the way the phone is held, with the callsign and the mode in a strip at the bottom. Bench: 333 kS/s 640x360 ~16 fps,
   MER 15 dB, watched live on the PC.
+- TX runs in a foreground service (notification with Stop TX): it goes on with the screen off, also from the camera.
+- TX in **8PSK** (3/5 … 9/10; bench: 8PSK 2/3 333 kS/s normal frames, MER 16 dB); video bit rate and frame rate by hand
+  (empty = automatic; the picture size follows the bit rate).
 - leandvb runs with `--fastlock` below 100 kS/s (app and `rx_dvbs2.py`): with normal frames its first lock is often a
   false one, and it no longer throws away ~4 s of signal before searching again (first picture 31–40 s instead of
   34–44 s or none, in simulation; on the bench a picture in every run, but hardly sooner). Details and the new simulator `rx/sim_lock.py`:

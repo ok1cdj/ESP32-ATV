@@ -7,6 +7,7 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- one of the prerequisites of a connectedDevice foreground service besides USB permission (a replay has none) -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
@@ -43,6 +44,10 @@
             android:exported="false"
             android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+        <service
+            android:name=".TxService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice|camera" />
         <service
             android:name=".ReceiverService"
             android:exported="false"
