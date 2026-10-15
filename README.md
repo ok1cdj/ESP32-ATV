@@ -30,7 +30,7 @@ remote `upstream`. Update: `git -C third_party/<repo> fetch upstream && git -C t
 
 | Fork | Changes |
 |---|---|
-| ESP32-DATV-SA | beacon 40–500 kS/s (rate table, default rate from `BEACON_BAUD`, `make_beacon.py`); DC/IQ correction of the beacon (`--cal`, `BDC` command); DVB-S2 short frames (`--frame short`); branch `xiao-panel`: front panel pins for the XIAO ESP32-C3 (untested) |
+| ESP32-DATV-SA | beacon 40–500 kS/s (rate table, default rate from `BEACON_BAUD`, `make_beacon.py`); DC/IQ correction of the beacon (`--cal`, `BDC` command); DVB-S2 short frames (`--frame short`); branch `xiao-panel` (the one used here): front panel pins for the XIAO ESP32-C3, upstream's video from the flash merged, loops from the flash at any rate / QPSK code rate / frame size with frequency and level (header version 3), `VIDW` to store a loop over USB, `CONFIG_DATV_BUILTIN_BEACON=n` for the web build, `FW` line in `INFO` |
 | ESP32-DATV-RX | `rx_dvbs2.py --sampler auto/linear/rrc`, `--rrc-rej` (RRC below 100 kS/s), `--device`, `--frame normal/short/auto`, DC removal in the 8-bit mode, MER / CNR in the status line, `--decimate` (experimental) |
 
 ## One-time setup (PC, Linux)
@@ -51,6 +51,18 @@ One place: `ATV_FREQ` in `boards.sh` – **2340.000 MHz**, the 2322–2355 MHz A
 `rx/cal_dc.py`; the app defaults to it.
 
 ## Transmitter – XIAO ESP32-C3
+**For everyone:** the firmware from the web (the app's menu ⋮ → Firmware, or the [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/))
+transmits nothing until a beacon is stored: the app's TX screen → *Save as beacon in the C3* (records the test card or
+the camera with your settings and stores the loop; the C3 then transmits it by itself), or from a PC:
+```sh
+python3 tx/make_flash_loop.py video.mp4 --baud 40000 --frame short --call YOURCALL --freq 2340 --amp 300 -o loop.bin
+third_party/ESP32-DATV-RX/.venv/bin/python tx/c3_vidw.py loop.bin     # VIDW over USB (TX_PORT of boards.sh); --erase removes it
+. ~/esp/esp-idf-v6.1/export.sh && tx/build_c3_web.sh                     # the web build (no built-in beacon) -> build/c3-web/out
+```
+The Pages workflow builds that firmware (ESP-IDF 6.1 container) and writes the manifests both the web flasher and the
+app read (`tx/make_fw_site.py`, with sha256 and version).
+
+**For development – a firmware with a built-in test card:**
 ```sh
 CALL=YOURCALL tx/make_beacons.sh 50000   # test card + SDT with your callsign -> tx/beacons/yourcall-50k/ (AMP=300: 0 dB)
 . ~/esp/esp-idf-v6.1/export.sh

@@ -20,17 +20,25 @@ USB-OTG posílá živě testkartu nebo obraz z kamery telefonu jako DVB-S2 (pře
 | **Seeed XIAO ESP32-S3** nebo **S3 Plus** | s externí anténou na U.FL (na 2.3 GHz – anténa z Wi-Fi sady stačí na stůl) |
 | **USB-C OTG** kabel nebo redukce | telefon musí umět USB host (OTG); S3 se napájí z telefonu |
 | **Android 9+**, procesor **arm64** | testováno: OnePlus 10 Pro (Android 16) |
-| počítač s **Chrome / Edge** | jen jednou, na nahrání firmwaru do S3 |
-| pro TX: **Seeed XIAO ESP32-C3** | s firmwarem [ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA) a anténou na U.FL |
+| pro TX: **Seeed XIAO ESP32-C3** | s anténou na U.FL; firmware nahraje aplikace nebo webový flasher |
+| počítač s **Chrome / Edge** | volitelně: firmware do obou desek umí nahrát i aplikace sama |
 
-## 1. Firmware přijímače do ESP32-S3 (jednou)
+## 1. Firmware do desek (jednou)
 
-**Webem (nejjednodušší):** otevři [webový flasher](flasher/) v Chrome nebo Edge na počítači, připoj XIAO datovým
-kabelem, drž **BOOT**, ťukni **RESET**, pusť BOOT, klikni na *Install*, vyber port a potvrď. Po dokončení ťukni
-**RESET**. Deska se pak hlásí jako `303a:1001` a přijímač startuje sám po každém zapnutí.
+**Z aplikace (bez počítače):** nejdřív nainstaluj aplikaci (kapitola 2). Připoj desku přes OTG, otevři menu **⋮ →
+Firmware (S3 / C3)** a klepni na **Write firmware into the connected board**. Aplikace přepne desku do zavaděče v ROM,
+ten prozradí čip – **ESP32-S3 → přijímač**, **ESP32-C3 → vysílač**, splést se nedají –, stáhne aktuální firmware z webu
+(uloží si ho i pro práci bez sítě), zapíše ho s ukazatelem průběhu, ověří (MD5) a desku restartuje. Android se na
+přístup k USB zeptá dvakrát (deska se v zavaděči objeví znovu). Nový firmware na webu nepotřebuje novou aplikaci.
 
-**Z příkazové řádky** (z tohoto repozitáře, Linux): `third_party/ESP32-DATV-RX/tools/install.sh` a pak
-`rx/flash_rx_xiao.sh` (desku dej do režimu stahování stejně jako výše).
+**Z prohlížeče:** [webový flasher](flasher/) v Chrome nebo Edge na počítači – připoj XIAO datovým kabelem, drž **BOOT**,
+ťukni **RESET**, pusť BOOT, klikni na tlačítko přijímače (S3) nebo vysílače (C3), vyber port a potvrď. Po dokončení
+**RESET**. (Smazání tam smaže i kalibraci nosné v C3, viz kapitola 4.)
+
+**Z příkazové řádky** (tento repozitář, Linux): S3 `third_party/ESP32-DATV-RX/tools/install.sh`, pak
+`rx/flash_rx_xiao.sh`; C3 `tx/build_c3_web.sh` nebo `tx/flash_tx.sh` (README).
+
+Desky se hlásí jako `303a:1001` a po každém zapnutí spustí svůj firmware.
 
 ## 2. Aplikace
 
@@ -73,28 +81,39 @@ v aplikaci nebo v oznámení.
 | `USB lost`, `ESP drop`, `queue` | ztráty na USB, v ESP32-S3 a ve frontě k demodulátoru – mají být 0 |
 | konstelace (čtverec) | body symbolů: QPSK 4 shluky, 8PSK 8 shluků; prstenec = málo signálu nebo fázový šum |
 
-## 4. Vysílač (maják ESP32-C3)
+## 4. Samostatný maják (ESP32-C3)
 
-Vysílač je fork [ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA) (licence PolyForm Noncommercial).
-Maják se generuje na PC **s tvou značkou** – v obraze testkarty i v názvu služby:
+Firmware vysílače z webu (kapitola 1, fork [ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA) od ESP32-ATV,
+licence PolyForm Noncommercial) **sám nic nevysílá**, dokud do něj neuložíš maják se svou značkou:
 
-```sh
-CALL=TVOJEZNACKA tx/make_beacons.sh 50000        # 50 kS/s; AMP=300 pro plnou úroveň (0 dB), výchozí −27 dB
-. ~/esp/esp-idf-v6.1/export.sh && tx/flash_tx.sh tx/beacons/<značka>-50k
-```
+1. Připoj C3 přes OTG, přepni na **TX** a nastav vše jako pro živé vysílání (kapitola 5): kmitočet, symbolovou rychlost
+   (do 333 kS/s), kódový poměr QPSK, velikost rámců (při nízkých rychlostech nejlépe **short**), piloty, **značku**,
+   **AMP**, obraz (testkarta nebo kamera) a délku (10–60 s).
+2. Klepni na **Save as beacon in the C3**. Telefon po tu dobu nahrává obraz, zakóduje ho jako smyčku a uloží do flash C3
+   (ukazatel průběhu: nahrávání, kódování, ukládání – pro 20 s asi půl minuty).
+3. Odpoj C3 a napájej ho čímkoli – powerbankou, nabíječkou. Po každém zapnutí vysílá smyčku sám, na uloženém kmitočtu
+   a úrovni, bez telefonu. Nový maják ten starý nahradí.
 
-- Kmitočet je v `boards.sh` (`ATV_FREQ`, výchozí **2340.000 MHz** – ATV segment 2322–2355 MHz band plánu IARU R1).
-  Ověř si národní podmínky.
-- **DC kalibrace úniku nosné** (`rx/cal_dc.py --save`, S3 na PC) platí pro jeden kmitočet – po změně ji zopakuj.
-- Beacon umí jen QPSK; 8PSK a živý obraz vysílá aplikace (kapitola 5) nebo PC
-  (`third_party/ESP32-DATV-SA/host/tx_dvbs.py`).
+Poznámky:
+
+- **AMP** je úroveň buzení DAC v C3, ne změřený výkon (tabulka v kapitole 5); smyčka si nese tu, se kterou byla uložena.
+- Maják se přijímá jako každý jiný, např. *Beacon 50k QPSK 3/4 short* v aplikaci. Skutečná symbolová rychlost C3 je
+  160 MHz dělených celým číslem (333 kS/s → 333 333; 40, 50, 100, 125, 250 kS/s přesně).
+- **Kalibrace nosné:** C3 propouští svou nosnou (tón uprostřed signálu). Korekce je uložená v C3 (`BDC`, měří se
+  `rx/cal_dc.py --save` s S3 na PC) a platí i pro maják; zápis firmwaru z aplikace ji zachová, smazání ve webovém
+  flasheru ji smaže. Platí pro jeden kmitočet.
+- Smyčky z [převodníku videa](https://barisdinc.github.io/ESP32-DATV-SA/converter/) původního projektu (330,58 kS/s,
+  QPSK 3/4) tento firmware přehraje také (zápis esptoolem na 0x110000).
+- Na PC: `tx/make_flash_loop.py VIDEO --baud 40000 --frame short --call ZNACKA -o loop.bin` udělá smyčku z libovolného
+  videa, `tx/c3_vidw.py loop.bin` ji uloží přes USB, `tx/c3_vidw.py --erase` ji smaže. Vývojáři mohou dál stavět firmware
+  s vestavěnou testkartou (`tx/make_beacons.sh`, `tx/flash_tx.sh`, README).
 
 ## 5. Vysílání z telefonu (TX, beta)
 
 ![TX: testkarta z telefonu, stav C3 a streamu](img/atvrx-tx.png)
 
 Telefon sám zakóduje obraz (H.264), transport stream i DVB-S2 a posílá symboly do C3, který jen moduluje (jeho režim
-s PC). C3 potřebuje firmware ESP32-DATV-SA (stejný jako pro maják výše: příkaz z USB maják zastaví a spustí živý režim).
+s PC). C3 potřebuje firmware vysílače (kapitola 1); příkaz z USB zastaví běžící maják a spustí živý režim.
 
 1. Připoj **XIAO ESP32-C3** přes OTG místo S3 (jeden port: RX a TX se střídají). C3 s anténou dej **dál od telefonu** –
    položený vedle něj dával signál o 20 dB slabší a nedekódoval se.
@@ -137,6 +156,9 @@ s PC). C3 potřebuje firmware ESP32-DATV-SA (stejný jako pro maják výše: př
 | obraz nejde, rámce ano | špatný kódový poměr nebo modulace v předvolbě (maják = QPSK 3/4) |
 | TX: *no ESP32-DATV answer* | připojená je S3, ne C3 (obě jsou `303a:1001`), nebo má C3 jiný firmware |
 | TX: příjem slabý, nízké MER | dej C3 s anténou dál od telefonu |
+| C3 sám nic nevysílá | ještě v něm není maják: TX → Save as beacon in the C3 |
+| *this C3 firmware cannot store a loop* | nahraj aktuální firmware: menu ⋮ → Firmware |
+| firmware: *no network and no saved firmware* | první zápis potřebuje jednou internet, pak funguje uložený i bez sítě |
 | zámek i MER v pořádku, ale žádné rámce: **QPSK 3/5 nebo 5/6 normální rámce**, **8PSK krátké rámce** | tyto režimy leandvb nedekóduje (známá chyba, i z čistého signálu) – zvol jiný poměr nebo velikost rámců; aplikace na to upozorní |
 
 Hlášení chyb a nápady: [issues](https://github.com/ok1cdj/ESP32-ATV/issues).

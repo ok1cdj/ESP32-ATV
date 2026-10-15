@@ -2,6 +2,19 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## Unreleased
+
+- **Firmware from the phone:** menu ⋮ → *Firmware (S3 / C3)* writes the current firmware from the web into the board on
+  OTG (ESP32 ROM loader: the chip is detected, S3 receiver / C3 transmitter; MD5 checked; progress bar). Firmware on
+  GitHub Pages for both boards (the C3 built by CI), also on the web flasher; a new firmware needs no new app.
+- **Stand-alone beacon from the phone:** TX → *Save as beacon in the C3* records the test card or the camera (10–60 s)
+  with the current settings and stores it in the C3, which then transmits it by itself after every power-up – any
+  symbol rate up to 333 kS/s, any QPSK code rate, short frames, with its frequency and level (bench: 50 kS/s short,
+  MER 25 dB). The web firmware transmits nothing until a beacon is stored.
+- C3 firmware (fork ESP32-DATV-SA, branch xiao-panel): upstream's video from the flash merged; loops at any rate
+  (header version 3); `VIDW` to store a loop over USB; `FW` version in `INFO`.
+- PC: `tx/make_flash_loop.py` (a loop from any video), `tx/c3_vidw.py` (store it), `tx/build_c3_web.sh`, `tx/make_fw_site.py`.
+
 ## 0.7-beta – 2026-10-15
 
 - PC receiver (`rx_dvbs2.py`): follows the transmitter's drift with a software NCO (`--no-track` turns it off): the

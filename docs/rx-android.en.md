@@ -20,17 +20,27 @@ ESP32-C3 on USB-OTG it sends a test card or the phone's camera live as DVB-S2 (s
 | **Seeed XIAO ESP32-S3** or **S3 Plus** | with an external antenna on U.FL (2.3 GHz – the Wi-Fi kit antenna is fine on a desk) |
 | **USB-C OTG** cable or adapter | the phone must support USB host (OTG); the S3 is powered by the phone |
 | **Android 9+**, **arm64** CPU | tested: OnePlus 10 Pro (Android 16) |
-| a computer with **Chrome / Edge** | once, to write the firmware into the S3 |
-| for TX: **Seeed XIAO ESP32-C3** | with the [ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA) firmware and an antenna on U.FL |
+| for TX: **Seeed XIAO ESP32-C3** | with an antenna on U.FL; the firmware comes from the app or the web flasher |
+| a computer with **Chrome / Edge** | optional: the app writes the firmware into both boards itself |
 
-## 1. Receiver firmware into the ESP32-S3 (once)
+## 1. Firmware into the boards (once)
 
-**From the browser (easiest):** open the [web flasher](flasher/) in Chrome or Edge on a computer, connect the XIAO
-with a data cable, hold **BOOT**, tap **RESET**, release BOOT, click *Install*, choose the port and confirm. Tap
-**RESET** when it is done. The board then enumerates as `303a:1001` and starts the receiver at every power-up.
+**From the app (no computer):** install the app first (section 2). Connect the board through OTG, open the menu **⋮ →
+Firmware (S3 / C3)** and tap **Write firmware into the connected board**. The app puts the board into its ROM loader,
+which tells the chip – **ESP32-S3 → receiver**, **ESP32-C3 → transmitter**, they cannot be mixed up – downloads the
+current firmware from the web (kept for use without a network), writes it with a progress bar, checks it (MD5) and
+restarts the board. Android asks for USB access twice (the board appears again in its loader). A new firmware on the
+web needs no new app.
 
-**From the command line** (this repository, Linux): `third_party/ESP32-DATV-RX/tools/install.sh`, then
-`rx/flash_rx_xiao.sh` (download mode as above).
+**From the browser:** the [web flasher](flasher/) in Chrome or Edge on a computer – connect the XIAO with a data cable,
+hold **BOOT**, tap **RESET**, release BOOT, click the button for the receiver (S3) or the transmitter (C3), choose the
+port and confirm. Tap **RESET** when it is done. (Erasing there also deletes the C3's carrier calibration, see
+section 4.)
+
+**From the command line** (this repository, Linux): S3 `third_party/ESP32-DATV-RX/tools/install.sh`, then
+`rx/flash_rx_xiao.sh`; C3 `tx/build_c3_web.sh` or `tx/flash_tx.sh` (README).
+
+The boards enumerate as `303a:1001` and start their firmware at every power-up.
 
 ## 2. The app
 
@@ -74,30 +84,41 @@ app or in the notification.
 | `USB lost`, `ESP drop`, `queue` | losses on USB, in the ESP32-S3 and in the queue to the demodulator – should be 0 |
 | constellation (square) | symbol points: QPSK 4 clusters, 8PSK 8 clusters; a ring = too little signal or phase noise |
 
-## 4. Transmitter (ESP32-C3 beacon)
+## 4. Stand-alone beacon (ESP32-C3)
 
-The transmitter is a fork of [ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA) (PolyForm Noncommercial).
-The beacon is built on a PC **with your callsign** – on the test card and as the service name:
+The transmitter firmware from the web (section 1, ESP32-ATV's fork of
+[ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA), PolyForm Noncommercial) **transmits nothing by itself** until
+you store a beacon with your callsign in it:
 
-```sh
-CALL=YOURCALL tx/make_beacons.sh 50000        # 50 kS/s; AMP=300 for full level (0 dB), default -27 dB
-. ~/esp/esp-idf-v6.1/export.sh && tx/flash_tx.sh tx/beacons/<call>-50k
-```
+1. Connect the C3 through OTG, switch to **TX** and set it up as for live TX (section 5): frequency, symbol rate (up to
+   333 kS/s), QPSK code rate, frame size (**short** is best at low rates), pilots, **callsign**, **AMP**, picture (test
+   card or camera) and the length (10–60 s).
+2. Tap **Save as beacon in the C3**. The phone records the picture for that long, encodes it as a loop and stores it in
+   the C3's flash (progress bar: recording, encoding, storing – about half a minute for 20 s).
+3. Unplug the C3 and power it from anything – a power bank, a charger. It transmits the loop by itself after every
+   power-up, at the stored frequency and level, without the phone. A new beacon replaces it.
 
-- The frequency is in `boards.sh` (`ATV_FREQ`, default **2340.000 MHz** – the 2322–2355 MHz ATV segment of the IARU
-  Region 1 band plan). Check your national rules.
-- The **DC calibration of the carrier leakage** (`rx/cal_dc.py --save`, S3 on the PC) is valid for one frequency –
-  repeat it after a change.
-- The beacon is QPSK only; 8PSK and live pictures come from the app (section 5) or from a PC
-  (`third_party/ESP32-DATV-SA/host/tx_dvbs.py`).
+Notes:
+
+- **AMP** is the C3's DAC drive level, not a measured power (table in section 5); the loop keeps the one it was saved with.
+- The beacon receives like any other: e.g. *Beacon 50k QPSK 3/4 short* in the app. The C3's actual symbol rate is
+  160 MHz divided by a whole number (333 kS/s → 333 333; 40, 50, 100, 125, 250 kS/s exact).
+- **Carrier calibration:** the C3 leaks its carrier (a tone in the middle of the signal). Its correction is stored in the
+  C3 (`BDC`, measured with `rx/cal_dc.py --save` and the S3 on a PC) and applies to the beacon too; writing firmware
+  from the app keeps it, the web flasher's erase deletes it. It is valid for one frequency.
+- Upstream's [video converter](https://barisdinc.github.io/ESP32-DATV-SA/converter/) (330.58 kS/s, QPSK 3/4) makes
+  loops this firmware plays as well (written with esptool at 0x110000).
+- On a PC: `tx/make_flash_loop.py VIDEO --baud 40000 --frame short --call YOURCALL -o loop.bin` makes a loop of any
+  video file, `tx/c3_vidw.py loop.bin` stores it over USB, `tx/c3_vidw.py --erase` removes it. Developers can still
+  build a firmware with a built-in test card (`tx/make_beacons.sh`, `tx/flash_tx.sh`, README).
 
 ## 5. Transmitting from the phone (TX, beta)
 
 ![TX: test card from the phone, status of the C3 and the stream](img/atvrx-tx.png)
 
 The phone encodes the picture (H.264), the transport stream and DVB-S2 itself and streams the symbols to the C3, which
-only modulates (its PC mode). The C3 needs the ESP32-DATV-SA firmware (the beacon firmware above is the same one: a
-command from USB stops the beacon and starts the live mode).
+only modulates (its PC mode). The C3 needs the transmitter firmware (section 1); a command from USB stops a running
+beacon and starts the live mode.
 
 1. Connect the **XIAO ESP32-C3** through OTG instead of the S3 (one port: RX and TX take turns). Put the C3 and its
    antenna **away from the phone** – lying next to it the signal came 20 dB weaker and did not decode.
@@ -140,6 +161,9 @@ command from USB stops the beacon and starts the live mode).
 | frames but no picture | wrong code rate or modulation in the preset (the beacon is QPSK 3/4) |
 | TX: *no ESP32-DATV answer* | the S3 is connected, not the C3 (both are `303a:1001`), or the C3 has another firmware |
 | TX: received weak, MER low | move the C3 and its antenna away from the phone |
+| the C3 transmits nothing on its own | no beacon stored yet: TX → Save as beacon in the C3 |
+| *this C3 firmware cannot store a loop* | write the current firmware: menu ⋮ → Firmware |
+| firmware: *no network and no saved firmware* | the first write needs the internet once; later the saved one works offline |
 | locked, good MER, but no frames: **QPSK 3/5 or 5/6 normal frames**, **8PSK short frames** | leandvb does not decode these modes (known issue, also from a clean signal) – choose another code rate or frame size; the app warns |
 
 Bugs and ideas: [issues](https://github.com/ok1cdj/ESP32-ATV/issues).
