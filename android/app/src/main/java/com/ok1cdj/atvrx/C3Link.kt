@@ -53,22 +53,33 @@ class C3Link(private val usb: UsbCdc) : AutoCloseable {
         pend = d.copyOfRange(i, d.size)
     }
 
+    private val ahead = ArrayDeque<String>()                          // lines read but not looked at yet
+
     /** Text lines received so far (and clears them). */
     fun takeLines(): List<String> = synchronized(lock) {
         val s = text.toString()
         val cut = s.lastIndexOf('\n') + 1
         text.delete(0, cut)
-        s.substring(0, cut).split('\n').map { it.trimEnd('\r') }.filter { it.isNotEmpty() }
+        val l = ahead.toList() + s.substring(0, cut).split('\n').map { it.trimEnd('\r') }.filter { it.isNotEmpty() }
+        ahead.clear()
+        l
     }
 
-    /** Waits until a line satisfies [match] (returns it) or [timeoutMs] passes (null); keeps the other lines. */
+    /**
+     * Waits until a line satisfies [match] (returns it) or [timeoutMs] passes (null). Lines before it go to [lines];
+     * lines after it in the same batch stay for the next call (INFO answers several lines at once).
+     */
     fun waitLine(timeoutMs: Long, match: (String) -> Boolean): String? {
         val end = System.currentTimeMillis() + timeoutMs
         val seen = ArrayList<String>()
         try {
             while (true) {
-                for (l in takeLines()) {
-                    if (match(l)) return l
+                val batch = takeLines()
+                for ((i, l) in batch.withIndex()) {
+                    if (match(l)) {
+                        synchronized(lock) { batch.subList(i + 1, batch.size).asReversed().forEach { ahead.addFirst(it) } }
+                        return l
+                    }
                     seen += l
                 }
                 val left = end - System.currentTimeMillis()
