@@ -76,8 +76,10 @@ class TxActivity : Activity() {
     private lateinit var source: Spinner
     private lateinit var amp: EditText
     private lateinit var call: EditText
-    private lateinit var videoKbps: EditText
-    private lateinit var fps: EditText
+    private lateinit var videoKbps: Spinner
+    private lateinit var fps: Spinner
+    private val kbpsChoices = listOf(0, 50, 75, 100, 150, 200, 300, 400)       // 0 = auto
+    private val fpsChoices = listOf(0, 2, 5, 10, 15, 20, 25, 30)
     private lateinit var startStop: Button
     private lateinit var info: TextView
     private lateinit var logView: TextView
@@ -129,8 +131,10 @@ class TxActivity : Activity() {
         body.addView(row(label("call"), call, label("AMP"), amp))
         source = spinner(listOf(Transmitter.SOURCE_CARD, Transmitter.SOURCE_BACK, Transmitter.SOURCE_FRONT),
             prefs.getString("source", Transmitter.SOURCE_CARD)!!)
-        videoKbps = edit(prefs.getInt("videoKbps", 0).takeIf { it > 0 }?.toString() ?: "", InputType.TYPE_CLASS_NUMBER).apply { hint = "auto" }
-        fps = edit(prefs.getInt("fps", 0).takeIf { it > 0 }?.toString() ?: "", InputType.TYPE_CLASS_NUMBER).apply { hint = "auto" }
+        // auto (from the TS rate) or a fixed value, chosen from a list so that "auto" is always one tap away
+        fun choice(v: Int) = if (v == 0) "auto" else v.toString()
+        videoKbps = spinner(kbpsChoices.map(::choice), choice(prefs.getInt("videoKbps", 0)))
+        fps = spinner(fpsChoices.map(::choice), choice(prefs.getInt("fps", 0)))
         body.addView(row(label("picture"), source, pilots))
         body.addView(row(label("video kb/s"), videoKbps, label("fps"), fps))
         startStop = button("Start TX") { if (tx == null) start() else stop() }
@@ -201,8 +205,8 @@ class TxActivity : Activity() {
         val r = fec.selectedItem as String
         if (shortFrame && r == "9/10") return log("no 9/10 with short frames")
         if (c == "8PSK" && sr < 125_000) log("8PSK below 125 kS/s: the C3 uses a slower DAC loop")
-        val vk = videoKbps.text.toString().toIntOrNull() ?: 0
-        val f = fps.text.toString().toIntOrNull() ?: 0
+        val vk = kbpsChoices[videoKbps.selectedItemPosition]
+        val f = fpsChoices[fps.selectedItemPosition]
         prefs.edit().putString("freq", freq.text.toString()).putInt("sr", sr).putString("const", c).putString("fec", r)
             .putString("frame", frame.selectedItem as String).putBoolean("pilots", pilots.isChecked)
             .putInt("amp", a).putString("call", cs).putString("source", src).putInt("videoKbps", vk).putInt("fps", f).apply()

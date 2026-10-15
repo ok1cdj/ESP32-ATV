@@ -123,7 +123,7 @@ command from USB stops the beacon and starts the live mode).
 - The camera picture turns upright the way you hold the phone (landscape fills the frame) and carries the callsign
   and the mode in a strip at the bottom.
 - Video bit rate and frame rate are automatic (about 70 % of the TS rate; 320×180 5 fps at 40–66 kS/s, 640×360 15 fps
-  at 333 kS/s) or set by hand.
+  at 333 kS/s) or chosen from a list (*auto* or 50–400 kb/s, 2–30 fps).
 - Receive it with a second phone, the PC (`rx/rx.sh 333000 --frame short`) or any DVB-S2 receiver. 8PSK: use normal
   frames for leandvb-based receivers (they do not decode short 8PSK).
 - Tested on the bench: QPSK 3/4 50 kS/s short MER 17 dB, 333 kS/s MER 15 dB; 8PSK 2/3 333 kS/s MER 16 dB.

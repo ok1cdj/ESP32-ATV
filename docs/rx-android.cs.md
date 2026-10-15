@@ -120,7 +120,7 @@ s PC). C3 potřebuje firmware ESP32-DATV-SA (stejný jako pro maják výše: př
 - Obraz z kamery se otáčí podle toho, jak telefon držíš (naležato vyplní celý rámec), a dole nese pruh se značkou
   a módem.
 - Bitrate a snímková frekvence videa jsou automatické (asi 70 % rychlosti TS; 320×180 5 fps při 40–66 kS/s,
-  640×360 15 fps při 333 kS/s), nebo je zadáš ručně.
+  640×360 15 fps při 333 kS/s), nebo je vybereš ze seznamu (*auto* nebo 50–400 kb/s, 2–30 fps).
 - Přijímat můžeš druhým telefonem, PC (`rx/rx.sh 333000 --frame short`) nebo jakýmkoli přijímačem DVB-S2. 8PSK:
   pro přijímače s leandvb použij normální rámce (krátké 8PSK nedekódují).
 - Vyzkoušeno na stole: QPSK 3/4 50 kS/s short MER 17 dB, 333 kS/s MER 15 dB; 8PSK 2/3 333 kS/s MER 16 dB.
