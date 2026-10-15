@@ -2,8 +2,9 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
-## Unreleased
+## 0.8-beta – 2026-10-15
 
+- The app is now **ATV RX/TX** (it transmits too); package and APK file names stay (updates install over 0.7).
 - **Firmware from the phone:** menu ⋮ → *Firmware (S3 / C3)* writes the current firmware from the web into the board on
   OTG (ESP32 ROM loader: the chip is detected, S3 receiver / C3 transmitter; MD5 checked; progress bar). Firmware on
   GitHub Pages for both boards (the C3 built by CI), also on the web flasher; a new firmware needs no new app.

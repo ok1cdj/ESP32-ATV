@@ -60,7 +60,7 @@ jobs:
           mkdir -p public/img && cp docs/img/*.png public/img/ 2>/dev/null || true
           for l in cs en; do
             pandoc "docs/rx-android.$l.md" -s --metadata lang=$l --css style.css \
-              --metadata pagetitle="ATV RX – $([ $l = cs ] && echo návod || echo guide)" -o "public/$l.html"
+              --metadata pagetitle="ATV RX/TX – $([ $l = cs ] && echo návod || echo guide)" -o "public/$l.html"
           done
           fw=third_party/ESP32-DATV-RX/firmware
           (cd "$fw" && sha256sum -c --ignore-missing SHA256SUMS)

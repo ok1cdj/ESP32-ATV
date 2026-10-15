@@ -2,7 +2,7 @@
 
 [![Android APK](https://github.com/ok1cdj/ESP32-ATV/actions/workflows/android.yml/badge.svg)](https://github.com/ok1cdj/ESP32-ATV/actions/workflows/android.yml)
 
-DATV on 13 cm with ESP32 boards: a stand-alone **ESP32-C3 DVB-S2 beacon** and **ATV RX**, a receiver made of a
+DATV on 13 cm with ESP32 boards: a stand-alone **ESP32-C3 DVB-S2 beacon** and **ATV RX/TX**, a receiver made of a
 **XIAO ESP32-S3** on USB-OTG and an **Android** phone or tablet (beta). The app also **transmits** through a XIAO
 ESP32-C3 on USB-OTG: test card or camera, DVB-S2 QPSK / 8PSK encoded on the phone (`android/native/dvbs2enc`).
 
@@ -14,7 +14,7 @@ ESP32-C3 on USB-OTG: test card or camera, DVB-S2 QPSK / 8PSK encoded on the phon
 XIAO ESP32-C3 (ESP32-DATV-SA beacon, DVB-S2 QPSK 3/4, 40–500 kS/s, 2340.000 MHz)
    ~ 13 cm ~>
 XIAO ESP32-S3 (ESP32-DATV-RX firmware: radio dump 16 MS/s -> 500 ksps cs4 / 333 ksps cs8 over native USB)
-   -> Android: ATV RX (leandvb + ldpc_tool, MediaCodec)      or      PC: rx/rx.sh (rx_dvbs2.py, leandvb, ffplay)
+   -> Android: ATV RX/TX (leandvb + ldpc_tool, MediaCodec)      or      PC: rx/rx.sh (rx_dvbs2.py, leandvb, ffplay)
 ```
 
 | Part | Project | Licence |
@@ -90,7 +90,7 @@ third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py --save            # BDC 
 ```
 `tx/make_beacons.sh` then bakes `tx/cal_c3.json` into every beacon. By hand: `BDC [i q | SAVE | RESET]` on the C3's USB.
 
-## Receiver – Android (ATV RX)
+## Receiver – Android (ATV RX/TX)
 See the [guide](docs/rx-android.en.md). Build it yourself:
 ```sh
 android/native/build-native.sh        # leandvb + ldpc_tool for arm64 with the NDK (fetches leansdr and LDPC itself)

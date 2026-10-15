@@ -15,13 +15,13 @@ class AboutActivity : Activity() {
             textSize = 14f
             movementMethod = LinkMovementMethod.getInstance()
             text = android.text.Html.fromHtml("""
-                <h2>ATV RX ${BuildConfig.VERSION_NAME}</h2>
+                <h2>ATV RX/TX ${BuildConfig.VERSION_NAME}</h2>
                 <p>DVB-S2 receiver for amateur television on 13 cm: an ESP32-S3 (XIAO) on USB-OTG as the radio,
                 leandvb and ldpc_tool on the phone. Beta – licensed radio amateurs only.</p>
                 <p>Guide / návod: <a href="$GUIDE">$GUIDE</a><br>
                 Source: <a href="$SOURCE">$SOURCE</a></p>
                 <h3>Licences</h3>
-                <p><b>ATV RX</b> – GNU GPL v3 or later.<br>
+                <p><b>ATV RX/TX</b> – GNU GPL v3 or later.<br>
                 <b>leansdr / leandvb</b> (pabr) – GNU GPL v3.<br>
                 <b>LDPC / ldpc_tool</b> (Ahmet Inan, Blockstream) – 0BSD-style permissive licence.<br>
                 <b>ESP32-DATV-RX</b> (Baris Dinc) – BSD-3-Clause; <b>esp32-sdr-trx / eSpDR</b> – 0BSD

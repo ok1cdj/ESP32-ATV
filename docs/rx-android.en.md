@@ -1,8 +1,8 @@
 ---
-title: ATV RX – guide (beta)
+title: ATV RX/TX – guide (beta)
 ---
 
-**ATV RX** is a DVB-S2 receiver for amateur television on 13 cm. The radio is a **Seeed XIAO ESP32-S3** on USB-OTG;
+**ATV RX/TX** is a DVB-S2 receiver (and transmitter) for amateur television on 13 cm. The radio is a **Seeed XIAO ESP32-S3** on USB-OTG;
 an **Android phone or tablet** demodulates (leandvb), decodes the LDPC (ldpc_tool) and shows the picture together
 with MER, constellation and stream information. Its counterpart is the stand-alone ESP32-C3 beacon
 ([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)) – and the same app also **transmits**: with a XIAO
@@ -11,7 +11,7 @@ ESP32-C3 on USB-OTG it sends a test card or the phone's camera live as DVB-S2 (s
 > **Beta.** Transmitting is for licensed radio amateurs only, on frequencies allowed by your licence and band plan.
 > The receiver is free software under the GNU GPL v3.
 
-![ATV RX on a phone: the beacon picture, reception status, spectrum and constellation](img/atvrx-app.png)
+![ATV RX/TX on a phone: the beacon picture, reception status, spectrum and constellation](img/atvrx-app.png)
 
 ## What you need
 
@@ -49,7 +49,7 @@ The boards enumerate as `303a:1001` and start their firmware at every power-up.
 2. Open it on the phone and allow installing from that source (*Install unknown apps*).
 3. On the first start allow **notifications**: reception runs in a background service, whose notification shows the
    status and a Stop button.
-4. Connect the S3 through OTG. Android offers to open ATV RX and asks for **access to the USB device** – allow it.
+4. Connect the S3 through OTG. Android offers to open ATV RX/TX and asks for **access to the USB device** – allow it.
 
 Updates: a new version from Releases installs over the old one (same signature).
 
@@ -170,5 +170,5 @@ Bugs and ideas: [issues](https://github.com/ok1cdj/ESP32-ATV/issues).
 
 ## Licences
 
-ATV RX: GNU GPL v3. Parts: leansdr / leandvb (GPL-3), LDPC / ldpc_tool (Ahmet Inan, 0BSD-style),
+ATV RX/TX: GNU GPL v3. Parts: leansdr / leandvb (GPL-3), LDPC / ldpc_tool (Ahmet Inan, 0BSD-style),
 ESP32-DATV-RX (BSD-3-Clause), esp32-sdr-trx (0BSD, S3 firmware).

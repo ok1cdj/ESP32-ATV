@@ -1,4 +1,4 @@
-# ATV RX (android/): native leandvb + ldpc_tool with the NDK, then the APK.
+# ATV RX/TX (android/): native leandvb + ldpc_tool with the NDK, then the APK.
 # Every push: the APK as a workflow artifact. A tag v* (e.g. v0.4-beta): a GitHub pre-release with the APK and its SHA-256.
 # Release signing needs the secrets KEYSTORE_B64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD; without them (forks,
 # pull requests) a debug APK is built instead.
@@ -76,5 +76,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* --prerelease --title "ATV RX $APP_VERSION" --notes \
-            "Beta of the ATV RX receiver app (Android 9+, arm64). Install: see the guide https://ok1cdj.github.io/ESP32-ATV/ – licensed radio amateurs only. SHA-256 in SHA256SUMS."
+          gh release create "$GITHUB_REF_NAME" dist/* --prerelease --title "ATV RX/TX $APP_VERSION" --notes \
+            "Beta of the ATV RX/TX app (DVB-S2 receiver with an ESP32-S3, transmitter with an ESP32-C3; Android 9+, arm64). Install: see the guide https://ok1cdj.github.io/ESP32-ATV/ – licensed radio amateurs only. SHA-256 in SHA256SUMS."

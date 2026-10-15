@@ -51,7 +51,7 @@ class FirmwareActivity : Activity() {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(TextView(this).apply {
             text = "Firmware for the board on USB, the current version from the web:\n" +
-                "• ESP32-S3 → ATV RX receiver\n• ESP32-C3 → transmitter (no built-in beacon: then store a loop with your callsign on the TX screen)\n" +
+                "• ESP32-S3 → receiver\n• ESP32-C3 → transmitter (no built-in beacon: then store a loop with your callsign on the TX screen)\n" +
                 "The board is put into its ROM loader, which tells the chip; it then appears on USB again (allow access if asked)."
             textSize = 13f
         })

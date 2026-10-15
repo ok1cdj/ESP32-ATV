@@ -1,8 +1,8 @@
 ---
-title: ATV RX – návod (beta)
+title: ATV RX/TX – návod (beta)
 ---
 
-**ATV RX** je přijímač DVB-S2 pro amatérskou televizi v pásmu 13 cm. Rádiem je **Seeed XIAO ESP32-S3** připojený přes
+**ATV RX/TX** je přijímač (i vysílač) DVB-S2 pro amatérskou televizi v pásmu 13 cm. Rádiem je **Seeed XIAO ESP32-S3** připojený přes
 USB-OTG, **telefon nebo tablet s Androidem** signál demoduluje (leandvb), dekóduje LDPC (ldpc_tool) a ukazuje obraz
 spolu s MER, konstelací a údaji o streamu. Protějškem je samostatný maják s ESP32-C3
 ([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)) – a stejná aplikace také **vysílá**: s XIAO ESP32-C3 na
@@ -11,7 +11,7 @@ USB-OTG posílá živě testkartu nebo obraz z kamery telefonu jako DVB-S2 (pře
 > **Beta.** Vysílat smí jen radioamatéři s platným oprávněním, na kmitočtech podle národních podmínek a band plánu.
 > Přijímač je ke stažení zdarma pod GNU GPL v3.
 
-![ATV RX na telefonu: obraz majáku, stav příjmu, spektrum a konstelace](img/atvrx-app.png)
+![ATV RX/TX na telefonu: obraz majáku, stav příjmu, spektrum a konstelace](img/atvrx-app.png)
 
 ## Co potřebuješ
 
@@ -46,7 +46,7 @@ Desky se hlásí jako `303a:1001` a po každém zapnutí spustí svůj firmware.
    v `SHA256SUMS`).
 2. Otevři ho v telefonu a povol instalaci z tohoto zdroje (*Instalovat neznámé aplikace*).
 3. Při prvním spuštění povol **oznámení** – příjem běží ve službě na pozadí a v oznámení je jeho stav a tlačítko Stop.
-4. Připoj S3 přes OTG. Android nabídne otevření ATV RX a zeptá se na **přístup k USB zařízení** – povol.
+4. Připoj S3 přes OTG. Android nabídne otevření ATV RX/TX a zeptá se na **přístup k USB zařízení** – povol.
 
 Aktualizace: nová verze z Releases se nainstaluje přes starou (stejný podpis).
 
@@ -165,5 +165,5 @@ Hlášení chyb a nápady: [issues](https://github.com/ok1cdj/ESP32-ATV/issues).
 
 ## Licence
 
-ATV RX: GNU GPL v3. Části: leansdr / leandvb (GPL-3), LDPC / ldpc_tool (Ahmet Inan, 0BSD-style),
+ATV RX/TX: GNU GPL v3. Části: leansdr / leandvb (GPL-3), LDPC / ldpc_tool (Ahmet Inan, 0BSD-style),
 ESP32-DATV-RX (BSD-3-Clause), esp32-sdr-trx (0BSD, firmware S3).
