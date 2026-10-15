@@ -6,7 +6,7 @@ DATV on 13 cm with ESP32 boards: a stand-alone **ESP32-C3 DVB-S2 beacon** and **
 **XIAO ESP32-S3** on USB-OTG and an **Android** phone or tablet (beta).
 
 - **Guide / návod:** <https://ok1cdj.github.io/ESP32-ATV/> ([English](docs/rx-android.en.md), [česky](docs/rx-android.cs.md))
-- **APK:** [Releases](https://github.com/ok1cdj/ESP32-ATV/releases) · **S3 firmware:** [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/)
+- **APK:** [Releases](https://github.com/ok1cdj/ESP32-ATV/releases) ([changelog](CHANGELOG.md)) · **S3 firmware:** [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/)
 - Licensed radio amateurs only. GNU GPL v3 ([LICENSE](LICENSE)); third-party parts keep their licences (below).
 
 ```
