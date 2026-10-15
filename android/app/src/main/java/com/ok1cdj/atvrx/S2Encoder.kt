@@ -19,6 +19,13 @@ class S2Encoder(val const: String, val rate: String, val shortFrame: Boolean, va
     /** the next PLFRAME into out (at least frameSymbols bytes); its symbol count, 0 when not ready */
     fun frame(out: ByteArray) = nativeStreamFrame(h, out)
 
+    // whole packets per frame (the stand-alone loop: it must join up at the end)
+    val packetsPerFrame get() = nativePacketsPerFrame(h)
+    /** One PLFRAME from packetsPerFrame packets at ts[off]; its symbols, -1 without the 0x47 sync byte. */
+    fun frameWhole(ts: ByteArray, off: Int, out: ByteArray) = nativeFrameWhole(h, ts, off, out)
+    /** The first packet's CRC-8 slot from the packet at ts[off] (the loop's last one). */
+    fun setPrevCrc(ts: ByteArray, off: Int) = nativeSetPrevCrc(h, ts, off)
+
     override fun close() {
         if (h != 0L) nativeFree(h)
         h = 0
@@ -34,6 +41,9 @@ class S2Encoder(val const: String, val rate: String, val shortFrame: Boolean, va
         @JvmStatic private external fun nativeReady(h: Long): Boolean
         @JvmStatic private external fun nativePush(h: Long, buf: ByteArray, off: Int): Int
         @JvmStatic private external fun nativeStreamFrame(h: Long, out: ByteArray): Int
+        @JvmStatic private external fun nativeFrameWhole(h: Long, ts: ByteArray, off: Int, out: ByteArray): Int
+        @JvmStatic private external fun nativePacketsPerFrame(h: Long): Int
+        @JvmStatic private external fun nativeSetPrevCrc(h: Long, ts: ByteArray, off: Int)
 
         val QPSK_RATES = listOf("1/4", "1/3", "2/5", "1/2", "3/5", "2/3", "3/4", "4/5", "5/6", "8/9", "9/10")
         val PSK8_RATES = listOf("3/5", "2/3", "3/4", "5/6", "8/9", "9/10")

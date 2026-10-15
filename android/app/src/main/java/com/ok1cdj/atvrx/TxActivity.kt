@@ -79,6 +79,8 @@ class TxActivity : Activity() {
     private lateinit var videoKbps: Spinner
     private lateinit var fps: Spinner
     private val kbpsChoices = listOf(0, 50, 75, 100, 150, 200, 300, 400)       // 0 = auto
+    private val loopChoices = listOf(10, 20, 30, 60)
+    private lateinit var loopSeconds: Spinner
     private val fpsChoices = listOf(0, 2, 5, 10, 15, 20, 25, 30)
     private lateinit var startStop: Button
     private lateinit var info: TextView
@@ -88,7 +90,7 @@ class TxActivity : Activity() {
 
     private val permissionReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
-            if (i.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) start() else log("USB permission denied")
+            if (i.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) afterPermission() else log("USB permission denied")
         }
     }
 
@@ -139,6 +141,12 @@ class TxActivity : Activity() {
         body.addView(row(label("video kb/s"), videoKbps, label("fps"), fps))
         startStop = button("Start TX") { if (tx == null) start() else stop() }
         body.addView(startStop, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = 8 })
+        // a stand-alone beacon: the C3 keeps transmitting this loop by itself (QPSK, up to ~333 kS/s)
+        loopSeconds = spinner(loopChoices.map { "$it s" }, "${prefs.getInt("loopSeconds", 20)} s")
+        val save = button("Save as beacon in the C3") { saveBeacon() }.apply {
+            background = GradientDrawable().apply { setColor(Color.rgb(0x5A, 0x3A, 0x8A)); cornerRadius = 16f }
+        }
+        body.addView(row(save, loopSeconds), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = 8 })
         body.addView(TextView(this).apply {
             text = "Licensed radio amateurs only. AMP 300 = 0 dB (a few mW), 13 = −27 dB; 8PSK up to 420. Keep the C3 and " +
                 "its antenna away from the phone. TX goes on with the screen off (Stop in the notification)."
@@ -178,32 +186,32 @@ class TxActivity : Activity() {
 
     private fun device() = usbManager.deviceList.values.firstOrNull { it.vendorId == 0x303A && it.productId == 0x1001 }
 
-    private fun start() {
-        if (tx != null) return
-        val svc = service ?: return log("service not ready")
-        val dev = device() ?: return log("no ESP32 (303a:1001) on USB")
+    /** The settings of the form with USB / camera permission in place; null (and a log line or a permission request) if not. */
+    private fun config(onGranted: () -> Unit): Pair<Transmitter.Config, android.hardware.usb.UsbDevice>? {
+        afterPermission = onGranted
+        val dev = device() ?: return null.also { log("no ESP32 (303a:1001) on USB") }
         if (!usbManager.hasPermission(dev)) {
             val flags = if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
             usbManager.requestPermission(dev, PendingIntent.getBroadcast(this, 0, Intent(permissionAction).setPackage(packageName), flags))
-            return
+            return null
         }
         val src = source.selectedItem as String
         if (src != Transmitter.SOURCE_CARD && checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(android.Manifest.permission.CAMERA), REQ_CAMERA)
-            return
+            return null
         }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFY)
-        val mhz = freq.text.toString().replace(',', '.').toDoubleOrNull() ?: return log("frequency?")
-        if (mhz < 2300.0 || mhz > 2450.0) return log("the C3 transmits only in 2300..2450 MHz")
-        val a = amp.text.toString().toIntOrNull()?.takeIf { it in 1..480 } ?: return log("AMP 1..480")
+        val mhz = freq.text.toString().replace(',', '.').toDoubleOrNull() ?: return null.also { log("frequency?") }
+        if (mhz < 2300.0 || mhz > 2450.0) return null.also { log("the C3 transmits only in 2300..2450 MHz") }
+        val a = amp.text.toString().toIntOrNull()?.takeIf { it in 1..480 } ?: return null.also { log("AMP 1..480") }
         val cs = call.text.toString().trim().uppercase()
-        if (cs.isEmpty()) return log("callsign?")
+        if (cs.isEmpty()) return null.also { log("callsign?") }
         val sr = rates[rate.selectedItemPosition]
         val c = constel.selectedItem as String
         val shortFrame = frame.selectedItem == "short"
         val r = fec.selectedItem as String
-        if (shortFrame && r == "9/10") return log("no 9/10 with short frames")
+        if (shortFrame && r == "9/10") return null.also { log("no 9/10 with short frames") }
         if (c == "8PSK" && sr < 125_000) log("8PSK below 125 kS/s: the C3 uses a slower DAC loop")
         val vk = kbpsChoices[videoKbps.selectedItemPosition]
         val f = fpsChoices[fps.selectedItemPosition]
@@ -214,12 +222,44 @@ class TxActivity : Activity() {
             src, c, vk, f)
         Receiver.leandvbWarning(c, r, if (shortFrame) Receiver.FRAMES_SHORT else Receiver.FRAMES_NORMAL)
             ?.let { log(it.replace("leandvb does not decode", "leandvb-based receivers (this app, rx_dvbs2.py) do not decode")) }
+        return cfg to dev
+    }
+
+    private var afterPermission: () -> Unit = {}
+
+    private fun start() {
+        if (tx != null || saving) return
+        val svc = service ?: return log("service not ready")
+        val (cfg, dev) = config(::start) ?: return
         svc.startTx(cfg, dev)
     }
 
+    @Volatile private var saving = false
+
+    /** Save as beacon: record the picture with these settings as a loop and store it in the C3 (LoopMaker). */
+    private fun saveBeacon() {
+        if (tx != null) return log("stop TX first")
+        if (saving) return
+        val (cfg, dev) = config(::saveBeacon) ?: return
+        if (cfg.const != "QPSK") return log("the stand-alone loop is QPSK only")
+        val secs = loopChoices[loopSeconds.selectedItemPosition]
+        prefs.edit().putInt("loopSeconds", secs).apply()
+        saving = true
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val maker = LoopMaker(this, usbManager, dev, cfg, secs) { s -> runOnUiThread { log(s) } }
+        loopMaker = maker
+        Thread {
+            try { maker.run() } catch (e: Exception) { runOnUiThread { log("beacon: ${e.message}") } }
+            saving = false
+            loopMaker = null
+            runOnUiThread { window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+        }.start()
+    }
+    @Volatile private var loopMaker: LoopMaker? = null
+
     override fun onRequestPermissionsResult(code: Int, perms: Array<String>, results: IntArray) {
         if (code == REQ_CAMERA) {
-            if (results.firstOrNull() == PackageManager.PERMISSION_GRANTED) start() else log("camera permission denied")
+            if (results.firstOrNull() == PackageManager.PERMISSION_GRANTED) afterPermission() else log("camera permission denied")
         }
     }
 
@@ -254,7 +294,7 @@ class TxActivity : Activity() {
     private val previewTick = object : Runnable {
         override fun run() {
             // while TX runs the picture being sent; while stopped the test card with the current settings
-            val p = tx?.video?.painter ?: TestCard(call.text.toString().trim().uppercase().ifEmpty { "CALLSIGN" },
+            val p = tx?.video?.painter ?: loopMaker?.painter ?: TestCard(call.text.toString().trim().uppercase().ifEmpty { "CALLSIGN" },
                 "ESP32-ATV TX  ${freq.text} MHz", "DVB-S2 ${constel.selectedItem} ${fec.selectedItem}" +
                     "${if (frame.selectedItem == "short") " short" else ""}  ${rate.selectedItem}")
             val b = previewBitmap ?: Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888).also { previewBitmap = it }

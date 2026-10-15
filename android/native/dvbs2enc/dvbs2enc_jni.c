@@ -46,3 +46,27 @@ JNIEXPORT jint JNICALL FN(nativeStreamFrame)(JNIEnv *env, jclass cls, jlong h, j
     (*env)->ReleaseByteArrayElements(env, out, o, 0);
     return n;
 }
+
+/* whole packets per frame (the beacon / loop framing): packets_per_frame packets from buf[off] -> one PLFRAME */
+JNIEXPORT jint JNICALL FN(nativeFrameWhole)(JNIEnv *env, jclass cls, jlong h, jbyteArray ts, jint off, jbyteArray out)
+{
+    (void)cls;
+    s2enc *e = (s2enc *)(intptr_t)h;
+    jbyte *t = (*env)->GetByteArrayElements(env, ts, NULL);
+    jbyte *o = (*env)->GetByteArrayElements(env, out, NULL);
+    int n = s2enc_frame(e, (const uint8_t *)t + off, (uint8_t *)o);
+    (*env)->ReleaseByteArrayElements(env, ts, t, JNI_ABORT);
+    (*env)->ReleaseByteArrayElements(env, out, o, 0);
+    return n;
+}
+
+JNIEXPORT jint JNICALL FN(nativePacketsPerFrame)(JNIEnv *env, jclass cls, jlong h) { (void)env; (void)cls; return s2enc_packets_per_frame((s2enc *)(intptr_t)h); }
+
+/* the CRC-8 slot of the first packet: the loop's last packet (so that it joins up) */
+JNIEXPORT void JNICALL FN(nativeSetPrevCrc)(JNIEnv *env, jclass cls, jlong h, jbyteArray ts, jint off)
+{
+    (void)cls;
+    jbyte p[188];
+    (*env)->GetByteArrayRegion(env, ts, off, 188, p);
+    s2enc_set_prev_crc((s2enc *)(intptr_t)h, s2enc_packet_crc((const uint8_t *)p));
+}

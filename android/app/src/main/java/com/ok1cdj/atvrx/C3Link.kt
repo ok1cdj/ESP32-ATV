@@ -80,6 +80,10 @@ class C3Link(private val usb: UsbCdc) : AutoCloseable {
         }
     }
 
+    /** after info(): the firmware's VIDW line ("VIDW 1 VIDEO ..."; null: no VIDW command) and FW line */
+    @Volatile var vidw: String? = null; private set
+    @Volatile var fw: String? = null; private set
+
     /** lines not consumed by waitLine, for the log */
     val lines = java.util.Collections.synchronizedList(ArrayList<String>())
 
@@ -91,6 +95,8 @@ class C3Link(private val usb: UsbCdc) : AutoCloseable {
         command("INFO")
         val id = waitLine(1500) { it.startsWith("ESP32DATV") } ?: return null
         val beacon = waitLine(300) { it.startsWith("BEACON ") }
+        vidw = waitLine(300) { it.startsWith("VIDW ") }
+        fw = lines.lastOrNull { it.startsWith("FW ") }
         return id to beacon
     }
 
@@ -118,6 +124,33 @@ class C3Link(private val usb: UsbCdc) : AutoCloseable {
     }
 
     fun send(b: ByteArray, n: Int) = usb.write(if (n == b.size) b else b.copyOf(n))
+
+    /**
+     * Stores a stand-alone loop in the "video" partition with ESP32-ATV's VIDW command (fork of ESP32-DATV-SA): BEGIN
+     * (the firmware erases what it needs), DATA blocks of 4 KB with a CRC32 each, END (CRC32 of everything, the loop
+     * checked and started). Returns the firmware's VIDEO line; throws when the firmware has no VIDW or a step fails.
+     */
+    fun storeLoop(data: ByteArray, progress: (Int, Int) -> Unit): String {
+        fun crc(b: ByteArray, o: Int, n: Int) = java.util.zip.CRC32().apply { update(b, o, n) }.value
+        command("VIDW BEGIN %d %08x".format(data.size, crc(data, 0, data.size)))
+        val begin = waitLine(60_000) { it.startsWith("OK VIDW BEGIN") || it.startsWith("ERR") } ?: throw IOException("no answer to VIDW BEGIN")
+        if (!begin.startsWith("OK")) throw IOException("C3: $begin")
+        var off = 0
+        while (off < data.size) {
+            val n = minOf(4096, data.size - off)
+            usb.write("VIDW DATA %d %d %08x\n".format(off, n, crc(data, off, n)).toByteArray() + data.copyOfRange(off, off + n))
+            val r = waitLine(5000) { it.startsWith("OK VIDW DATA $off") || it.startsWith("ERR") } ?: throw IOException("no answer at $off")
+            if (!r.startsWith("OK")) throw IOException("C3: $r")
+            off += n
+            progress(off, data.size)
+        }
+        command("VIDW END")
+        var video = ""
+        val end = waitLine(30_000) { if (it.startsWith("VIDEO")) video = it; it.contains("VIDW END") || it.startsWith("ERR") }
+            ?: throw IOException("no answer to VIDW END")
+        if (!end.startsWith("OK")) throw IOException("C3: $end $video")
+        return video
+    }
 
     /** Stops the stream (A5 FF) and waits for "TX END ..." */
     fun stop(): String? {
