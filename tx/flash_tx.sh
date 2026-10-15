@@ -16,7 +16,9 @@ rsync -a --delete --exclude build --exclude sdkconfig --exclude sdkconfig.old "$
 cp "$BEACON/beacon.bin" "$BEACON/beacon_cfg.h" "$BEACON/beacon_fec.h" "$FW/src/main/"
 echo "CONFIG_DATV_BOARD_XIAO_C3=y" >> "$FW/src/sdkconfig.defaults"   # front panel OLED on D2/D0 (GPIO4/2)
 cd "$FW/src"
+# a new sdkconfig whenever sdkconfig.defaults changed (e.g. the video partition table of upstream's 2026-10-14 firmware):
+# an existing sdkconfig keeps its old values otherwise
+cmp -s sdkconfig.defaults ../sdkconfig.defaults.last || { rm -f sdkconfig; cp sdkconfig.defaults ../sdkconfig.defaults.last; }
 [ -f sdkconfig ] || idf.py set-target esp32c3
-grep -q "^CONFIG_DATV_BOARD_XIAO_C3=y" sdkconfig || idf.py reconfigure   # an sdkconfig from before the board choice
 idf.py build
 [ "$PORT" = "-" ] || idf.py -p "$PORT" flash
