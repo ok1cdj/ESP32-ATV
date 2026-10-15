@@ -29,7 +29,8 @@ static const uint32_t BCH_S[12] = { 0x402b, 0x4941, 0x4647, 0x5591, 0x6b55, 0x63
                                     0x6ce5, 0x4f21, 0x460f, 0x5a49, 0x5811, 0x65ef };
 
 struct s2enc {
-    s2enc_cfg cfg;
+    s2enc_cfg cfg;                       /* cfg.rate points to ratebuf */
+    char ratebuf[8];
     int modcod, kbch, nbch, nldpc, ppf, slots, symbols, bits_per_sym;
     int bch_deg;                         /* parity bits of the BCH code */
     uint8_t g[193];                      /* BCH generator polynomial, g[0] = x^deg coefficient .. g[deg] = 1 */
@@ -132,6 +133,8 @@ s2enc *s2enc_new(const s2enc_cfg *cfg, const char **err)
     s2enc *e = calloc(1, sizeof *e);
     if (!e) { *err = "out of memory"; return NULL; }
     e->cfg = *cfg;
+    strncpy(e->ratebuf, cfg->rate, sizeof e->ratebuf - 1);
+    e->cfg.rate = e->ratebuf;
     e->modcod = modcod;
     e->ldpc = lt;
     e->nldpc = lt->n;

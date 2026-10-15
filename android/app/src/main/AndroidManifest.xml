@@ -34,6 +34,9 @@
         <activity
             android:name=".AboutActivity"
             android:exported="false" />
+        <activity
+            android:name=".TxActivity"
+            android:exported="false" />
         <service
             android:name=".ReceiverService"
             android:exported="false"

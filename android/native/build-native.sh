@@ -3,7 +3,8 @@
 # Sources: fetched here at fixed commits (the same as ESP32-DATV-RX tools/install.sh) into android/native/build/src,
 # with ESP32-DATV-RX's leandvb-ldpc-helper.patch and our leansdr-android.patch. Output:
 # android/app/src/main/jniLibs/arm64-v8a/lib*.so – executables named lib*.so so that Android installs them into
-# nativeLibraryDir, where an app may exec them.
+# nativeLibraryDir, where an app may exec them; and libdvbs2enc.so, our DVB-S2 encoder (android/native/dvbs2enc) as a
+# JNI library for the TX tab.
 #   android/native/build-native.sh       (NDK from ANDROID_NDK_HOME, ANDROID_NDK or the newest in ~/Android/Sdk/ndk)
 set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -55,4 +56,7 @@ done
 "$CXX" $F -D__ARM_NEON__ "$SRC/LDPC/ldpc_tool.cc" "$OBJ"/tables_handler.o "$OBJ"/itls_handler.o "$OBJ"/mods_handler.o \
   -o "$OUT/libldpc_tool.so"
 "$CXX" $F "$SRC/LDPC/ldpc_tool.cc" "$OBJ"/tables_handler.o "$OBJ"/itls_handler.o "$OBJ"/mods_handler.o -o "$OBJ/ldpc_tool_generic"
+echo "== dvbs2enc (JNI)"
+"${CXX%++}" -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC -I"$ROOT/android/native/dvbs2enc" \
+  "$ROOT/android/native/dvbs2enc/dvbs2enc.c" "$ROOT/android/native/dvbs2enc/dvbs2enc_jni.c" -o "$OUT/libdvbs2enc.so"
 ls -la "$OUT"

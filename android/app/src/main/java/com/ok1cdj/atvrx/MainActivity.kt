@@ -232,6 +232,7 @@ class MainActivity : Activity() {
             "Delete preset" to ::deletePreset,
             "Replay recording" to ::startReplay,
             "USB test" to { stop(); startActivity(Intent(this, BenchActivity::class.java)) },
+            "TX (ESP32-C3)" to { stop(); startActivity(Intent(this, TxActivity::class.java)) },
             "About" to { startActivity(Intent(this, AboutActivity::class.java)) },
         )
         items.forEachIndexed { i, (t, _) -> m.menu.add(0, i, i, t) }

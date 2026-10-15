@@ -46,7 +46,7 @@ android {
 tasks.named("preBuild") {
     doFirst {
         val dir = file("src/main/jniLibs/arm64-v8a")
-        if (!File(dir, "libleandvb.so").exists() || !File(dir, "libldpc_tool.so").exists())
-            throw GradleException("missing leandvb / ldpc_tool: run android/native/build-native.sh")
+        if (listOf("libleandvb.so", "libldpc_tool.so", "libdvbs2enc.so").any { !File(dir, it).exists() })
+            throw GradleException("missing leandvb / ldpc_tool / dvbs2enc: run android/native/build-native.sh")
     }
 }
