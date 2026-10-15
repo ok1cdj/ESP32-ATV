@@ -24,11 +24,25 @@
     <span slot="unsupported">This browser cannot talk to serial ports: use Chrome or Edge on a computer.</span>
     <span slot="not-allowed">Web Serial needs HTTPS.</span>
   </esp-web-install-button></p>
+  <h1>ESP32-C3 transmitter firmware</h1>
+  <p>Writes ESP32-ATV's fork of <a href="https://github.com/ok1cdj/ESP32-DATV-SA">ESP32-DATV-SA</a> into a
+     <b>Seeed XIAO ESP32-C3</b>: the transmitter for the app's TX screen (live picture) and a stand-alone beacon. This build
+     <b>transmits nothing by itself</b> until you store a loop with your callsign (TX screen → Save as beacon, or
+     <code>tx/c3_vidw.py</code>). The same steps as above; the app can also write both firmwares from the phone
+     (menu → Firmware). Licensed radio amateurs only.</p>
+  <p><esp-web-install-button manifest="c3/manifest.json">
+    <button slot="activate">Install the transmitter firmware (C3)</button>
+    <span slot="unsupported">This browser cannot talk to serial ports: use Chrome or Edge on a computer.</span>
+    <span slot="not-allowed">Web Serial needs HTTPS.</span>
+  </esp-web-install-button></p>
   <h2>Česky</h2>
   <p>Zapíše firmware přijímače do flash <b>XIAO ESP32-S3</b>. Chrome nebo Edge na počítači, USB-C datový kabel;
-     držet <b>BOOT</b>, ťuknout <b>RESET</b>, pustit BOOT; tlačítko výše, vybrat port, potvrdit. Po dokončení <b>RESET</b>.</p>
+     držet <b>BOOT</b>, ťuknout <b>RESET</b>, pustit BOOT; tlačítko výše, vybrat port, potvrdit. Po dokončení <b>RESET</b>.
+     Firmware vysílače do <b>XIAO ESP32-C3</b> stejně druhým tlačítkem; sám nevysílá, dokud neuložíš smyčku se svou značkou.
+     Oba firmwary umí nahrát i aplikace z telefonu (menu → Firmware).</p>
   <p class="muted">Images: bootloader 0x0, partition table 0x8000, receiver 0x10000 (DIO). Licences: esp32-sdr-trx 0BSD,
-     ESP32-DATV-RX BSD-3-Clause; the image links Espressif's PHY library. <a href="../">Back</a></p>
+     ESP32-DATV-RX BSD-3-Clause; the transmitter (C3): PolyForm Noncommercial 1.0.0 (ESP32-DATV / ESP32-DATV-SA); the images
+     link Espressif's PHY library. <a href="../">Back</a></p>
 </main>
 </body>
 </html>
