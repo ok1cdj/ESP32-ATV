@@ -4,6 +4,11 @@ ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the
 
 ## Unreleased
 
+- **TX (beta of a beta):** menu ⋮ → *TX (ESP32-C3)*: a XIAO ESP32-C3 with the ESP32-DATV(-SA) firmware on USB-OTG sends a
+  test card with your callsign live as DVB-S2 QPSK (any code rate, normal or short frames, pilots, 40–500 kS/s).
+  Our own DVB-S2 encoder (`android/native/dvbs2enc`, bit-exact with ESP32-DATV's encoders; tests in
+  `rx/test_dvbs2enc.py`). Bench: 50 kS/s short frames MER 17 dB, 333 kS/s MER 16 dB, picture decodes. Keep the C3 and
+  its antenna away from the phone (on the phone the signal came 20 dB weaker and did not decode).
 - leandvb runs with `--fastlock` below 100 kS/s (app and `rx_dvbs2.py`): with normal frames its first lock is often a
   false one, and it no longer throws away ~4 s of signal before searching again (first picture 31–40 s instead of
   34–44 s or none, in simulation; on the bench a picture in every run, but hardly sooner). Details and the new simulator `rx/sim_lock.py`:
