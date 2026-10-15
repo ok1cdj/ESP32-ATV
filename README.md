@@ -93,15 +93,17 @@ third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py --save            # BDC 
 ## Receiver – Android (ATV RX/TX)
 See the [guide](docs/rx-android.en.md). Build it yourself:
 ```sh
-android/native/build-native.sh        # leandvb + ldpc_tool for arm64 with the NDK (fetches leansdr and LDPC itself)
+android/native/build-native.sh        # leandvb, ldpc_tool, the DVB-S2 encoder and minimp3 for arm64 with the NDK (fetches the sources itself)
 cd android && ./gradlew assembleDebug
 ```
 
 ## Transmitter – Android (TX)
-Switch **RX | TX** in the app, the C3 on OTG instead of the S3: test card or camera → H.264 → TS → our DVB-S2 encoder
+Switch **RX | TX** in the app, the C3 on OTG instead of the S3: test card or camera → H.264, microphone and / or the
+callsign in Morse → AAC (HE-AAC at low rates) → TS (time stamps from the capture clock) → our DVB-S2 encoder
 (`android/native/dvbs2enc`, C, GPL) → the C3's PC streaming mode. See the [guide](docs/rx-android.en.md#5-transmitting-from-the-phone-tx-beta).
 On a PC: `tx/tx_s2enc.py TS_FILE` streams a TS through the C3 with the same encoder; `rx/test_dvbs2enc.py` checks the
-encoder bit for bit against ESP32-DATV's encoders and decodes it with leandvb.
+encoder bit for bit against ESP32-DATV's encoders and decodes it with leandvb. `tx/mux_selftest.sh` (debug build)
+records the phone's TX mux without the C3 – a white flash and a beep every 2 s – and `tx/avsync.py` measures its lip sync.
 
 ## Receiver – PC (XIAO ESP32-S3, one USB-C port)
 1. U.FL antenna. Hold BOOT, tap RESET, release BOOT.
@@ -112,10 +114,12 @@ encoder bit for bit against ESP32-DATV's encoders and decodes it with leandvb.
    - `rx/rx.sh 66666` / `50000` / `40000` – low rates: 8 bit, RRC sampler of leandvb below 100 kS/s; the first picture
      after ~32 frames (66 kS/s ≈ 16 s), with `--ldpc bitflip` at once but ~5 dB less sensitive
    - `rx/rx.sh 40000 --frame short` – a beacon with short frames (`FRAME=short tx/make_beacons.sh 40000`)
-   - options: `--gain 10`, `--ppm X`, `--record x.ts`, `-v`
+   - options: `--gain 10`, `--ppm X`, `--record x.ts`, `--no-sound`, `-v`
+   - sound plays with the picture when the service has it (ffplay on the TS, synchronised to the sound); a service
+     without sound (the built-in beacon) is retimed by ffmpeg as before
 4. Spectrum: `rx/spectrum.sh`, SDR++ / SDRangel on `127.0.0.1:1234` (rtl_tcp).
 
-Other tools: `rx/level_sweep.sh` (sensitivity sweep, `FRAME=short` for short frames), `rx/sim_frames.py` (normal vs short frames simulated end to end), `rx/raw2cf32.py` (raw packets recorded by the app -> cf32, decode).
+Other tools: `rx/level_sweep.sh` (sensitivity sweep, `FRAME=short` for short frames), `rx/sim_frames.py` (normal vs short frames simulated end to end), `rx/raw2cf32.py` (raw packets recorded by the app -> cf32, decode), `rx/make_replay.py` (a recording for the app's *Replay* from any TS, no radio needed: our DVB-S2 encoder, offset, noise), `rx/avsync_rx.py` (the app's lip sync on such a replay, debug build).
 
 ## Test without hardware
 ```sh

@@ -62,8 +62,13 @@ Aktualizace: nová verze z Releases se nainstaluje přes starou (stejný podpis)
    běží plynule (zpožděný o tu dávku). Maják s **krátkými rámci** (`FRAME=short`) a předvolba *Beacon … short* zkrátí
    čekání čtyřikrát, na 5–8 s, při stejné citlivosti ([krátké rámce](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-10-15-short-frames.cs.md)).
 
-Obrazovku můžeš zhasnout nebo přepnout do jiné aplikace – příjem běží dál ve službě. Zastavíš ho tlačítkem **Stop**
-v aplikaci nebo v oznámení.
+**Zvuk** hraje s obrazem: AAC (i HE-AAC, které posílá TX této aplikace) a MPEG audio (MP2 – posílá ho řada DATV
+vysílačů i převodník videa ESP32-DATV-SA – a MP3). Obraz se řídí hodinami zvuku, takže jdou spolu i ve chvíli, kdy
+ldpc_tool vydává rámce po dávkách. **⋮ → Sound off / on** zvuk ztlumí. AAC v LATM a AC-3 podporované nejsou (stav to
+napíše); bez zvuku se obraz ukazuje, jak přichází, jako dřív.
+
+Obrazovku můžeš zhasnout nebo přepnout do jiné aplikace – příjem běží dál ve službě (i zvuk). Zastavíš ho tlačítkem
+**Stop** v aplikaci nebo v oznámení.
 
 ### Co znamenají údaje
 
@@ -77,7 +82,8 @@ v aplikaci nebo v oznámení.
 | `CNR` | poměr nosná/šum (jen když vzorkování > 3× symbolová rychlost, tj. do 100 kS/s) |
 | `frames ok / fixed / bad` | rámce bez chyb / opravené kódem BCH / nedekódované |
 | `TS`, `TEI`, `CC` | tok transport streamu (průměr 10 s), pakety s chybou, nespojitosti čítače |
-| `service`, `video` | název služby a poskytovatele z SDT, kodek a rozlišení |
+| `service`, `video` | název služby a poskytovatele z SDT, kodek a rozlišení; `A/V sync` = obraz se řídí zvukem, `late … ms` = obraz přichází později než jeho zvuk |
+| `audio` | zvuk: kodek, vzorkování, kanály (`(off)` = ztlumeno); `… not supported` u LATM / AC-3 |
 | `USB lost`, `ESP drop`, `queue` | ztráty na USB, v ESP32-S3 a ve frontě k demodulátoru – mají být 0 |
 | konstelace (čtverec) | body symbolů: QPSK 4 shluky, 8PSK 8 shluků; prstenec = málo signálu nebo fázový šum |
 
@@ -88,7 +94,8 @@ licence PolyForm Noncommercial) **sám nic nevysílá**, dokud do něj neuloží
 
 1. Připoj C3 přes OTG, přepni na **TX** a nastav vše jako pro živé vysílání (kapitola 5): kmitočet, symbolovou rychlost
    (do 333 kS/s), kódový poměr QPSK, velikost rámců (při nízkých rychlostech nejlépe **short**), piloty, **značku**,
-   **AMP**, obraz (testkarta nebo kamera) a délku (10–60 s).
+   **AMP**, obraz (testkarta nebo kamera), **zvuk** (CW ID: značka v Morseovce jednou za smyčku; při 40–50 kS/s zvol
+   kb/s, *auto* tam zvuk neposílá) a délku (10–60 s).
 2. Klepni na **Save as beacon in the C3**. Telefon po tu dobu nahrává obraz, zakóduje ho jako smyčku a uloží do flash C3
    (ukazatel průběhu: nahrávání, kódování, ukládání – pro 20 s asi půl minuty).
 3. Odpoj C3 a napájej ho čímkoli – powerbankou, nabíječkou. Po každém zapnutí vysílá smyčku sám, na uloženém kmitočtu
@@ -120,7 +127,8 @@ s PC). C3 potřebuje firmware vysílače (kapitola 1); příkaz z USB zastaví b
 2. Nahoře přepni na **TX**, povol přístup k USB (a ke kameře, když ji použiješ).
 3. Nastav kmitočet (2300–2450 MHz, jinak ho firmware odmítne), symbolovou rychlost, **QPSK / 8PSK**, kódový poměr,
    velikost rámců (**short** dá při nízkých rychlostech první obraz 4× dřív), piloty, **značku**, **AMP** (300 = 0 dB,
-   pár mW; 13 = −27 dB; 8PSK až 420) a **obraz**: testkarta, zadní nebo přední kamera.
+   pár mW; 13 = −27 dB; 8PSK až 420), **obraz** (testkarta, zadní nebo přední kamera) a **zvuk**: vypnutý, mikrofon,
+   CW ID (tvoje značka v Morseovce, 20 WPM, 700 Hz, každých 30 s) nebo mikrofon + CW ID, s jeho datovým tokem.
 4. **Start TX.** Aplikace si z C3 přečte jeho DC kalibraci (`BDC`) a spustí ho; ve stavu je zaplnění bufferu C3 (má
    se držet kolem 3000), rychlost TS a videa. TX běží na pozadí i se zhasnutým displejem; zastavíš ho **Stop TX**
    nebo v oznámení.
@@ -138,11 +146,17 @@ s PC). C3 potřebuje firmware vysílače (kapitola 1); příkaz z USB zastaví b
 
 - Obraz z kamery se otáčí podle toho, jak telefon držíš (naležato vyplní celý rámec), a dole nese pruh se značkou
   a módem.
+- **Zvuk** je AAC: do 32 kb/s HE-AAC, nad tím AAC-LC. *auto* **pod 80 kb/s TS zvuk neposílá** (40–50 kS/s: obraz
+  potřebuje každý bit; zvol 8–16 kb/s, když ho chceš i tak), do 200 kb/s 24 kb/s, nad tím 64 kb/s; bity zvuku se
+  berou videu. Obraz i zvuk nesou časové značky z okamžiku zachycení, takže jdou spolu (změřeno do 20 ms; na stole
+  rty v pořádku při 333 kS/s). Na mikrofon se aplikace zeptá při prvním Startu s ním; zvuk jde i se zhasnutým displejem.
 - Bitrate a snímková frekvence videa jsou automatické (asi 70 % rychlosti TS; 320×180 5 fps při 40–66 kS/s,
   640×360 15 fps při 333 kS/s), nebo je vybereš ze seznamu (*auto* nebo 50–400 kb/s, 2–30 fps).
 - Přijímat můžeš druhým telefonem, PC (`rx/rx.sh 333000 --frame short`) nebo jakýmkoli přijímačem DVB-S2. 8PSK:
   pro přijímače s leandvb použij normální rámce (krátké 8PSK nedekódují).
-- Vyzkoušeno na stole: QPSK 3/4 50 kS/s short MER 17 dB, 333 kS/s MER 15 dB; 8PSK 2/3 333 kS/s MER 16 dB.
+- Vyzkoušeno na stole: QPSK 3/4 50 kS/s short MER 17 dB, 333 kS/s MER 15 dB; 8PSK 2/3 333 kS/s MER 16 dB. Se
+  zvukem: 333 kS/s kamera + mikrofon (AAC 64 kb/s), 66,7 kS/s CW ID (HE-AAC 24 kb/s), 40 kS/s mikrofon + CW ID při
+  12 kb/s, uložený maják s CW ID; PC (`rx/rx.sh`) přehrává zvuk taky.
 
 ## Řešení problémů
 
@@ -156,6 +170,8 @@ s PC). C3 potřebuje firmware vysílače (kapitola 1); příkaz z USB zastaví b
 | obraz nejde, rámce ano | špatný kódový poměr nebo modulace v předvolbě (maják = QPSK 3/4) |
 | TX: *no ESP32-DATV answer* | připojená je S3, ne C3 (obě jsou `303a:1001`), nebo má C3 jiný firmware |
 | TX: příjem slabý, nízké MER | dej C3 s anténou dál od telefonu |
+| TX: při 40–50 kS/s není zvuk | *auto* pod 80 kb/s TS zvuk neposílá – vedle *sound* zvol kb/s (12) |
+| RX: `audio … not supported` | AAC v LATM nebo AC-3: obraz jde, zvuk ne (AAC v ADTS, MP2 a MP3 hrají) |
 | C3 sám nic nevysílá | ještě v něm není maják: TX → Save as beacon in the C3 |
 | *this C3 firmware cannot store a loop* | nahraj aktuální firmware: menu ⋮ → Firmware |
 | firmware: *no network and no saved firmware* | první zápis potřebuje jednou internet, pak funguje uložený i bez sítě |
@@ -166,4 +182,4 @@ Hlášení chyb a nápady: [issues](https://github.com/ok1cdj/ESP32-ATV/issues).
 ## Licence
 
 ATV RX/TX: GNU GPL v3. Části: leansdr / leandvb (GPL-3), LDPC / ldpc_tool (Ahmet Inan, 0BSD-style),
-ESP32-DATV-RX (BSD-3-Clause), esp32-sdr-trx (0BSD, firmware S3).
+ESP32-DATV-RX (BSD-3-Clause), esp32-sdr-trx (0BSD, firmware S3), minimp3 (CC0, zvuk MP2 / MP3).

@@ -65,8 +65,13 @@ Updates: a new version from Releases installs over the old one (same signature).
    picture runs smoothly (delayed by that batch). A beacon with **short frames** (`FRAME=short`) and a *Beacon … short*
    preset cut the wait by 4, to 5–8 s, at the same sensitivity ([short frames](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-10-15-short-frames.en.md)).
 
-You can turn the screen off or switch to another app – reception goes on in the service. Stop it with **Stop** in the
-app or in the notification.
+**Sound** plays with the picture: AAC (also HE-AAC, what this app's TX sends) and MPEG audio (MP2 – what many DATV
+transmitters and ESP32-DATV-SA's video converter send – and MP3). The picture follows the sound's clock, so the two stay
+together also while ldpc_tool hands out frames in batches. **⋮ → Sound off / on** mutes it. AAC in LATM and AC-3 are
+not supported (the status says so); without sound the picture is shown as it comes, as before.
+
+You can turn the screen off or switch to another app – reception goes on in the service (sound too). Stop it with
+**Stop** in the app or in the notification.
 
 ### What the figures mean
 
@@ -80,7 +85,8 @@ app or in the notification.
 | `CNR` | carrier-to-noise ratio (only when the sample rate is > 3× the symbol rate, i.e. up to 100 kS/s) |
 | `frames ok / fixed / bad` | frames without errors / corrected by BCH / not decoded |
 | `TS`, `TEI`, `CC` | transport stream rate (10 s average), packets with errors, continuity counter breaks |
-| `service`, `video` | service and provider name from the SDT, codec and resolution |
+| `service`, `video` | service and provider name from the SDT, codec and resolution; `A/V sync` = the picture follows the sound, `late … ms` = it comes later than its sound |
+| `audio` | the sound: codec, rate, channels (`(off)` = muted); `… not supported` for LATM / AC-3 |
 | `USB lost`, `ESP drop`, `queue` | losses on USB, in the ESP32-S3 and in the queue to the demodulator – should be 0 |
 | constellation (square) | symbol points: QPSK 4 clusters, 8PSK 8 clusters; a ring = too little signal or phase noise |
 
@@ -92,7 +98,8 @@ you store a beacon with your callsign in it:
 
 1. Connect the C3 through OTG, switch to **TX** and set it up as for live TX (section 5): frequency, symbol rate (up to
    333 kS/s), QPSK code rate, frame size (**short** is best at low rates), pilots, **callsign**, **AMP**, picture (test
-   card or camera) and the length (10–60 s).
+   card or camera), **sound** (CW ID: the callsign in Morse once per loop; at 40–50 kS/s choose a kb/s, *auto* sends
+   none there) and the length (10–60 s).
 2. Tap **Save as beacon in the C3**. The phone records the picture for that long, encodes it as a loop and stores it in
    the C3's flash (progress bar: recording, encoding, storing – about half a minute for 20 s).
 3. Unplug the C3 and power it from anything – a power bank, a charger. It transmits the loop by itself after every
@@ -125,7 +132,8 @@ beacon and starts the live mode.
 2. Switch to **TX** at the top, allow USB access (and the camera when you use it).
 3. Set frequency (2300–2450 MHz, the firmware refuses anything else), symbol rate, **QPSK / 8PSK**, code rate,
    frame size (**short** gives the first picture 4× sooner at low rates), pilots, **callsign**, **AMP** (300 = 0 dB,
-   a few mW; 13 = −27 dB; 8PSK up to 420) and the **picture**: test card, back or front camera.
+   a few mW; 13 = −27 dB; 8PSK up to 420), the **picture** (test card, back or front camera) and the **sound**: off,
+   microphone, CW ID (your callsign in Morse, 20 WPM, 700 Hz, every 30 s) or mic + CW ID, with its bit rate.
 4. **Start TX.** The app reads the C3's DC calibration (`BDC`) and starts it; the status shows the C3 buffer (it
    should stay near 3000), the TS and video rates. TX runs in the background with the screen off; stop it with
    **Stop TX** or in the notification.
@@ -143,11 +151,18 @@ beacon and starts the live mode.
 
 - The camera picture turns upright the way you hold the phone (landscape fills the frame) and carries the callsign
   and the mode in a strip at the bottom.
+- **Sound** is AAC: HE-AAC up to 32 kb/s, AAC-LC above. *auto* sends **none below 80 kb/s of TS** (40–50 kS/s: the
+  picture needs the bits; choose 8–16 kb/s to send it anyway), 24 kb/s up to 200 kb/s, 64 kb/s above; the sound's
+  bits come off the video's. Picture and sound carry time stamps from the moment they were captured, so they stay
+  together (measured within 20 ms; on the bench lip sync OK at 333 kS/s). The app asks for the microphone on the
+  first Start with it; the sound goes on with the screen off.
 - Video bit rate and frame rate are automatic (about 70 % of the TS rate; 320×180 5 fps at 40–66 kS/s, 640×360 15 fps
   at 333 kS/s) or chosen from a list (*auto* or 50–400 kb/s, 2–30 fps).
 - Receive it with a second phone, the PC (`rx/rx.sh 333000 --frame short`) or any DVB-S2 receiver. 8PSK: use normal
   frames for leandvb-based receivers (they do not decode short 8PSK).
-- Tested on the bench: QPSK 3/4 50 kS/s short MER 17 dB, 333 kS/s MER 15 dB; 8PSK 2/3 333 kS/s MER 16 dB.
+- Tested on the bench: QPSK 3/4 50 kS/s short MER 17 dB, 333 kS/s MER 15 dB; 8PSK 2/3 333 kS/s MER 16 dB. With
+  sound: 333 kS/s camera + microphone (AAC 64 kb/s), 66.7 kS/s CW ID (HE-AAC 24 kb/s), 40 kS/s mic + CW ID at 12 kb/s,
+  a stored beacon with CW ID; the PC (`rx/rx.sh`) plays the sound too.
 
 ## Troubleshooting
 
@@ -161,6 +176,8 @@ beacon and starts the live mode.
 | frames but no picture | wrong code rate or modulation in the preset (the beacon is QPSK 3/4) |
 | TX: *no ESP32-DATV answer* | the S3 is connected, not the C3 (both are `303a:1001`), or the C3 has another firmware |
 | TX: received weak, MER low | move the C3 and its antenna away from the phone |
+| TX: no sound at 40–50 kS/s | *auto* sends none below 80 kb/s of TS – choose kb/s (12) next to *sound* |
+| RX: `audio … not supported` | AAC in LATM or AC-3: the picture plays, the sound not (AAC in ADTS, MP2 and MP3 do) |
 | the C3 transmits nothing on its own | no beacon stored yet: TX → Save as beacon in the C3 |
 | *this C3 firmware cannot store a loop* | write the current firmware: menu ⋮ → Firmware |
 | firmware: *no network and no saved firmware* | the first write needs the internet once; later the saved one works offline |
@@ -171,4 +188,4 @@ Bugs and ideas: [issues](https://github.com/ok1cdj/ESP32-ATV/issues).
 ## Licences
 
 ATV RX/TX: GNU GPL v3. Parts: leansdr / leandvb (GPL-3), LDPC / ldpc_tool (Ahmet Inan, 0BSD-style),
-ESP32-DATV-RX (BSD-3-Clause), esp32-sdr-trx (0BSD, S3 firmware).
+ESP32-DATV-RX (BSD-3-Clause), esp32-sdr-trx (0BSD, S3 firmware), minimp3 (CC0, MP2 / MP3 sound).

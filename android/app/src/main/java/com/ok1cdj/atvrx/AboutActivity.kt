@@ -24,6 +24,7 @@ class AboutActivity : Activity() {
                 <p><b>ATV RX/TX</b> – GNU GPL v3 or later.<br>
                 <b>leansdr / leandvb</b> (pabr) – GNU GPL v3.<br>
                 <b>LDPC / ldpc_tool</b> (Ahmet Inan, Blockstream) – 0BSD-style permissive licence.<br>
+                <b>minimp3</b> (lieff) – CC0 (MP2 / MP3 sound).<br>
                 <b>ESP32-DATV-RX</b> (Baris Dinc) – BSD-3-Clause; <b>esp32-sdr-trx / eSpDR</b> – 0BSD
                 (the receiver firmware of the ESP32-S3, not part of this app).</p>
                 <p>This program comes with ABSOLUTELY NO WARRANTY. It is free software, and you are welcome to

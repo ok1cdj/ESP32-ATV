@@ -2,6 +2,32 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## 0.9-beta – 2026-10-15
+
+### Sound
+- **RX:** the app plays the sound of the service – AAC (ADTS, also HE-AAC) with Android's decoder and MPEG audio
+  (**MP2**, MP3) with minimp3 (CC0; Android has no MP2 decoder). The picture follows the sound's clock, so the two stay
+  together also when ldpc_tool hands out frames in batches (tens of seconds at 40 kS/s); without sound the picture is
+  shown as it comes, as before. ⋮ → *Sound off / on*; the status shows `audio …` and `A/V sync`. AAC in LATM and AC-3
+  are named, not played.
+- **TX:** *sound*: off, microphone, **CW ID** (the callsign in Morse, 20 WPM, 700 Hz, every 30 s; once per loop in a
+  stored beacon) or mic + CW ID; AAC from Android's own encoder (HE-AAC up to 32 kb/s, else AAC-LC). *auto*: no sound
+  below 80 kb/s of TS (the picture needs the bits at 40–50 kS/s; choose kb/s to send it), 24 kb/s up to 200 kb/s,
+  64 kb/s above. TX with the microphone goes on with the screen off.
+- Picture and sound get their time stamps from the moment they were captured (before: when the picture was sent), and
+  the codec delay of AAC is taken out: lip sync within 20 ms measured from the TS, on the phone within 3 ms (MP2,
+  AAC-LC). The H.264 encoder repeats a frame after two periods instead of one (a late frame came right behind its repeat).
+- **PC:** `rx_dvbs2.py` (`rx/rx.sh`) plays the sound too: a service with sound goes straight to ffplay, one without is
+  retimed as before; `--no-sound`.
+- Bench: 333 kS/s camera + microphone (lip sync OK), 66.7 kS/s CW ID, 40 kS/s mic + CW ID at 12 kb/s, a stored beacon
+  with CW ID (once per 19.5 s loop), screen off.
+- Tools without hardware: `rx/make_replay.py` (a *Replay* recording from any TS), `tx/mux_selftest.sh` + `tx/avsync.py`
+  (TX mux lip sync), `rx/avsync_rx.py` (RX lip sync on a replay); debug-only activities in the app for them.
+
+### Other
+- The callsign is the operator's: no ready-made beacons in the repository any more; `make_beacons.sh`, `tx_pc.sh`,
+  `level_sweep.sh` need `CALL`, `make_flash_loop.py` needs `--call`.
+
 ## 0.8-beta – 2026-10-15
 
 - The app is now **ATV RX/TX** (it transmits too); package and APK file names stay (updates install over 0.7).
