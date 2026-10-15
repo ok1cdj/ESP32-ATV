@@ -109,6 +109,17 @@ command from USB stops the beacon and starts the live mode).
    should stay near 3000), the TS and video rates. TX runs in the background with the screen off; stop it with
    **Stop TX** or in the notification.
 
+- **AMP** is the peak amplitude the C3 drives its modulator with, in DAC codes (1–480) – a digital drive level, not a
+  measured power. It scales the voltage: level = 20·log₁₀(AMP / 300) dB.
+
+  | AMP | level | use |
+  |---|---|---|
+  | 480 | +4 dB | maximum; expect distortion (spectrum regrowth, lower MER) |
+  | 420 | +3 dB | default for 8PSK in ESP32-DATV's PC tools; check the MER at the receiver |
+  | **300** | **0 dB** | default for QPSK, full level (a few mW, not measured) |
+  | 95 / 30 | −10 / −20 dB | on the desk with the antennas close (300 can overload the receiver) |
+  | 13 | −27 dB | the original beacon's default; sensitivity tests |
+
 - The camera picture turns upright the way you hold the phone (landscape fills the frame) and carries the callsign
   and the mode in a strip at the bottom.
 - Video bit rate and frame rate are automatic (about 70 % of the TS rate; 320×180 5 fps at 40–66 kS/s, 640×360 15 fps

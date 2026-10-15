@@ -106,6 +106,17 @@ s PC). C3 potřebuje firmware ESP32-DATV-SA (stejný jako pro maják výše: př
    se držet kolem 3000), rychlost TS a videa. TX běží na pozadí i se zhasnutým displejem; zastavíš ho **Stop TX**
    nebo v oznámení.
 
+- **AMP** je špičková amplituda, kterou C3 budí modulátor, v kódech DAC (1–480) – digitální úroveň buzení, ne změřený
+  výkon. Mění napětí: úroveň = 20·log₁₀(AMP / 300) dB.
+
+  | AMP | úroveň | použití |
+  |---|---|---|
+  | 480 | +4 dB | maximum; čekej zkreslení (rozšíření spektra, nižší MER) |
+  | 420 | +3 dB | výchozí pro 8PSK v PC nástrojích ESP32-DATV; hlídej MER na přijímači |
+  | **300** | **0 dB** | výchozí pro QPSK, plná úroveň (pár mW, neměřeno) |
+  | 95 / 30 | −10 / −20 dB | na stole s anténami blízko sebe (300 může přijímač zahltit) |
+  | 13 | −27 dB | výchozí hodnota původního majáku; zkoušky citlivosti |
+
 - Obraz z kamery se otáčí podle toho, jak telefon držíš (naležato vyplní celý rámec), a dole nese pruh se značkou
   a módem.
 - Bitrate a snímková frekvence videa jsou automatické (asi 70 % rychlosti TS; 320×180 5 fps při 40–66 kS/s,
