@@ -5,14 +5,15 @@ import android.hardware.usb.UsbManager
 import java.util.concurrent.locks.LockSupport
 
 /**
- * Live DVB-S2 transmission through the XIAO ESP32-C3 (ESP32-DATV(-SA) firmware, PC streaming mode): test card ->
- * H.264 ([TestCard]) -> constant-rate TS ([TsMux]) -> DVB-S2 ([S2Encoder], continuous framing) -> packed QPSK symbols
+ * Live DVB-S2 transmission through the XIAO ESP32-C3 (ESP32-DATV(-SA) firmware, PC streaming mode): test card or
+ * camera ([TestCard], [CameraSource]) -> H.264 ([CanvasEncoder]) -> constant-rate TS ([TsMux]) -> DVB-S2 ([S2Encoder], continuous framing) -> packed QPSK symbols
  * -> USB, kept at the firmware's buffer target by its fill reports.
  */
-class Transmitter(private val usbManager: UsbManager, private val device: UsbDevice, val cfg: Config,
-                  private val log: (String) -> Unit) {
+class Transmitter(private val ctx: android.content.Context, private val usbManager: UsbManager, private val device: UsbDevice,
+                  val cfg: Config, private val log: (String) -> Unit) {
+    /** source: SOURCE_CARD, SOURCE_BACK or SOURCE_FRONT (camera) */
     data class Config(val freqKhz: Long, val baud: Int, val rate: String, val shortFrame: Boolean, val pilots: Boolean,
-                      val amp: Int, val call: String, val service: String, val provider: String)
+                      val amp: Int, val call: String, val service: String, val provider: String, val source: String = SOURCE_CARD)
 
     class Status {
         @Volatile var state = "starting"
@@ -30,7 +31,8 @@ class Transmitter(private val usbManager: UsbManager, private val device: UsbDev
     val status = Status()
     @Volatile private var running = true
     private var thread: Thread? = null
-    @Volatile var card: TestCard? = null; private set
+    @Volatile var video: CanvasEncoder? = null; private set
+    @Volatile var camera: CameraSource? = null; private set
     @Volatile var mux: TsMux? = null; private set
 
     fun start() {
@@ -70,14 +72,19 @@ class Transmitter(private val usbManager: UsbManager, private val device: UsbDev
             }
             val m = TsMux(tsRate, cfg.service, cfg.provider)
             mux = m
-            val c = TestCard(w, h, fps, videoBps, if (cfg.baud < 100_000) 4 else 2, cfg.call,
-                "ESP32-ATV TX  %.3f MHz".format(java.util.Locale.ROOT, cfg.freqKhz / 1000.0),
-                "DVB-S2 QPSK ${cfg.rate}${if (cfg.shortFrame) " short" else ""}  %.1f kS/s".format(java.util.Locale.ROOT, cfg.baud / 1000.0)) { au, key ->
-                m.addAu(au, key)
+            val mode = "DVB-S2 QPSK ${cfg.rate}${if (cfg.shortFrame) " short" else ""}  %.1f kS/s".format(java.util.Locale.ROOT, cfg.baud / 1000.0)
+            val painter: Painter = if (cfg.source == SOURCE_CARD)
+                TestCard(cfg.call, "ESP32-ATV TX  %.3f MHz".format(java.util.Locale.ROOT, cfg.freqKhz / 1000.0), mode)
+            else CameraSource(ctx, cfg.source == SOURCE_BACK, if (w > 320) 640 else 320, cfg.call,
+                "%.3f MHz  %s".format(java.util.Locale.ROOT, cfg.freqKhz / 1000.0, mode)).also {
+                camera = it
+                it.start()
             }
-            card = c
+            val c = CanvasEncoder(w, h, fps, videoBps, if (cfg.baud < 100_000) 4 else 2, painter) { au, key -> m.addAu(au, key) }
+            video = c
             c.start()
             log("video ${c.encoderName}: ${w}x$h $fps fps, ${videoBps / 1000} kb/s; TS %.1f kb/s".format(tsRate / 1000))
+            camera?.let { log("camera ${if (cfg.source == SOURCE_BACK) "back" else "front"} ${it.size}") }
 
             val target = 3000
             val cmd = "QPSKT %.3f %d %d %d %d %d %d %d %d %d %d".format(java.util.Locale.ROOT, cfg.freqKhz / 1000.0, cfg.baud, sps,
@@ -110,6 +117,7 @@ class Transmitter(private val usbManager: UsbManager, private val device: UsbDev
                 link.error?.let { throw it }
                 status.fill = link.fill; status.underruns = link.underruns
                 c.error?.let { throw java.io.IOException(it) }
+                camera?.error?.let { throw java.io.IOException(it) }
                 val todo = target - (link.fill + link.sentSince)          // pairs of bytes
                 if (todo >= 32) {
                     val nb = 2 * minOf(todo.toInt(), chunk.size / 2)
@@ -132,13 +140,18 @@ class Transmitter(private val usbManager: UsbManager, private val device: UsbDev
             log(status.state)
             try { link?.stop() } catch (_: Throwable) {}
         } finally {
-            card?.stop()
+            video?.stop()
+            camera?.stop()
             enc?.close()
             link?.close()
         }
     }
 
     companion object {
+        const val SOURCE_CARD = "test card"
+        const val SOURCE_BACK = "camera (back)"
+        const val SOURCE_FRONT = "camera (front)"
+
         /** phase index k (odd for QPSK) -> 2-bit code: k1 I+Q+ = 3, k3 I-Q+ = 2, k5 I-Q- = 0, k7 I+Q- = 1 */
         private val QCODE = intArrayOf(0, 3, 0, 2, 0, 0, 0, 1)
     }

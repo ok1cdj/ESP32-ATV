@@ -33,7 +33,7 @@ import android.widget.Spinner
 import android.widget.TextView
 
 /**
- * TX: a XIAO ESP32-C3 with the ESP32-DATV(-SA) firmware on USB-OTG sends the test card live as DVB-S2 QPSK
+ * TX: a XIAO ESP32-C3 with the ESP32-DATV(-SA) firmware on USB-OTG sends the test card or the camera live as DVB-S2 QPSK
  * ([Transmitter]). Licensed radio amateurs only; the firmware accepts only 2300..2450 MHz.
  */
 class TxActivity : Activity() {
@@ -42,12 +42,21 @@ class TxActivity : Activity() {
     private val permissionAction by lazy { "$packageName.TX_USB_PERMISSION" }
     private val ui = Handler(Looper.getMainLooper())
     private var tx: Transmitter? = null
+    /** how the phone is held, for turning the camera picture upright */
+    private val orientation by lazy {
+        object : android.view.OrientationEventListener(this) {
+            override fun onOrientationChanged(deg: Int) {
+                if (deg != ORIENTATION_UNKNOWN) tx?.camera?.deviceDegrees = (deg + 45) / 90 * 90 % 360
+            }
+        }
+    }
 
     private lateinit var freq: EditText
     private lateinit var rate: Spinner
     private lateinit var fec: Spinner
     private lateinit var frame: Spinner
     private lateinit var pilots: CheckBox
+    private lateinit var source: Spinner
     private lateinit var amp: EditText
     private lateinit var call: EditText
     private lateinit var startStop: Button
@@ -81,6 +90,9 @@ class TxActivity : Activity() {
         amp = edit(prefs.getInt("amp", 300).toString(), InputType.TYPE_CLASS_NUMBER)
         call = edit(prefs.getString("call", "")!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS).apply { hint = "callsign" }
         root.addView(row(label("call"), call, label("AMP"), amp))
+        source = spinner(listOf(Transmitter.SOURCE_CARD, Transmitter.SOURCE_BACK, Transmitter.SOURCE_FRONT),
+            prefs.getString("source", Transmitter.SOURCE_CARD)!!)
+        root.addView(row(label("picture"), source))
         startStop = button("Start TX") { if (tx == null) start() else stop() }
         root.addView(startStop, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = 8 })
         root.addView(TextView(this).apply {
@@ -101,11 +113,15 @@ class TxActivity : Activity() {
         else registerReceiver(permissionReceiver, filter)
         log(device()?.let { "ESP32 (303a:1001) connected – the C3 is told apart from the S3 on Start" } ?: "no ESP32 (303a:1001) on USB")
         ui.post(tick)
+        ui.post(previewTick)
+        if (orientation.canDetectOrientation()) orientation.enable()
     }
 
     override fun onDestroy() {
         stop()
         ui.removeCallbacks(tick)
+        ui.removeCallbacks(previewTick)
+        orientation.disable()
         unregisterReceiver(permissionReceiver)
         super.onDestroy()
     }
@@ -120,6 +136,12 @@ class TxActivity : Activity() {
             usbManager.requestPermission(dev, PendingIntent.getBroadcast(this, 0, Intent(permissionAction).setPackage(packageName), flags))
             return
         }
+        val src = source.selectedItem as String
+        if (src != Transmitter.SOURCE_CARD && checkSelfPermission(android.Manifest.permission.CAMERA) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.CAMERA), REQ_CAMERA)
+            return
+        }
         val mhz = freq.text.toString().replace(',', '.').toDoubleOrNull() ?: return log("frequency?")
         if (mhz < 2300.0 || mhz > 2450.0) return log("the C3 transmits only in 2300..2450 MHz")
         val a = amp.text.toString().toIntOrNull()?.takeIf { it in 1..480 } ?: return log("AMP 1..480")
@@ -131,11 +153,17 @@ class TxActivity : Activity() {
         if (shortFrame && r == "9/10") return log("no 9/10 with short frames")
         prefs.edit().putString("freq", freq.text.toString()).putInt("sr", sr).putString("fec", r)
             .putString("frame", frame.selectedItem as String).putBoolean("pilots", pilots.isChecked)
-            .putInt("amp", a).putString("call", cs).apply()
-        val cfg = Transmitter.Config(Math.round(mhz * 1000), sr, r, shortFrame, pilots.isChecked, a, cs, cs, "$cs ESP32-ATV")
-        tx = Transmitter(usbManager, dev, cfg) { s -> runOnUiThread { log(s) } }.also { it.start() }
+            .putInt("amp", a).putString("call", cs).putString("source", src).apply()
+        val cfg = Transmitter.Config(Math.round(mhz * 1000), sr, r, shortFrame, pilots.isChecked, a, cs, cs, "$cs ESP32-ATV", src)
+        tx = Transmitter(this, usbManager, dev, cfg) { s -> runOnUiThread { log(s) } }.also { it.start() }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         startStop.text = "Stop TX"
+    }
+
+    override fun onRequestPermissionsResult(code: Int, perms: Array<String>, results: IntArray) {
+        if (code == REQ_CAMERA) {
+            if (results.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) start() else log("camera permission denied")
+        }
     }
 
     private fun stop() {
@@ -162,22 +190,32 @@ class TxActivity : Activity() {
                         if (m.time > 0) m.videoBytes * 8 / m.time / 1e3 else 0.0,
                         if (total > 0) 100.0 * m.nullPackets / total else 0.0, m.queuedBytes, m.droppedAus))
                 }
-                t.card?.let { append("H.264 frames ${it.frames}${it.error?.let { e -> "  $e" } ?: ""}") }
+                t.video?.let { append("H.264 frames ${it.frames}${it.error?.let { e -> "  $e" } ?: ""}") }
+                t.camera?.let { append("\ncamera ${it.size}  frames ${it.frames}${it.error?.let { e -> "  $e" } ?: ""}") }
                 if (s.state.startsWith("error") || s.state == "stopped") runOnUiThread { if (tx === t) stop() }
-            }
-            // preview: the same card drawing
-            val c = t?.card
-            if (c != null) {
-                val b = previewBitmap?.takeIf { it.width == 640 } ?: Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888).also { previewBitmap = it }
-                c.draw(Canvas(b), 640, 360)
-                preview.setImageBitmap(b)
-                preview.invalidate()
             }
             ui.postDelayed(this, 1000)
         }
     }
 
+    /** preview: the picture source drawn again, 5 times a second */
+    private val previewTick = object : Runnable {
+        override fun run() {
+            tx?.video?.painter?.let { p ->
+                val b = previewBitmap ?: Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888).also { previewBitmap = it }
+                p.draw(Canvas(b), 640, 360)
+                preview.setImageBitmap(b)
+                preview.invalidate()
+            }
+            ui.postDelayed(this, 200)
+        }
+    }
+
     private fun log(s: String) { logView.append(s + "\n") }
+
+    companion object {
+        private const val REQ_CAMERA = 2
+    }
 
     private fun edit(v: String, type: Int) = EditText(this).apply { inputType = type; setText(v) }
     private fun label(t: String) = TextView(this).apply { text = t; setPadding(8, 0, 8, 0) }

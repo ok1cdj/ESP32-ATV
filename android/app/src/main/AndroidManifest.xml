@@ -3,6 +3,8 @@
 
     <uses-feature android:name="android.hardware.usb.host" android:required="true" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -34,9 +36,13 @@
         <activity
             android:name=".AboutActivity"
             android:exported="false" />
+        <!-- portrait only: turning the phone must not restart the screen (and stop TX); the camera picture follows the
+             phone's orientation by itself -->
         <activity
             android:name=".TxActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
         <service
             android:name=".ReceiverService"
             android:exported="false"
