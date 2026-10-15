@@ -112,6 +112,12 @@ falešný zámek je vidět přímo. 40 kS/s, Es/N0 20 dB, 3 semínka na případ
   Užší `--freq-tol` jen přesune falešný zámek na novou mez a ztratí skutečný signál, který driftuje – nepoužito.
   PC přijímač i aplikace teď pod 100 kS/s spouštějí leandvb s `--fastlock`.
 
+Na stole (stejný maják, 40 kS/s normální rámce, 0 dB) dal `--fastlock` obraz v každém běhu, ale sotva dřív: PC první
+TS 28–52 s od startu leandvb (5 z 5; předtím 28–35 s a jednou nic), falešný první zámek 3 z 5 (předtím 5 z 5), jednou
+15 falešných zámků za sebou před správným; telefon první obraz 29,0, 30,0, 37,3 s (předtím 29,0, 29,2 s a jednou nic
+za 33 s). C3 těsně po resetu při zahřívání driftoval asi 260 Hz/s; PC přijímač, který drift nedolaďuje jako aplikace,
+se dostal blízko meze ±10 kHz.
+
 Krátké rámce zůstávají pro nízké symbolové rychlosti lepší volbou.
 
 ```sh

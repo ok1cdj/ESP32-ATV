@@ -6,7 +6,7 @@ ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the
 
 - leandvb runs with `--fastlock` below 100 kS/s (app and `rx_dvbs2.py`): with normal frames its first lock is often a
   false one, and it no longer throws away ~4 s of signal before searching again (first picture 31–40 s instead of
-  34–44 s or none, in simulation). Details and the new simulator `rx/sim_lock.py`:
+  34–44 s or none, in simulation; on the bench a picture in every run, but hardly sooner). Details and the new simulator `rx/sim_lock.py`:
   [short frames, false first lock](docs/2026-10-15-short-frames.en.md#the-false-first-lock-simulation-2026-10-15).
 
 ## 0.5-beta – 2026-10-15

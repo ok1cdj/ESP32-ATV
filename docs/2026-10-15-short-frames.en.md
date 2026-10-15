@@ -112,6 +112,12 @@ lock shows up directly. At 40 kS/s, Es/N0 20 dB, 3 seeds per case:
   decoded as much or more. A narrower `--freq-tol` only moves the false lock to the new limit and loses real signals
   that drift – not used. The PC receiver and the app now run leandvb with `--fastlock` below 100 kS/s.
 
+On the bench (same beacon, 40 kS/s normal frames, 0 dB) `--fastlock` gave a picture in every run but hardly sooner:
+PC first TS 28–52 s after leandvb started (5 of 5; before 28–35 s and once none), false first lock in 3 of 5 (before
+5 of 5), once 15 false locks in a row before the right one; phone first picture 29.0, 30.0, 37.3 s (before 29.0, 29.2 s
+and once none in 33 s). The C3, just reset, drifted by about 260 Hz/s while warming up; the PC receiver, which does
+not follow drift as the app does, came close to the ±10 kHz limit.
+
 Short frames remain the better choice at low symbol rates.
 
 ```sh
