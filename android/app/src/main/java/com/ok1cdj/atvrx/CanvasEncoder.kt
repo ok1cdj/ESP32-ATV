@@ -15,10 +15,10 @@ fun interface Painter {
 /**
  * Video for TX: [painter] draws every frame with a Canvas straight into a hardware H.264 encoder's input surface at
  * [fps]. Every access unit goes to [onAu] in Annex B with an access unit delimiter, key frames with SPS / PPS in front
- * (receivers can join at any key frame).
+ * (receivers can join at any key frame), with its capture time in µs (the input surface's clock: System.nanoTime).
  */
 class CanvasEncoder(val width: Int, val height: Int, val fps: Int, val bitrate: Int, private val keyInterval: Int,
-                    val painter: Painter, private val onAu: (ByteArray, Boolean) -> Unit) {
+                    val painter: Painter, private val onAu: (ByteArray, Boolean, Long) -> Unit) {
     private var codec: MediaCodec? = null
     private var surface: Surface? = null
     @Volatile private var running = false
@@ -37,8 +37,9 @@ class CanvasEncoder(val width: Int, val height: Int, val fps: Int, val bitrate: 
             setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
             setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline)
             setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel31)
-            // the clock repaints only a corner; repeat the last frame if nothing new comes (some encoders stall)
-            setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 1_000_000L / fps)
+            // the clock repaints only a corner; repeat the last frame if nothing new comes (some encoders stall) - after two
+            // periods: after one, a frame drawn a little late came right behind its repeat
+            setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 2_000_000L / fps)
         }
         val c = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
         encoderName = c.name
@@ -103,7 +104,7 @@ class CanvasEncoder(val width: Int, val height: Int, val fps: Int, val bitrate: 
                 if (key && !startsWithSps(data)) au.write(csd)
                 au.write(data)
                 frames++
-                onAu(au.toByteArray(), key)
+                onAu(au.toByteArray(), key, info.presentationTimeUs)
             }
         } catch (e: Exception) {
             if (running) error = "encoder: ${e.message}"

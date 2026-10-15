@@ -75,7 +75,7 @@ class Transmitter(private val ctx: android.content.Context, private val usbManag
                 else -> 640 to 360
             }
             val fps = if (cfg.fps > 0) cfg.fps.coerceIn(1, 30) else if (videoBps < 80_000) 5 else if (videoBps < 200_000) 10 else 15
-            val m = TsMux(tsRate, cfg.service, cfg.provider)
+            val m = TsMux(tsRate, cfg.service, cfg.provider, delay = TsMux.delayFor(videoBps))
             mux = m
             val mode = "DVB-S2 ${cfg.const} ${cfg.rate}${if (cfg.shortFrame) " short" else ""}  %.1f kS/s".format(java.util.Locale.ROOT, cfg.baud / 1000.0)
             val painter: Painter = if (cfg.source == SOURCE_CARD)
@@ -85,7 +85,7 @@ class Transmitter(private val ctx: android.content.Context, private val usbManag
                 camera = it
                 it.start()
             }
-            val c = CanvasEncoder(w, h, fps, videoBps, if (videoBps < 80_000) 4 else 2, painter) { au, key -> m.addAu(au, key) }
+            val c = CanvasEncoder(w, h, fps, videoBps, if (videoBps < 80_000) 4 else 2, painter) { au, key, us -> m.addAu(au, key, us) }
             video = c
             c.start()
             log("video ${c.encoderName}: ${w}x$h $fps fps, ${videoBps / 1000} kb/s; TS %.1f kb/s".format(tsRate / 1000))

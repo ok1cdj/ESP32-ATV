@@ -40,8 +40,8 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
 
             // the TS, recorded in real time (the mux clock must follow the picture's)
             val ts = ByteArray(188 * npk)
-            val m = TsMux(tsRate, cfg.service, cfg.provider)
             val videoBps = if (cfg.videoKbps > 0) minOf(cfg.videoKbps * 1000, (tsRate * 0.9).toInt()) else (tsRate * 0.70).toInt()
+            val m = TsMux(tsRate, cfg.service, cfg.provider, delay = TsMux.delayFor(videoBps))
             val (w, h) = if (videoBps < 80_000) 320 to 180 else if (videoBps < 200_000) 480 to 270 else 640 to 360
             val fps = if (cfg.fps > 0) cfg.fps else if (videoBps < 80_000) 5 else if (videoBps < 200_000) 10 else 15
             val mode = "DVB-S2 QPSK ${cfg.rate}${if (cfg.shortFrame) " short" else ""}  %.1f kS/s".format(java.util.Locale.ROOT, baud / 1e3)
@@ -51,7 +51,7 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
             else CameraSource(ctx, cfg.source == Transmitter.SOURCE_BACK, if (w > 320) 640 else 320, cfg.call,
                 "%.3f MHz  %s".format(java.util.Locale.ROOT, cfg.freqKhz / 1000.0, mode)).also { camera = it; it.start() }
             painter = p
-            val video = CanvasEncoder(w, h, fps, videoBps, 2, p) { au, key -> m.addAu(au, key) }
+            val video = CanvasEncoder(w, h, fps, videoBps, 2, p) { au, key, us -> m.addAu(au, key, us) }
             video.start()
             log("recording ${w}x$h $fps fps ${videoBps / 1000} kb/s for %.1f s…".format(npk * 1504.0 / tsRate))
             try {
