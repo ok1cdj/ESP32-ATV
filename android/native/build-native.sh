@@ -3,8 +3,8 @@
 # Sources: fetched here at fixed commits (the same as ESP32-DATV-RX tools/install.sh) into android/native/build/src,
 # with ESP32-DATV-RX's leandvb-ldpc-helper.patch and our leansdr-android.patch. Output:
 # android/app/src/main/jniLibs/arm64-v8a/lib*.so – executables named lib*.so so that Android installs them into
-# nativeLibraryDir, where an app may exec them; and libdvbs2enc.so, our DVB-S2 encoder (android/native/dvbs2enc) as a
-# JNI library for the TX tab.
+# nativeLibraryDir, where an app may exec them; libdvbs2enc.so, our DVB-S2 encoder (android/native/dvbs2enc) as a
+# JNI library for the TX tab; libmpadec.so, minimp3 (CC0) for MP2 sound in RX (Android has no MP2 decoder).
 #   android/native/build-native.sh       (NDK from ANDROID_NDK_HOME, ANDROID_NDK or the newest in ~/Android/Sdk/ndk)
 set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -12,6 +12,8 @@ LEANSDR_URL=https://github.com/pabr/leansdr.git
 LEANSDR_COMMIT=84c59e1c7a1a79338d5722d63f28640cc9d350f3   # branch "work", DVB-S2 receiver
 LDPC_URL=https://github.com/Blockstream/LDPC.git
 LDPC_COMMIT=25799d96f5bee9635c534cee710e7b8cfff94de1
+MINIMP3_URL=https://github.com/lieff/minimp3.git
+MINIMP3_COMMIT=ea99364f61c14656440e8d77e9c233ccf3124633
 HELPER_PATCH="$ROOT/third_party/ESP32-DATV-RX/tools/leandvb-ldpc-helper.patch"   # partial pipe reads/writes
 NDK=${ANDROID_NDK_HOME:-${ANDROID_NDK:-$(ls -d "$HOME"/Android/Sdk/ndk/* 2>/dev/null | sort -V | tail -1)}}
 API=28                       # aligned_alloc (ldpc_tool) is in bionic from API 28
@@ -40,6 +42,7 @@ git -C "$SRC/leansdr" apply "$HELPER_PATCH"
 # scheduler stopped at 333 kS/s: the patch halves the size until the kernel takes it (1 MiB)
 patch -s -d "$SRC/leansdr" -p1 < "$ROOT/android/native/leansdr-android.patch"
 fetch "$SRC/LDPC" "$LDPC_URL" "$LDPC_COMMIT"
+fetch "$SRC/minimp3" "$MINIMP3_URL" "$MINIMP3_COMMIT"
 
 echo "== leandvb ($NDK)"
 "$CXX" -O3 -I"$SRC/leansdr/src" -DVERSION='"leansdr-work-android"' -DLEANSDR_EXTENSIONS -D'exp10f(x)=powf(10.0f,(x))' \
@@ -59,4 +62,7 @@ done
 echo "== dvbs2enc (JNI)"
 "${CXX%++}" -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC -I"$ROOT/android/native/dvbs2enc" \
   "$ROOT/android/native/dvbs2enc/dvbs2enc.c" "$ROOT/android/native/dvbs2enc/dvbs2enc_jni.c" -o "$OUT/libdvbs2enc.so"
+echo "== mpadec (JNI, minimp3)"
+"${CXX%++}" -std=c11 -O2 -Wall -Wextra -shared -fPIC -I"$SRC/minimp3" \
+  "$ROOT/android/native/mpadec/mpadec_jni.c" -o "$OUT/libmpadec.so"
 ls -la "$OUT"

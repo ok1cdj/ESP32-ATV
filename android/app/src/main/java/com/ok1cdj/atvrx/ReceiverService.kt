@@ -26,6 +26,7 @@ class ReceiverService : Service() {
 
     @Volatile var receiver: Receiver? = null; private set
     val video = VideoDecoder()
+    val audio = AudioPlayer()
     @Volatile var startedAt = 0L; private set
     /** the last lines of the receiver log, and who shows new ones */
     val log = ArrayDeque<String>()
@@ -48,6 +49,7 @@ class ReceiverService : Service() {
 
     override fun onDestroy() {
         stopRx()
+        audio.release()
         super.onDestroy()
     }
 
@@ -69,7 +71,9 @@ class ReceiverService : Service() {
         wake = (getSystemService(POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "atvrx:receiver").apply { acquire() }
         video.reset()
+        audio.reset()
         val r = Receiver(conn, device, applicationInfo.nativeLibraryDir, cacheDir, cfg, video, ::say)
+        r.demux.onAudio = { type, es, pts -> audio.feed(type, es, pts) }
         r.onConstellation = onConstellation
         receiver = r
         startedAt = System.nanoTime()
@@ -82,6 +86,7 @@ class ReceiverService : Service() {
         receiver = null
         ui.removeCallbacks(tick)
         Thread { r.stop() }.start()
+        audio.reset()
         wake?.let { if (it.isHeld) it.release() }
         wake = null
         stopForeground(STOP_FOREGROUND_REMOVE)

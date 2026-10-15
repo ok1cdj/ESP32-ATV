@@ -89,6 +89,8 @@ class MainActivity : Activity() {
             synchronized(s.log) { s.log.toList() }.forEach { appendLog(it) }
             s.onLog = ::appendLog
             s.onConstellation = constView::line
+            soundMuted = prefs.getBoolean("muted", false)
+            s.audio.muted = soundMuted
             if (surfaceReady) s.setSurface(surface.holder.surface)
             pendingStart?.let { pendingStart = null; it() }
         }
@@ -98,6 +100,7 @@ class MainActivity : Activity() {
     private val tsHistory = ArrayDeque<Pair<Long, Long>>()   // (time, TS bytes): rate over the last 10 s
     private val ui = Handler(Looper.getMainLooper())
     private val prefs by lazy { getSharedPreferences("rx", MODE_PRIVATE) }
+    private var soundMuted = false
 
     private val usbManager by lazy { getSystemService(USB_SERVICE) as UsbManager }
     private val permissionAction by lazy { "$packageName.USB_PERMISSION" }
@@ -239,6 +242,11 @@ class MainActivity : Activity() {
     private fun showMenu(anchor: android.view.View) {
         val m = android.widget.PopupMenu(this, anchor)
         val items = listOf<Pair<String, () -> Unit>>(
+            (if (soundMuted) "Sound on" else "Sound off") to {
+                soundMuted = !soundMuted
+                prefs.edit().putBoolean("muted", soundMuted).apply()
+                service?.audio?.muted = soundMuted
+            },
             "Save preset" to ::savePreset,
             "Delete preset" to ::deletePreset,
             "Replay recording" to ::startReplay,
@@ -407,6 +415,10 @@ class MainActivity : Activity() {
                 append("service %s / %s\n".format(d.service ?: "–", d.provider ?: "–"))
                 append("video %s %dx%d  %d frames%s\n".format(v?.mime?.substringAfter('/') ?: "–", v?.width ?: 0, v?.height ?: 0,
                     v?.frames ?: 0, v?.error?.let { "  ERR $it" } ?: ""))
+                val a = service?.audio
+                if (d.audioPid >= 0 || a?.description != null)
+                    append("audio %s%s%s\n".format(a?.description ?: TsDemux.audioName(d.audioType), if (soundMuted) "  (off)" else "",
+                        a?.error?.let { "  ERR $it" } ?: ""))
                 append("USB lost %d jumps %d ESP drop %d queue %d".format(usb?.lost ?: 0, usb?.jumps ?: 0, usb?.dropped ?: 0, s.queueDrops))
             }
         }

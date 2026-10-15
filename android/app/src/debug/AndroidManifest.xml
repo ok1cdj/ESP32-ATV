@@ -3,5 +3,7 @@
     <application>
         <!-- debug only: MuxSelfTest from adb -->
         <activity android:name=".MuxSelfTestActivity" android:exported="true" />
+        <!-- debug only: RX replay with the sound logged (rx/make_replay.py) -->
+        <activity android:name=".RxReplayTestActivity" android:exported="true" />
     </application>
 </manifest>
