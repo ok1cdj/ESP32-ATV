@@ -33,6 +33,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
@@ -81,6 +82,8 @@ class TxActivity : Activity() {
     private val kbpsChoices = listOf(0, 50, 75, 100, 150, 200, 300, 400)       // 0 = auto
     private val loopChoices = listOf(10, 20, 30, 60)
     private lateinit var loopSeconds: Spinner
+    private lateinit var savePhase: TextView
+    private lateinit var saveBar: ProgressBar
     private val fpsChoices = listOf(0, 2, 5, 10, 15, 20, 25, 30)
     private lateinit var startStop: Button
     private lateinit var info: TextView
@@ -147,6 +150,10 @@ class TxActivity : Activity() {
             background = GradientDrawable().apply { setColor(Color.rgb(0x5A, 0x3A, 0x8A)); cornerRadius = 16f }
         }
         body.addView(row(save, loopSeconds), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = 8 })
+        savePhase = TextView(this).apply { textSize = 14f; visibility = android.view.View.GONE }
+        saveBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 1000; visibility = android.view.View.GONE }
+        body.addView(savePhase)
+        body.addView(saveBar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         body.addView(TextView(this).apply {
             text = "Licensed radio amateurs only. AMP 300 = 0 dB (a few mW), 13 = −27 dB; 8PSK up to 420. Keep the C3 and " +
                 "its antenna away from the phone. TX goes on with the screen off (Stop in the notification)."
@@ -246,10 +253,14 @@ class TxActivity : Activity() {
         prefs.edit().putInt("loopSeconds", secs).apply()
         saving = true
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        val maker = LoopMaker(this, usbManager, dev, cfg, secs) { s -> runOnUiThread { log(s) } }
+        savePhase.visibility = android.view.View.VISIBLE; saveBar.visibility = android.view.View.VISIBLE
+        savePhase.text = "Starting…"; saveBar.progress = 0
+        val maker = LoopMaker(this, usbManager, dev, cfg, secs, { s -> runOnUiThread { log(s) } }) { text, f ->
+            runOnUiThread { savePhase.text = text; saveBar.progress = (f * 1000).toInt().coerceIn(0, 1000) }
+        }
         loopMaker = maker
         Thread {
-            try { maker.run() } catch (e: Exception) { runOnUiThread { log("beacon: ${e.message}") } }
+            try { maker.run() } catch (e: Exception) { runOnUiThread { log("beacon: ${e.message}"); savePhase.text = "Failed: ${e.message}" } }
             saving = false
             loopMaker = null
             runOnUiThread { window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }

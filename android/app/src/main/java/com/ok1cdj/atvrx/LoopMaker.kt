@@ -15,7 +15,8 @@ import java.nio.ByteOrder
  * the C3 then transmits it by itself after every power-up, without the phone.
  */
 class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, private val device: UsbDevice,
-                private val cfg: Transmitter.Config, private val seconds: Int, private val log: (String) -> Unit) {
+                private val cfg: Transmitter.Config, private val seconds: Int, private val log: (String) -> Unit,
+                private val progress: (String, Double) -> Unit = { _, _ -> }) {
     @Volatile var painter: Painter? = null; private set
 
     /** Runs on the caller's thread (minutes at most); throws with the reason on failure. */
@@ -60,6 +61,7 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
                     val wait = due - System.nanoTime()
                     if (wait > 0) Thread.sleep(wait / 1_000_000, (wait % 1_000_000).toInt())
                     m.next(ts, 188 * i)
+                    if (i % 64 == 0) progress("Recording the picture… %.0f / %.0f s".format(i * 1504.0 / tsRate, npk * 1504.0 / tsRate), 0.8 * i / npk)
                     video.error?.let { throw IOException(it) }
                     camera?.error?.let { throw IOException(it) }
                 }
@@ -71,6 +73,7 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
             log("recorded: video %.0f kb/s, %d frames dropped".format(m.videoBytes * 8 / m.time / 1e3, m.droppedAus))
 
             // symbols: 4 per byte, first in the low bits (bit 0 = I > 0, bit 1 = Q > 0); then the first 64 bytes again
+            progress("Encoding the loop…", 0.8)
             enc.setPrevCrc(ts, 188 * (npk - 1))
             val sym = ByteArray(fs)
             val data = ByteArray(nsym / 4 + TAIL)
@@ -93,13 +96,12 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
                 Thread.sleep(1200)
                 link.info() ?: throw IOException("no ESP32-DATV answer: is this the C3?")
                 if (link.vidw == null) throw IOException("this C3 firmware cannot store a loop: write the current one (menu → Firmware)")
-                var last = -1
                 val line = link.storeLoop(image) { done, total ->
-                    val pct = done * 100 / total
-                    if (pct / 20 != last) { last = pct / 20; log("storing $pct %") }
+                    progress("Storing in the C3… ${done / 1024} / ${total / 1024} kB", 0.82 + 0.18 * done / total)
                 }
                 log(line)
                 log("stored: the C3 now transmits it by itself, also after power-up (unplug it from the phone)")
+                progress("Stored: the C3 transmits this beacon by itself", 1.0)
             } finally {
                 link.close()
             }

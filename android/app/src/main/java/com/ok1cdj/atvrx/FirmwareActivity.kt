@@ -20,6 +20,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import java.io.IOException
@@ -41,6 +42,8 @@ class FirmwareActivity : Activity() {
     private lateinit var logView: TextView
     private lateinit var base: EditText
     private lateinit var flashButton: Button
+    private lateinit var phase: TextView
+    private lateinit var bar: ProgressBar
     @Volatile private var busy = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,6 +60,10 @@ class FirmwareActivity : Activity() {
         root.addView(button("Check versions on the web") { if (!busy) check() }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = 8 })
         flashButton = button("Write firmware into the connected board") { if (!busy) flash() }
         root.addView(flashButton, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = 8 })
+        phase = TextView(this).apply { textSize = 15f; setPadding(0, 16, 0, 4) }
+        bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 1000; progress = 0 }
+        root.addView(phase)
+        root.addView(bar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         logView = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 11f; setTextIsSelectable(true) }
         root.addView(ScrollView(this).apply { addView(logView) }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f).apply { topMargin = 12 })
         setContentView(root)
@@ -90,6 +97,7 @@ class FirmwareActivity : Activity() {
             val b = ByteArray(1024); val n = usb.read(b, 800)
             String(b, 0, n).lines().firstOrNull { it.startsWith("FW ") }?.let { log("C3 now: ${it.trim()}") }
         } catch (_: IOException) {}
+        progress("Into the ROM loader…", 0.0)
         log("into the ROM loader…")
         EspRom.enterLoader(usb)
         usb.close()
@@ -104,19 +112,21 @@ class FirmwareActivity : Activity() {
                 else -> throw IOException("chip id $id: not an ESP32-C3 or ESP32-S3")
             }
             log("chip: $chip (${if (chip == "ESP32-S3") "receiver" else "transmitter"})")
+            progress("$chip: getting the firmware…", 0.0)
             val fw = store().get(chip) { log(it) }
             rom.attachFlash()
-            for (p in fw.parts) {
+            val total = fw.parts.sumOf { it.data.size }.toDouble()
+            var before = 0
+            for ((i, p) in fw.parts.withIndex()) {
                 log("writing %d bytes at 0x%x".format(p.data.size, p.offset))
-                var last = -1
-                rom.flash(p.data, p.offset) { done, total ->
-                    val pct = done * 100 / total
-                    if (pct / 10 != last) { last = pct / 10; log("  $pct %") }
-                }
+                val label = "$chip ${fw.version}: writing ${i + 1}/${fw.parts.size}"
+                rom.flash(p.data, p.offset) { done, _ -> progress(label, (before + done) / total) }
+                before += p.data.size
             }
             rom.finish()
             log("verified (MD5); restarting into ${fw.name} ${fw.version}")
             EspRom.hardReset(usb)
+            progress("Done: $chip ${fw.version} written and verified", 1.0)
             if (chip == "ESP32-C3") log("Now store a loop with your callsign: TX screen → Save as beacon (or tx/c3_vidw.py).")
         } finally {
             usb.close()
@@ -151,13 +161,18 @@ class FirmwareActivity : Activity() {
         busy = true
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         Thread {
-            try { f() } catch (e: Exception) { log("error: ${e.message}") }
+            try { f() } catch (e: Exception) { log("error: ${e.message}"); runOnUiThread { phase.text = "Failed: ${e.message}" } }
             busy = false
             runOnUiThread { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
         }.start()
     }
 
     private fun log(s: String) = runOnUiThread { logView.append(s + "\n") }
+
+    private fun progress(text: String, fraction: Double) = runOnUiThread {
+        phase.text = text
+        bar.progress = (fraction * 1000).toInt().coerceIn(0, 1000)
+    }
 
     private fun button(t: String, onClick: () -> Unit) = Button(this).apply {
         text = t; isAllCaps = false; setTextColor(Color.WHITE)
