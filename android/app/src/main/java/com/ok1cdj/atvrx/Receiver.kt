@@ -371,6 +371,8 @@ class Receiver(
         // normal frames is often a false one (MER < 0), and this gets out of it sooner (rx/sim_lock.py)
         if (cfg.sr < 100_000) cmd += listOf("--sampler", "rrc", "--rrc-rej", "50", "--fastlock")
         if (fs > 3 * cfg.sr) cmd += "--cnr"
+        // 2000 ppm instead of leandvb's 100: a C3 loop from the flash runs at 160 MHz / whole cycles (333 333 Bd for 333 k)
+        cmd += listOf("--sr-tol", "0.002")
         val pb = ProcessBuilder(cmd)
         pb.environment()["INFO_FIFO"] = infoFifo.path
         pb.environment()["CONST_FIFO"] = constFifo.path
