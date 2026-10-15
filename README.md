@@ -3,7 +3,8 @@
 [![Android APK](https://github.com/ok1cdj/ESP32-ATV/actions/workflows/android.yml/badge.svg)](https://github.com/ok1cdj/ESP32-ATV/actions/workflows/android.yml)
 
 DATV on 13 cm with ESP32 boards: a stand-alone **ESP32-C3 DVB-S2 beacon** and **ATV RX**, a receiver made of a
-**XIAO ESP32-S3** on USB-OTG and an **Android** phone or tablet (beta).
+**XIAO ESP32-S3** on USB-OTG and an **Android** phone or tablet (beta). The app also **transmits** through a XIAO
+ESP32-C3 on USB-OTG: test card or camera, DVB-S2 QPSK / 8PSK encoded on the phone (`android/native/dvbs2enc`).
 
 - **Guide / návod:** <https://ok1cdj.github.io/ESP32-ATV/> ([English](docs/rx-android.en.md), [česky](docs/rx-android.cs.md))
 - **APK:** [Releases](https://github.com/ok1cdj/ESP32-ATV/releases) ([changelog](CHANGELOG.md)) · **S3 firmware:** [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/)
@@ -83,6 +84,12 @@ See the [guide](docs/rx-android.en.md). Build it yourself:
 android/native/build-native.sh        # leandvb + ldpc_tool for arm64 with the NDK (fetches leansdr and LDPC itself)
 cd android && ./gradlew assembleDebug
 ```
+
+## Transmitter – Android (TX)
+Switch **RX | TX** in the app, the C3 on OTG instead of the S3: test card or camera → H.264 → TS → our DVB-S2 encoder
+(`android/native/dvbs2enc`, C, GPL) → the C3's PC streaming mode. See the [guide](docs/rx-android.en.md#5-transmitting-from-the-phone-tx-beta).
+On a PC: `tx/tx_s2enc.py TS_FILE` streams a TS through the C3 with the same encoder; `rx/test_dvbs2enc.py` checks the
+encoder bit for bit against ESP32-DATV's encoders and decodes it with leandvb.
 
 ## Receiver – PC (XIAO ESP32-S3, one USB-C port)
 1. U.FL antenna. Hold BOOT, tap RESET, release BOOT.

@@ -5,7 +5,8 @@ title: ATV RX – návod (beta)
 **ATV RX** je přijímač DVB-S2 pro amatérskou televizi v pásmu 13 cm. Rádiem je **Seeed XIAO ESP32-S3** připojený přes
 USB-OTG, **telefon nebo tablet s Androidem** signál demoduluje (leandvb), dekóduje LDPC (ldpc_tool) a ukazuje obraz
 spolu s MER, konstelací a údaji o streamu. Protějškem je samostatný maják s ESP32-C3
-([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)).
+([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)) – a stejná aplikace také **vysílá**: s XIAO ESP32-C3 na
+USB-OTG posílá živě testkartu nebo obraz z kamery telefonu jako DVB-S2 (přepínač **RX | TX** nahoře).
 
 > **Beta.** Vysílat smí jen radioamatéři s platným oprávněním, na kmitočtech podle národních podmínek a band plánu.
 > Přijímač je ke stažení zdarma pod GNU GPL v3.
@@ -20,6 +21,7 @@ spolu s MER, konstelací a údaji o streamu. Protějškem je samostatný maják 
 | **USB-C OTG** kabel nebo redukce | telefon musí umět USB host (OTG); S3 se napájí z telefonu |
 | **Android 9+**, procesor **arm64** | testováno: OnePlus 10 Pro (Android 16) |
 | počítač s **Chrome / Edge** | jen jednou, na nahrání firmwaru do S3 |
+| pro TX: **Seeed XIAO ESP32-C3** | s firmwarem [ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA) a anténou na U.FL |
 
 ## 1. Firmware přijímače do ESP32-S3 (jednou)
 
@@ -84,7 +86,33 @@ CALL=TVOJEZNACKA tx/make_beacons.sh 50000        # 50 kS/s; AMP=300 pro plnou ú
 - Kmitočet je v `boards.sh` (`ATV_FREQ`, výchozí **2340.000 MHz** – ATV segment 2322–2355 MHz band plánu IARU R1).
   Ověř si národní podmínky.
 - **DC kalibrace úniku nosné** (`rx/cal_dc.py --save`, S3 na PC) platí pro jeden kmitočet – po změně ji zopakuj.
-- Beacon umí jen QPSK; 8PSK a další modulace vysílá C3 v režimu s PC (`third_party/ESP32-DATV-SA/host/tx_dvbs.py`).
+- Beacon umí jen QPSK; 8PSK a živý obraz vysílá aplikace (kapitola 5) nebo PC
+  (`third_party/ESP32-DATV-SA/host/tx_dvbs.py`).
+
+## 5. Vysílání z telefonu (TX, beta)
+
+![TX: testkarta z telefonu, stav C3 a streamu](img/atvrx-tx.png)
+
+Telefon sám zakóduje obraz (H.264), transport stream i DVB-S2 a posílá symboly do C3, který jen moduluje (jeho režim
+s PC). C3 potřebuje firmware ESP32-DATV-SA (stejný jako pro maják výše: příkaz z USB maják zastaví a spustí živý režim).
+
+1. Připoj **XIAO ESP32-C3** přes OTG místo S3 (jeden port: RX a TX se střídají). C3 s anténou dej **dál od telefonu** –
+   položený vedle něj dával signál o 20 dB slabší a nedekódoval se.
+2. Nahoře přepni na **TX**, povol přístup k USB (a ke kameře, když ji použiješ).
+3. Nastav kmitočet (2300–2450 MHz, jinak ho firmware odmítne), symbolovou rychlost, **QPSK / 8PSK**, kódový poměr,
+   velikost rámců (**short** dá při nízkých rychlostech první obraz 4× dřív), piloty, **značku**, **AMP** (300 = 0 dB,
+   pár mW; 13 = −27 dB; 8PSK až 420) a **obraz**: testkarta, zadní nebo přední kamera.
+4. **Start TX.** Aplikace si z C3 přečte jeho DC kalibraci (`BDC`) a spustí ho; ve stavu je zaplnění bufferu C3 (má
+   se držet kolem 3000), rychlost TS a videa. TX běží na pozadí i se zhasnutým displejem; zastavíš ho **Stop TX**
+   nebo v oznámení.
+
+- Obraz z kamery se otáčí podle toho, jak telefon držíš (naležato vyplní celý rámec), a dole nese pruh se značkou
+  a módem.
+- Bitrate a snímková frekvence videa jsou automatické (asi 70 % rychlosti TS; 320×180 5 fps při 40–66 kS/s,
+  640×360 15 fps při 333 kS/s), nebo je zadáš ručně.
+- Přijímat můžeš druhým telefonem, PC (`rx/rx.sh 333000 --frame short`) nebo jakýmkoli přijímačem DVB-S2. 8PSK:
+  pro přijímače s leandvb použij normální rámce (krátké 8PSK nedekódují).
+- Vyzkoušeno na stole: QPSK 3/4 50 kS/s short MER 17 dB, 333 kS/s MER 15 dB; 8PSK 2/3 333 kS/s MER 16 dB.
 
 ## Řešení problémů
 
@@ -96,6 +124,8 @@ CALL=TVOJEZNACKA tx/make_beacons.sh 50000        # 50 kS/s; AMP=300 pro plnou ú
 | MER klesá při silném signálu | přijímač zahlcen – snížit gain |
 | `USB lost` / `queue drops` > 0 | jiný OTG kabel / redukce; nepouštět náročné aplikace souběžně |
 | obraz nejde, rámce ano | špatný kódový poměr nebo modulace v předvolbě (maják = QPSK 3/4) |
+| TX: *no ESP32-DATV answer* | připojená je S3, ne C3 (obě jsou `303a:1001`), nebo má C3 jiný firmware |
+| TX: příjem slabý, nízké MER | dej C3 s anténou dál od telefonu |
 
 Hlášení chyb a nápady: [issues](https://github.com/ok1cdj/ESP32-ATV/issues).
 

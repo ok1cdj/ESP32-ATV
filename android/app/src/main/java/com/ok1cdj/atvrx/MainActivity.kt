@@ -110,6 +110,9 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        // RX | TX: TX takes the USB port for the C3, so reception stops first
+        root.addView(modeSwitch(this, tx = false, onRx = {}, onTx = { stop(); startActivity(Intent(this, TxActivity::class.java)) }),
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = 12 })
         surface = SurfaceView(this)
         surface.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(h: SurfaceHolder) { surfaceReady = true; service?.setSurface(h.surface) }
@@ -232,7 +235,6 @@ class MainActivity : Activity() {
             "Delete preset" to ::deletePreset,
             "Replay recording" to ::startReplay,
             "USB test" to { stop(); startActivity(Intent(this, BenchActivity::class.java)) },
-            "TX (ESP32-C3)" to { stop(); startActivity(Intent(this, TxActivity::class.java)) },
             "About" to { startActivity(Intent(this, AboutActivity::class.java)) },
         )
         items.forEachIndexed { i, (t, _) -> m.menu.add(0, i, i, t) }

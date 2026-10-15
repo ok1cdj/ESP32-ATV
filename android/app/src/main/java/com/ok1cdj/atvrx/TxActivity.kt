@@ -93,6 +93,11 @@ class TxActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        // back to RX: a running TX stays in its service (the notification stops it); RX needs the S3 on the port
+        root.addView(modeSwitch(this, tx = true, onRx = {
+            if (tx != null) log("TX still running – stop it before receiving (the port holds the C3)")
+            startActivity(Intent(this, MainActivity::class.java)); finish()
+        }, onTx = {}), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = 12 })
         val w = resources.displayMetrics.widthPixels - 48
         preview = ImageView(this)
         root.addView(preview, LinearLayout.LayoutParams(MATCH_PARENT, w * 9 / 16))

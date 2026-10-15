@@ -5,7 +5,8 @@ title: ATV RX – guide (beta)
 **ATV RX** is a DVB-S2 receiver for amateur television on 13 cm. The radio is a **Seeed XIAO ESP32-S3** on USB-OTG;
 an **Android phone or tablet** demodulates (leandvb), decodes the LDPC (ldpc_tool) and shows the picture together
 with MER, constellation and stream information. Its counterpart is the stand-alone ESP32-C3 beacon
-([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)).
+([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)) – and the same app also **transmits**: with a XIAO
+ESP32-C3 on USB-OTG it sends a test card or the phone's camera live as DVB-S2 (switch **RX | TX** at the top).
 
 > **Beta.** Transmitting is for licensed radio amateurs only, on frequencies allowed by your licence and band plan.
 > The receiver is free software under the GNU GPL v3.
@@ -20,6 +21,7 @@ with MER, constellation and stream information. Its counterpart is the stand-alo
 | **USB-C OTG** cable or adapter | the phone must support USB host (OTG); the S3 is powered by the phone |
 | **Android 9+**, **arm64** CPU | tested: OnePlus 10 Pro (Android 16) |
 | a computer with **Chrome / Edge** | once, to write the firmware into the S3 |
+| for TX: **Seeed XIAO ESP32-C3** | with the [ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA) firmware and an antenna on U.FL |
 
 ## 1. Receiver firmware into the ESP32-S3 (once)
 
@@ -86,8 +88,34 @@ CALL=YOURCALL tx/make_beacons.sh 50000        # 50 kS/s; AMP=300 for full level 
   Region 1 band plan). Check your national rules.
 - The **DC calibration of the carrier leakage** (`rx/cal_dc.py --save`, S3 on the PC) is valid for one frequency –
   repeat it after a change.
-- The beacon is QPSK only; 8PSK and other modes are transmitted by the C3 in PC mode
+- The beacon is QPSK only; 8PSK and live pictures come from the app (section 5) or from a PC
   (`third_party/ESP32-DATV-SA/host/tx_dvbs.py`).
+
+## 5. Transmitting from the phone (TX, beta)
+
+![TX: test card from the phone, status of the C3 and the stream](img/atvrx-tx.png)
+
+The phone encodes the picture (H.264), the transport stream and DVB-S2 itself and streams the symbols to the C3, which
+only modulates (its PC mode). The C3 needs the ESP32-DATV-SA firmware (the beacon firmware above is the same one: a
+command from USB stops the beacon and starts the live mode).
+
+1. Connect the **XIAO ESP32-C3** through OTG instead of the S3 (one port: RX and TX take turns). Put the C3 and its
+   antenna **away from the phone** – lying next to it the signal came 20 dB weaker and did not decode.
+2. Switch to **TX** at the top, allow USB access (and the camera when you use it).
+3. Set frequency (2300–2450 MHz, the firmware refuses anything else), symbol rate, **QPSK / 8PSK**, code rate,
+   frame size (**short** gives the first picture 4× sooner at low rates), pilots, **callsign**, **AMP** (300 = 0 dB,
+   a few mW; 13 = −27 dB; 8PSK up to 420) and the **picture**: test card, back or front camera.
+4. **Start TX.** The app reads the C3's DC calibration (`BDC`) and starts it; the status shows the C3 buffer (it
+   should stay near 3000), the TS and video rates. TX runs in the background with the screen off; stop it with
+   **Stop TX** or in the notification.
+
+- The camera picture turns upright the way you hold the phone (landscape fills the frame) and carries the callsign
+  and the mode in a strip at the bottom.
+- Video bit rate and frame rate are automatic (about 70 % of the TS rate; 320×180 5 fps at 40–66 kS/s, 640×360 15 fps
+  at 333 kS/s) or set by hand.
+- Receive it with a second phone, the PC (`rx/rx.sh 333000 --frame short`) or any DVB-S2 receiver. 8PSK: use normal
+  frames for leandvb-based receivers (they do not decode short 8PSK).
+- Tested on the bench: QPSK 3/4 50 kS/s short MER 17 dB, 333 kS/s MER 15 dB; 8PSK 2/3 333 kS/s MER 16 dB.
 
 ## Troubleshooting
 
@@ -99,6 +127,8 @@ CALL=YOURCALL tx/make_beacons.sh 50000        # 50 kS/s; AMP=300 for full level 
 | MER drops with a strong signal | receiver overloaded – less gain |
 | `USB lost` / `queue drops` > 0 | another OTG cable / adapter; no heavy apps at the same time |
 | frames but no picture | wrong code rate or modulation in the preset (the beacon is QPSK 3/4) |
+| TX: *no ESP32-DATV answer* | the S3 is connected, not the C3 (both are `303a:1001`), or the C3 has another firmware |
+| TX: received weak, MER low | move the C3 and its antenna away from the phone |
 
 Bugs and ideas: [issues](https://github.com/ok1cdj/ESP32-ATV/issues).
 

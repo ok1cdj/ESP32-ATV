@@ -2,10 +2,11 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
-## Unreleased
+## 0.6-beta – 2026-10-15
 
-- **TX (beta of a beta):** menu ⋮ → *TX (ESP32-C3)*: a XIAO ESP32-C3 with the ESP32-DATV(-SA) firmware on USB-OTG sends a
-  test card with your callsign live as DVB-S2 QPSK (any code rate, normal or short frames, pilots, 40–500 kS/s).
+- **RX | TX** switch at the top of the app: receive with the ESP32-S3, transmit with the ESP32-C3.
+- **TX (beta of a beta):** a XIAO ESP32-C3 with the ESP32-DATV(-SA) firmware on USB-OTG sends a test card with your
+  callsign live as DVB-S2 QPSK (any code rate, normal or short frames, pilots, 40–500 kS/s). Guide: section 5.
   Our own DVB-S2 encoder (`android/native/dvbs2enc`, bit-exact with ESP32-DATV's encoders; tests in
   `rx/test_dvbs2enc.py`). Bench: 50 kS/s short frames MER 17 dB, 333 kS/s MER 16 dB, picture decodes. Keep the C3 and
   its antenna away from the phone (on the phone the signal came 20 dB weaker and did not decode).
