@@ -48,7 +48,9 @@ Aktualizace: nová verze z Releases se nainstaluje přes starou (stejný podpis)
    ztrácí zámek).
 3. **Start.** Aplikace nejdřív sekundu hledá signál (FFT), naladí se na jeho střed a spustí demodulátor.
 4. **První obraz** přijde, až ldpc_tool dekóduje první dávku 32 rámců: při 333 kS/s asi za 3 s, při 50 kS/s asi
-   za 20 s, při 40 kS/s asi za 27 s. Pak už obraz běží plynule (zpožděný o tu dávku).
+   za 20 s, při 40 kS/s asi za 27 s (první neúplná dávka se často ztratí, takže v praxi i dvojnásobek). Pak už obraz
+   běží plynule (zpožděný o tu dávku). Maják s **krátkými rámci** (`FRAME=short`) a předvolba *Beacon … short* zkrátí
+   čekání čtyřikrát, na 5–8 s, při stejné citlivosti ([krátké rámce](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-10-15-short-frames.cs.md)).
 
 Obrazovku můžeš zhasnout nebo přepnout do jiné aplikace – příjem běží dál ve službě. Zastavíš ho tlačítkem **Stop**
 v aplikaci nebo v oznámení.

@@ -49,7 +49,9 @@ Updates: a new version from Releases installs over the old one (same signature).
    (MER drops, lock comes and goes).
 3. **Start.** The app looks for the signal for a second (FFT), tunes to its centre and starts the demodulator.
 4. The **first picture** comes when ldpc_tool has decoded the first batch of 32 frames: about 3 s at 333 kS/s, 20 s at
-   50 kS/s, 27 s at 40 kS/s. After that the picture runs smoothly (delayed by that batch).
+   50 kS/s, 27 s at 40 kS/s (the first, partial batch is often lost, so up to twice that in practice). After that the
+   picture runs smoothly (delayed by that batch). A beacon with **short frames** (`FRAME=short`) and a *Beacon … short*
+   preset cut the wait by 4, to 5–8 s, at the same sensitivity ([short frames](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-10-15-short-frames.en.md)).
 
 You can turn the screen off or switch to another app – reception goes on in the service. Stop it with **Stop** in the
 app or in the notification.

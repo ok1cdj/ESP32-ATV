@@ -29,8 +29,8 @@ remote `upstream`. Update: `git -C third_party/<repo> fetch upstream && git -C t
 
 | Fork | Changes |
 |---|---|
-| ESP32-DATV-SA | beacon 40–500 kS/s (rate table, default rate from `BEACON_BAUD`, `make_beacon.py`); DC/IQ correction of the beacon (`--cal`, `BDC` command); branch `xiao-panel`: front panel pins for the XIAO ESP32-C3 (untested) |
-| ESP32-DATV-RX | `rx_dvbs2.py --sampler auto/linear/rrc`, `--rrc-rej` (RRC below 100 kS/s), `--device`, `--decimate` (experimental) |
+| ESP32-DATV-SA | beacon 40–500 kS/s (rate table, default rate from `BEACON_BAUD`, `make_beacon.py`); DC/IQ correction of the beacon (`--cal`, `BDC` command); DVB-S2 short frames (`--frame short`); branch `xiao-panel`: front panel pins for the XIAO ESP32-C3 (untested) |
+| ESP32-DATV-RX | `rx_dvbs2.py --sampler auto/linear/rrc`, `--rrc-rej` (RRC below 100 kS/s), `--device`, `--frame normal/short/auto`, DC removal in the 8-bit mode, MER / CNR in the status line, `--decimate` (experimental) |
 
 ## One-time setup (PC, Linux)
 ```sh
@@ -59,6 +59,15 @@ Check: the C3 serial console command `INFO`. Rates: 40000 50000 66666 100000 125
 loop runs at 8 MS/s with a whole number of 16–232 samples per symbol; below 125 kS/s it holds 2 PLFRAMEs so that the
 modulator tables (256 B × S) fit on the heap. Other modulations (8PSK …) or rates: PC mode `tx/tx_pc.sh 33000`.
 
+### Short frames (faster first picture at low rates)
+```sh
+FRAME=short tx/make_beacons.sh 40000     # -> tx/beacons/<call>-40k-short/, DVB-S2 short FECFRAMEs (16200 bits)
+```
+The receiver's LDPC decoder (ldpc_tool) works on batches of 32 frames. Short frames are 4× shorter, so a batch fills 4×
+sooner: in simulation at 40–66 kS/s the first picture came after 5–8 s instead of 40–60 s (the first, partial batch of
+normal frames is usually lost), at the same threshold (QPSK 3/4: Es/N0 ≈ 4.5 dB for both). Receive with the *… short* presets in the app or `rx/rx.sh 40000 --frame short`. Details:
+[short frames](docs/2026-10-15-short-frames.en.md).
+
 ### DC correction (carrier leakage)
 The C3 leaks its carrier (a tone in the middle of the signal) at a fixed level, which limits reception at low levels.
 Calibrate with the receiver (S3 on the PC), **once per frequency** – the leakage and its correction depend on it:
@@ -83,10 +92,11 @@ cd android && ./gradlew assembleDebug
    - `rx/rx.sh 125000` – 125 kS/s (333 ksps, 8 bit)
    - `rx/rx.sh 66666` / `50000` / `40000` – low rates: 8 bit, RRC sampler of leandvb below 100 kS/s; the first picture
      after ~32 frames (66 kS/s ≈ 16 s), with `--ldpc bitflip` at once but ~5 dB less sensitive
+   - `rx/rx.sh 40000 --frame short` – a beacon with short frames (`FRAME=short tx/make_beacons.sh 40000`)
    - options: `--gain 10`, `--ppm X`, `--record x.ts`, `-v`
 4. Spectrum: `rx/spectrum.sh`, SDR++ / SDRangel on `127.0.0.1:1234` (rtl_tcp).
 
-Other tools: `rx/level_sweep.sh` (sensitivity sweep), `rx/raw2cf32.py` (raw packets recorded by the app -> cf32, decode).
+Other tools: `rx/level_sweep.sh` (sensitivity sweep, `FRAME=short` for short frames), `rx/sim_frames.py` (normal vs short frames simulated end to end), `rx/raw2cf32.py` (raw packets recorded by the app -> cf32, decode).
 
 ## Test without hardware
 ```sh
