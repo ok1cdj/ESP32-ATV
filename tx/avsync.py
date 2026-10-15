@@ -12,7 +12,7 @@ print("decode errors:", len(err), *err[:5], sep="\n  " if err else " ")
 
 # video: per frame PTS and mean luma
 fr = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v", "-show_entries", "frame=pts_time", "-of", "csv=p=0", f], capture_output=True, text=True).stdout.split()
-pts_v = np.array([float(x) for x in fr])
+pts_v = np.array([float(x.strip(",")) for x in fr if x.strip(",")])
 w, h = 64, 36
 raw = subprocess.run(["ffmpeg", "-v", "error", "-i", f, "-map", "0:v", "-vf", f"scale={w}:{h}", "-fps_mode", "passthrough", "-pix_fmt", "gray", "-f", "rawvideo", "-"], capture_output=True).stdout
 luma = np.frombuffer(raw, np.uint8).reshape(-1, h * w).mean(1)

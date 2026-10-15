@@ -3,10 +3,10 @@ package com.ok1cdj.atvrx
 /**
  * MPEG-TS demultiplexer for one DVB-S2 service: PAT -> PMT -> the first video and the first audio stream; SDT for the
  * service name and provider. Video PES packets are reassembled and handed out whole (one access unit each, as the beacon
- * and usual encoders send them); audio PES packets whole too, with their PTS (90 kHz, -1: none), to [onAudio]. Sections
+ * and usual encoders send them), audio PES packets whole too to [onAudio], both with their PTS (90 kHz, -1: none). Sections
  * are taken from single TS packets, which is what small PSI/SI tables fit in.
  */
-class TsDemux(private val onVideo: (streamType: Int, es: ByteArray) -> Unit) {
+class TsDemux(private val onVideo: (streamType: Int, es: ByteArray, pts: Long) -> Unit) {
     @Volatile var onAudio: ((streamType: Int, es: ByteArray, pts: Long) -> Unit)? = null
     @Volatile var audioPid = -1; private set
     @Volatile var audioType = -1; private set
@@ -199,11 +199,7 @@ class TsDemux(private val onVideo: (streamType: Int, es: ByteArray) -> Unit) {
         val len = (u8(d, 4) shl 8) or u8(d, 5)
         val stop = if (len > 0) minOf(d.size, 6 + len) else d.size
         val start = 9 + u8(d, 8)
-        val pts = if (u8(d, 7) and 0x80 != 0 && start >= 14)
-            (((u8(d, 9) shr 1) and 7).toLong() shl 30) or (u8(d, 10).toLong() shl 22) or ((u8(d, 11) shr 1).toLong() shl 15) or
-                (u8(d, 12).toLong() shl 7) or (u8(d, 13) shr 1).toLong()
-        else -1L
-        if (start < stop) cb(audioType, d.copyOfRange(start, stop), pts)
+        if (start < stop) cb(audioType, d.copyOfRange(start, stop), pts(d, start))
     }
 
     private fun flushPes() {
@@ -211,14 +207,23 @@ class TsDemux(private val onVideo: (streamType: Int, es: ByteArray) -> Unit) {
         val d = pes.toByteArray()
         if (d[0].toInt() != 0 || d[1].toInt() != 0 || d[2].toInt() != 1) return
         val start = 9 + u8(d, 8)
-        if (start < d.size) onVideo(videoType, d.copyOfRange(start, d.size))
+        if (start < d.size) onVideo(videoType, d.copyOfRange(start, d.size), pts(d, start))
     }
+
+    /** PTS of a PES (header in d, payload from [start]), -1: none */
+    private fun pts(d: ByteArray, start: Int) = if (u8(d, 7) and 0x80 != 0 && start >= 14)
+        (((u8(d, 9) shr 1) and 7).toLong() shl 30) or (u8(d, 10).toLong() shl 22) or ((u8(d, 11) shr 1).toLong() shl 15) or
+            (u8(d, 12).toLong() shl 7) or (u8(d, 13) shr 1).toLong()
+    else -1L
 
     companion object {
         const val ST_MPEG2 = 0x02; const val ST_H264 = 0x1B; const val ST_HEVC = 0x24
         const val ST_MPEG1_AUDIO = 0x03; const val ST_MPEG2_AUDIO = 0x04; const val ST_AAC_ADTS = 0x0F; const val ST_AAC_LATM = 0x11
         const val AC3 = 0x100                                     // AC-3 / E-AC-3, whatever the stream type
         val PLAYABLE = setOf(ST_MPEG1_AUDIO, ST_MPEG2_AUDIO, ST_AAC_ADTS)
+
+        /** a - b of two 33-bit PTS (90 kHz), across the wrap */
+        fun ptsDiff(a: Long, b: Long): Long = ((a - b + (1L shl 32)) and ((1L shl 33) - 1)) - (1L shl 32)
 
         fun audioName(t: Int) = when (t) {
             ST_MPEG1_AUDIO, ST_MPEG2_AUDIO -> "MPEG audio"; ST_AAC_ADTS -> "AAC"; ST_AAC_LATM -> "AAC LATM"; AC3 -> "AC-3"

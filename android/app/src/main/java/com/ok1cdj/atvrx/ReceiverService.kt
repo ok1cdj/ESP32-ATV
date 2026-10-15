@@ -26,7 +26,7 @@ class ReceiverService : Service() {
 
     @Volatile var receiver: Receiver? = null; private set
     val video = VideoDecoder()
-    val audio = AudioPlayer()
+    val audio = AudioPlayer().also { a -> video.clock = { a.clock() } }   // with sound the picture follows its clock
     @Volatile var startedAt = 0L; private set
     /** the last lines of the receiver log, and who shows new ones */
     val log = ArrayDeque<String>()

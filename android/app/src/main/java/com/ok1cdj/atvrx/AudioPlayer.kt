@@ -17,8 +17,14 @@ class MpegAudioDecoder : AutoCloseable {
     private val info = IntArray(4)
     var layer = 0; private set
 
-    /** Appends a PES payload and decodes every whole frame in what has come: out(pcm, interleaved samples, channels, Hz). */
-    fun feed(d: ByteArray, out: (ShortArray, Int, Int, Int) -> Unit) {
+    private var nextPts = -1L
+
+    /**
+     * Appends a PES payload (PTS [pts], -1: none) and decodes every whole frame in what has come:
+     * out(pcm, interleaved samples, channels, Hz, PTS of the first sample or -1).
+     */
+    fun feed(d: ByteArray, pts: Long, out: Pcm) {
+        if (pts >= 0 && fill == 0) nextPts = pts             // the PES starts with a frame (as muxers send audio)
         if (fill + d.size > buf.size) {
             if (fill + d.size > MAX_PENDING) fill = 0             // no frame in 64 kB: not MPEG audio, start again
             if (fill + d.size > buf.size) buf = buf.copyOf(maxOf(buf.size * 2, fill + d.size))
@@ -30,7 +36,11 @@ class MpegAudioDecoder : AutoCloseable {
             val n = nativeDecode(h, buf, p, fill - p, pcm, info)
             if (info[0] == 0) break                               // a frame not complete yet (the first sync wants two)
             p += info[0]
-            if (n > 0) { layer = info[3]; out(pcm, n * info[1], info[1], info[2]) }
+            if (n > 0) {
+                layer = info[3]
+                out(pcm, n * info[1], info[1], info[2], nextPts)
+                if (nextPts >= 0) nextPts += n * 90_000L / info[2]
+            }
         }
         System.arraycopy(buf, p, buf, 0, fill - p)
         fill -= p
@@ -65,7 +75,11 @@ class AacAdtsDecoder : AutoCloseable {
     var channels = 0; private set
     var he = false; private set
 
-    fun feed(d: ByteArray, out: (ShortArray, Int, Int, Int) -> Unit) {
+    private var nextPts = -1L                                  // 90 kHz, of the next ADTS frame
+
+    /** As [MpegAudioDecoder.feed]: a PES payload of ADTS frames with its PTS. */
+    fun feed(d: ByteArray, pts: Long, out: Pcm) {
+        if (pts >= 0 && fill == 0) nextPts = pts
         if (fill + d.size > pending.size) pending = pending.copyOf(maxOf(pending.size * 2, fill + d.size))
         System.arraycopy(d, 0, pending, fill, d.size)
         fill += d.size
@@ -83,6 +97,8 @@ class AacAdtsDecoder : AutoCloseable {
             val cfg = (profile shl 8) or (sfi shl 4) or ch
             if (cfg != config) start(profile, sfi, ch)
             codec?.let { decode(it, pending, p + head, len - head, out) }
+            // 1024 samples at the core rate (also with SBR, which doubles the rate and the samples)
+            if (nextPts >= 0) nextPts += 1024 * 90_000L / (RATES.getOrNull(sfi) ?: 48000)
             p += len
         }
         System.arraycopy(pending, p, pending, 0, fill - p)
@@ -104,17 +120,17 @@ class AacAdtsDecoder : AutoCloseable {
         rate = hz; channels = ch
     }
 
-    private var pts = 0L
+    private var steady = 0L                                     // µs, for input without a PTS
 
-    private fun decode(c: MediaCodec, d: ByteArray, off: Int, len: Int, out: (ShortArray, Int, Int, Int) -> Unit) {
+    private fun decode(c: MediaCodec, d: ByteArray, off: Int, len: Int, out: Pcm) {
         val i = c.dequeueInputBuffer(50_000)
         if (i >= 0) {
             val b = c.getInputBuffer(i)!!
             b.clear()
             val n = minOf(len, b.remaining())
             b.put(d, off, n)
-            c.queueInputBuffer(i, 0, n, pts, 0)
-            pts += 20_000
+            // the PTS through the codec in µs; none: a steady count (always positive, so that -1 stays "none")
+            c.queueInputBuffer(i, 0, n, if (nextPts >= 0) (nextPts * 100 + 8) / 9 + NO_PTS else (steady++), 0)
         }
         while (true) {
             val o = c.dequeueOutputBuffer(bi, 0)
@@ -129,7 +145,11 @@ class AacAdtsDecoder : AutoCloseable {
             if (outShorts.size < n) outShorts = ShortArray(n)
             c.getOutputBuffer(o)!!.order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(outShorts, 0, n)
             c.releaseOutputBuffer(o, false)
-            if (n > 0) out(outShorts, n, channels, rate)
+            // HE-AAC: Android's decoder (FDK) stamps its output 47 ms earlier than ffmpeg's (measured with the same stream;
+            // TX takes the codec delay from ffmpeg, the PC receivers): moved so that both play it in sync
+            val fix = if (he) HE_FIX else 0
+            if (n > 0) out(outShorts, n, channels, rate,
+                if (bi.presentationTimeUs >= NO_PTS) (bi.presentationTimeUs - NO_PTS) * 9 / 100 + fix else -1)
         }
     }
 
@@ -140,8 +160,13 @@ class AacAdtsDecoder : AutoCloseable {
 
     companion object {
         private val RATES = listOf(96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350)
+        private const val NO_PTS = 1L shl 40                    // µs offset of real PTS through the codec
+        private const val HE_FIX = 47L * 90                    // 90 kHz
     }
 }
+
+/** decoded PCM: (samples interleaved, count, channels, Hz, PTS of the first sample in 90 kHz or -1) */
+typealias Pcm = (ShortArray, Int, Int, Int, Long) -> Unit
 
 /**
  * The sound of the received service: audio PES packets from [TsDemux] go through a queue to their own thread (decoding
@@ -157,7 +182,7 @@ class AudioPlayer {
     @Volatile var dropped = 0L; private set
     @Volatile var error: String? = null; private set
     /** every block of decoded PCM as it goes to the track (debug: RxReplayTestActivity writes it to a file) */
-    @Volatile var tap: ((pcm: ShortArray, n: Int, channels: Int, hz: Int) -> Unit)? = null
+    @Volatile var tap: ((pcm: ShortArray, n: Int, channels: Int, hz: Int, pts: Long) -> Unit)? = null
 
     private val queue = ArrayBlockingQueue<Pes>(1024)
     @Volatile private var running = true
@@ -168,6 +193,11 @@ class AudioPlayer {
     private var trackRate = 0
     private var trackChannels = 0
     private var lastType = -1
+    // the clock: which PTS starts at which frame written to the track (frames = samples per channel)
+    private val anchors = ArrayDeque<LongArray>()               // [frame, pts]
+    private val ts = android.media.AudioTimestamp()
+    private var written = 0L
+    @Volatile private var lastWriteNs = 0L
     private val thread = Thread({ loop() }, "rx-audio").apply { start() }
 
     fun feed(type: Int, data: ByteArray, pts: Long) {
@@ -195,14 +225,14 @@ class AudioPlayer {
             if (p == null) continue
             try {
                 if (p.type != lastType) { closeAll(); lastType = p.type }
-                val out = { pcm: ShortArray, n: Int, ch: Int, hz: Int -> play(pcm, n, ch, hz) }
+                val out: Pcm = { pcm, n, ch, hz, pts -> play(pcm, n, ch, hz, pts) }
                 if (p.type == TsDemux.ST_AAC_ADTS) {
                     val d = aac ?: AacAdtsDecoder().also { aac = it }
-                    d.feed(p.data, out)
+                    d.feed(p.data, p.pts, out)
                     if (d.rate > 0) description = "AAC%s %d kHz %d ch".format(if (d.he) " (HE)" else "", d.rate / 1000, d.channels)
                 } else {
                     val d = mpeg ?: MpegAudioDecoder().also { mpeg = it }
-                    d.feed(p.data, out)
+                    d.feed(p.data, p.pts, out)
                     if (d.layer > 0) description = "MP%d %d kHz %d ch".format(d.layer, trackRate / 1000, trackChannels)
                 }
                 frames++
@@ -214,9 +244,28 @@ class AudioPlayer {
         closeAll()
     }
 
-    private fun play(pcm: ShortArray, n: Int, ch: Int, hz: Int) {
+    /**
+     * The PTS (90 kHz) of the sound coming out now: the last anchor at or before the frame at the speaker, plus the
+     * frames played since. Null without sound, or when the track has played everything and nothing came for 0.5 s (the
+     * signal is gone: the picture must not wait for it).
+     */
+    fun clock(): Long? = synchronized(anchors) {
+        val t = track ?: return null
+        // the frame at the speaker now: from the track's time stamp (it includes the output latency and is not
+        // rounded to the mixer's blocks), else the play position
+        val head = if (t.getTimestamp(ts)) ts.framePosition + (System.nanoTime() - ts.nanoTime) * trackRate / 1_000_000_000L
+            else t.playbackHeadPosition.toLong() and 0xFFFFFFFFL
+        if (head >= written && System.nanoTime() - lastWriteNs > 500_000_000L) return null
+        while (anchors.size > 1 && anchors[1][0] <= head) anchors.removeFirst()
+        val a = anchors.firstOrNull() ?: return null
+        if (a[0] > head) return null
+        a[1] + (head - a[0]) * 90_000L / trackRate
+    }
+
+    private fun play(pcm: ShortArray, n: Int, ch: Int, hz: Int, pts: Long) {
         if (ch !in 1..2 || hz <= 0) return
-        if (track == null || hz != trackRate || ch != trackChannels) {
+        if (track == null || hz != trackRate || ch != trackChannels) synchronized(anchors) {
+            // under the clock's lock: clock() must not ask a released track
             track?.release()
             val mask = if (ch == 2) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
             val min = AudioTrack.getMinBufferSize(hz, mask, AudioFormat.ENCODING_PCM_16BIT)
@@ -229,17 +278,34 @@ class AudioPlayer {
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build().apply { play() }
             trackRate = hz; trackChannels = ch
+            anchors.clear(); written = 0
         }
-        tap?.invoke(pcm, n, ch, hz)
+        tap?.invoke(pcm, n, ch, hz, pts)
         val t = track ?: return
         t.setVolume(if (muted) 0f else 1f)
-        t.write(pcm, 0, n, AudioTrack.WRITE_BLOCKING)
+        if (pts >= 0) synchronized(anchors) {
+            // a new anchor only when the time base jumps: small PTS jitter would make the clock jump back and forth
+            val last = anchors.lastOrNull()
+            val expect = last?.let { it[1] + (written - it[0]) * 90_000L / hz }
+            if (expect == null || Math.abs(TsDemux.ptsDiff(pts, expect)) > 9_000) anchors.addLast(longArrayOf(written, pts))
+        }
+        var off = 0
+        while (off < n && track === t) {
+            val m = t.write(pcm, off, n - off, AudioTrack.WRITE_BLOCKING)
+            if (m <= 0) break
+            off += m
+            synchronized(anchors) { written += m / ch }
+            lastWriteNs = System.nanoTime()
+        }
     }
 
     private fun closeAll() {
         aac?.close(); aac = null
         mpeg?.close(); mpeg = null
-        track?.let { try { it.stop() } catch (_: Exception) {}; it.release() }
-        track = null; trackRate = 0; trackChannels = 0; lastType = -1
+        synchronized(anchors) {
+            track?.let { try { it.stop() } catch (_: Exception) {}; it.release() }
+            track = null; trackRate = 0; trackChannels = 0; lastType = -1
+            anchors.clear(); written = 0
+        }
     }
 }

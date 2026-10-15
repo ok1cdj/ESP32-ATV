@@ -59,7 +59,7 @@ class Receiver(
     val status = Status()
     /** leandvb --fd-const lines ("CONST ...", "SYMBOLS ..."), for the constellation view */
     @Volatile var onConstellation: ((String) -> Unit)? = null
-    val demux = TsDemux { type, au -> video.feed(type, au) }
+    val demux = TsDemux { type, au, pts -> video.feed(type, au, pts) }
     @Volatile var link: EspLink? = null; private set
 
     // a replay takes rate and format from its first packet header (word 1: format | decimation << 8)

@@ -14,7 +14,8 @@ import java.io.FileOutputStream
  * Debug only: replays the newest .raw (rx/make_replay.py) at the symbol rate given, logs the sound once a second and
  * writes the decoded PCM (s16le, as played) to the files dir:
  *   adb shell am start -n com.ok1cdj.atvrx/.RxReplayTestActivity --es args "SR SECONDS NAME [normal|short]"
- *   -> NAME.log, NAME.pcm (first line of the log: channels and rate)
+ *   -> NAME.log, NAME.pcm (first line of the log: channels and rate), NAME.ev (A/V events for rx/avsync_rx.py:
+ *   PCM block PTS, picture PTS and render time, ImageReader time stamps, the audio clock every 20 ms)
  */
 class RxReplayTestActivity : Activity() {
     private var connection: ServiceConnection? = null
@@ -34,15 +35,33 @@ class RxReplayTestActivity : Activity() {
         val conn = object : ServiceConnection {
             override fun onServiceConnected(n: ComponentName, b: IBinder) {
                 val svc = (b as ReceiverService.LocalBinder).service
+                val ev = java.io.PrintWriter(File(dir, "$name.ev"))
+                fun event(line: String) = synchronized(ev) { ev.println(line) }
+                // the picture into an ImageReader (PRIVATE: a hardware decoder's output cannot be read by the CPU): the time
+                // stamp it is to be shown at; which pictures flash comes from the TS (rx/avsync_rx.py, ffmpeg)
+                val reader = android.media.ImageReader.newInstance(320, 180, android.graphics.ImageFormat.PRIVATE, 8)
+                val ht = android.os.HandlerThread("images").apply { start() }
+                reader.setOnImageAvailableListener({ r -> r.acquireNextImage()?.use { img -> event("IMG ${img.timestamp}") } },
+                    android.os.Handler(ht.looper))
+                svc.setSurface(reader.surface)
+                svc.video.onRender = { pts, at -> event("RENDER $pts $at") }
                 var fmt = ""
-                svc.audio.tap = { p, k, ch, hz ->
+                svc.audio.tap = { p, k, ch, hz, pts ->
                     if (fmt.isEmpty()) { fmt = "$ch $hz"; out("pcm $fmt") }
                     val bb = java.nio.ByteBuffer.allocate(2 * k).order(java.nio.ByteOrder.LITTLE_ENDIAN)
                     bb.asShortBuffer().put(p, 0, k); pcm.write(bb.array())
+                    event("PCM $pts ${k / ch} $hz")                   // PTS of this block, frames, rate
                 }
                 out("replay ${raw.name} at $sr S/s")
                 svc.startRx(Receiver.Config(freqHz = 0, sr = sr, gainDb = 0.0, frameSizes = frames, replay = raw), null)
+                val clockThread = Thread {
+                    while (svc.receiver != null || svc.audio.frames == 0L) {
+                        svc.audio.clock()?.let { event("CLOCK ${System.nanoTime()} $it") }
+                        try { Thread.sleep(20) } catch (_: InterruptedException) { break }
+                    }
+                }
                 Thread {
+                    clockThread.start()
                     for (t in 1..secs) {
                         Thread.sleep(1000)
                         val r = svc.receiver ?: break
@@ -52,8 +71,13 @@ class RxReplayTestActivity : Activity() {
                             au.description ?: "–", au.frames, au.dropped, au.error?.let { "  ERR $it" } ?: "", svc.video.frames))
                     }
                     svc.audio.tap = null
+                    svc.video.onRender = null
                     svc.stopRx()
+                    clockThread.interrupt()
                     pcm.close()
+                    synchronized(ev) { ev.close() }
+                    svc.setSurface(null)
+                    reader.close(); ht.quitSafely()
                     out("DONE")
                 }.start()
             }
