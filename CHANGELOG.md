@@ -14,6 +14,8 @@ ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the
 - C3 firmware (fork ESP32-DATV-SA, branch xiao-panel): upstream's video from the flash merged; loops at any rate
   (header version 3); `VIDW` to store a loop over USB; `FW` version in `INFO`.
 - PC: `tx/make_flash_loop.py` (a loop from any video), `tx/c3_vidw.py` (store it), `tx/build_c3_web.sh`, `tx/make_fw_site.py`.
+- Receivers (app, `rx_dvbs2.py --sr-tol`) tolerate 2000 ppm of symbol rate instead of leandvb's 100: a C3 loop saved for
+  333 k runs at 333 333 Bd (160 MHz / 480) and did not lock at the 333 k preset; at 40 k simulated without change.
 
 ## 0.7-beta – 2026-10-15
 
