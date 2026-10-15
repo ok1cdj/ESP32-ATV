@@ -74,7 +74,21 @@ PY=third_party/ESP32-DATV-RX/.venv/bin/python
 $PY rx/sim_frames.py --build-iter --rates 40000 66666 --esn0 4 7 0.5 --seeds 1 2 3  # výsledky v build/sim-frames/
 ```
 
-## Zbývá
+## Na stole (15. 10. 2026)
 
-Ověřit na stole a na vzdálenost: dobu do prvního obrazu a počty rámců se skutečným hardwarem, a jestli drift a úniky
-desek bez TCXO nezvýhodní krátké rámce ještě víc.
+Maják XIAO ESP32-C3 40 kS/s QPSK 3/4 na 0 dB (AMP 300), 2340.000 MHz, XIAO ESP32-S3 se ziskem 10 dB, antény na stejném
+stole. C3 se zahříváním odjel o +20 až +30 kHz od LO přijímače. Časy od startu leandvb:
+
+| | normální rámce | krátké rámce |
+|---|---|---|
+| PC (`rx/rx.sh`), první TS | 28, 33, 35, 35 s; jednou nic za 95 s | 8,4–8,8 s (4 běhy, jeden s `--frame auto`) |
+| Android, první obraz | 29,0, 29,2 s; jednou nic za 33 s | 8,7, 8,8, 9,0 s |
+| první zámek (PC) | 5 z 5 falešný (MER −11 až −15 dB, mimo o ±7–10 kHz), znovu za ~10 s nebo vůbec | 5 z 5 hned správný (MER 14–24 dB) |
+| po prvním obrazu | 97 z 98 rámců | 385 z 386 rámců (90 s), telefon 96 z 96, MER 26 dB |
+
+- Krátké rámce dají obraz na stole **3,3× (telefon) až 3,8× (PC) dřív**, blízko době dávky (6,7 s) plus rámec či dva.
+- Překvapení, které simulace neukázala: s normálními rámci byl **první zámek leandvb pokaždé falešný**, s krátkými
+  (PLHEADER 4× častěji) nikdy. V simulaci byla nosná 3 kHz od LO, tady 20–30 kHz.
+- Přijímač nastavený na normální rámce maják s krátkými nedekóduje (0 rámců, MER v pořádku) – zvol správnou předvolbu
+  nebo *normal+short*.
+- Práh se na stole neměřil (blízké pole); podle simulace je stejný.

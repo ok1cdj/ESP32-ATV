@@ -9,6 +9,9 @@
 #define BEACON_SYMBOLS    66564u
 #define BEACON_FEC        "3/4"
 #define BEACON_PILOTS     1
+#define BEACON_FRAME_SHORT 0
+#define BEACON_PLFRAMES   2u
+#define BEACON_MODE_TEXT  "DVB-S2 QPSK 3/4"   /* front panel: SF = short frames */
 #define BEACON_SERVICE    "SV0SYH"
 #define BEACON_PROVIDER   "SV0SYH ESP32-ATV"
 #define BEACON_DC_I       0.576f   /* DC correction [DAC codes]: nulls the carrier leakage; the BDC command changes it at run time */

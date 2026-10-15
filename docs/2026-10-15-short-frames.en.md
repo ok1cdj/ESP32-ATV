@@ -74,7 +74,21 @@ PY=third_party/ESP32-DATV-RX/.venv/bin/python
 $PY rx/sim_frames.py --build-iter --rates 40000 66666 --esn0 4 7 0.5 --seeds 1 2 3  # results in build/sim-frames/
 ```
 
-## Still to do
+## On the bench (2026-10-15)
 
-Check on the bench and over a distance: first-picture time and frame counts with real hardware, and whether the
-drift and fades of boards without a TCXO favour short frames even more.
+XIAO ESP32-C3 beacon 40 kS/s QPSK 3/4 at 0 dB (AMP 300), 2340.000 MHz, XIAO ESP32-S3 at gain 10 dB, antennas on the
+same desk. The C3 drifted +20 to +30 kHz from the receiver's LO while warming up. Times from the start of leandvb:
+
+| | normal frames | short frames |
+|---|---|---|
+| PC (`rx/rx.sh`), first TS | 28, 33, 35, 35 s; once none in 95 s | 8.4–8.8 s (4 runs, one with `--frame auto`) |
+| Android, first picture | 29.0, 29.2 s; once none in 33 s | 8.7, 8.8, 9.0 s |
+| first lock (PC) | 5 of 5 false (MER −11 to −15 dB, ±7–10 kHz off), re-lock after ~10 s or not at all | 5 of 5 right away (MER 14–24 dB) |
+| after the first picture | 97 of 98 frames | 385 of 386 frames (90 s), phone 96 of 96, MER 26 dB |
+
+- Short frames bring the picture **3.3× (phone) to 3.8× (PC) sooner** on the bench, close to the batch time (6.7 s) plus a frame or two.
+- A surprise the simulation did not show: with normal frames leandvb's **first lock was a false one** every time; with
+  short frames, whose PLHEADERs come 4× as often, never. In the simulation the carrier was 3 kHz off, here 20–30 kHz.
+- A receiver set to normal frames does not decode a short-frame beacon (0 frames, MER fine) – pick the right preset or
+  *normal+short*.
+- The threshold was not measured on the bench (near field); the simulation says it is the same.
