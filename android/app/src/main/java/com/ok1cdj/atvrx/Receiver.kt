@@ -414,11 +414,20 @@ class Receiver(
             try {
                 val inp = p.inputStream
                 val b = ByteArray(188 * 64)
+                // time to the first TS and the first decoded picture, for comparing frame sizes and symbol rates
+                var firstTs = true
+                val frames0 = video.frames
+                var firstPicture = true
+                fun since() = (System.nanoTime() - status.demodSince) / 1e9
                 while (true) {
                     val n = inp.read(b)
                     if (n < 0) break
+                    if (firstTs) { firstTs = false; log("first TS %.1f s after leandvb started".format(since())) }
                     status.tsBytes += n
                     demux.feed(b, n)
+                    if (firstPicture && video.frames > frames0) {
+                        firstPicture = false; log("first picture %.1f s after leandvb started".format(since()))
+                    }
                 }
             } catch (_: Throwable) {}
             if (running) { status.state = "leandvb ended"; log("leandvb ended (exit ${try { p.exitValue() } catch (_: Throwable) { "?" }})") }

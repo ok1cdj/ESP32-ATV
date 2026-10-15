@@ -68,6 +68,7 @@ class ReceiverService : Service() {
         startForeground(NOTIFICATION_ID, notification("starting"), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         wake = (getSystemService(POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "atvrx:receiver").apply { acquire() }
+        video.reset()
         val r = Receiver(conn, device, applicationInfo.nativeLibraryDir, cacheDir, cfg, video, ::say)
         r.onConstellation = onConstellation
         receiver = r

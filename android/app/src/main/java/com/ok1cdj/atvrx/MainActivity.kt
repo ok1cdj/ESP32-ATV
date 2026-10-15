@@ -21,6 +21,7 @@ import android.os.Looper
 import android.text.InputType
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.WindowInsets
@@ -28,6 +29,7 @@ import android.view.WindowManager
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
@@ -75,6 +77,7 @@ class MainActivity : Activity() {
     private lateinit var logView: TextView
     private lateinit var logScroll: ScrollView
     private lateinit var surface: SurfaceView
+    private lateinit var blank: View   // black over the last picture of the previous run, until a new one comes
     private var surfaceReady = false
 
     private var service: ReceiverService? = null
@@ -115,7 +118,11 @@ class MainActivity : Activity() {
             override fun surfaceDestroyed(h: SurfaceHolder) { surfaceReady = false; service?.setSurface(null) }
         })
         val w = resources.displayMetrics.widthPixels - 48
-        root.addView(surface, LinearLayout.LayoutParams(MATCH_PARENT, w * 9 / 16))
+        blank = View(this).apply { setBackgroundColor(Color.BLACK); visibility = View.GONE }
+        root.addView(FrameLayout(this).apply {
+            addView(surface, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            addView(blank, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        }, LinearLayout.LayoutParams(MATCH_PARENT, w * 9 / 16))
 
         info = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 12f; setPadding(0, 12, 0, 8) }
         root.addView(info)
@@ -332,7 +339,7 @@ class MainActivity : Activity() {
         val cfg = Receiver.Config(freqHz = Math.round(mhz * 1e6), sr = sr, const = c, cr = cr, gainDb = g.toDouble(), frameSizes = fr,
             track = track.isChecked)
         val svc = service ?: return run { pendingStart = ::start }
-        constView.clear(); specView.clear(); tsHistory.clear()
+        constView.clear(); specView.clear(); tsHistory.clear(); blank.visibility = View.VISIBLE
         svc.startRx(cfg, dev)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
@@ -344,7 +351,7 @@ class MainActivity : Activity() {
             ?: return say("no recording: USB test (F1) with 'save raw packets'")
         val sr = rates[rate.selectedItemPosition]
         val svc = service ?: return
-        constView.clear(); specView.clear(); tsHistory.clear()
+        constView.clear(); specView.clear(); tsHistory.clear(); blank.visibility = View.VISIBLE
         svc.startRx(Receiver.Config(freqHz = 0, sr = sr, const = constel.selectedItem as String, cr = codeRate.selectedItem as String,
             gainDb = 0.0, frameSizes = frameChoices[frames.selectedItemPosition], replay = f, track = track.isChecked), null)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -368,6 +375,7 @@ class MainActivity : Activity() {
             val tsRate = if (now > t0) (s.tsBytes - b0) * 8 / ((now - t0) / 1e9) / 1e3 else 0.0
             specView.update(r.spectrum, r.fs, if (s.searchDb >= 6) s.offsetHz else Double.NaN, r.cfg.sr)
             val d = r.demux; val v = service?.video
+            if ((v?.frames ?: 0) > 0) blank.visibility = View.GONE
             val usb = r.link?.stats
             // leandvb's FREQ means something only while frames come through (it reports noise as well)
             val live = r.alive() && s.mer > 3.0

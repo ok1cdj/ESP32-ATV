@@ -28,6 +28,13 @@ class VideoDecoder(private var surface: Surface? = null) {
         surface = s
     }
 
+    /** A new run: drop the decoder and the figures of the previous one (the codec restarts at the next parameter set). */
+    @Synchronized
+    fun reset() {
+        release()
+        width = 0; height = 0; mime = null; frames = 0; error = null
+    }
+
     @Synchronized
     fun feed(streamType: Int, au: ByteArray) {
         if (surface == null) return
