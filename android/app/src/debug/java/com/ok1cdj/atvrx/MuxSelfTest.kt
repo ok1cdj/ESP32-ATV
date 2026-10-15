@@ -9,7 +9,7 @@ import java.io.FileOutputStream
  * the transmitter's lead. Every 2 s the picture flashes white and a 1 kHz beep sounds for 100 ms, both on the capture
  * clock, so that the lip sync can be measured from the file (PTS of the white frame vs the beep).
  *
- *   adb shell am start -n com.ok1cdj.atvrx/.MuxSelfTestActivity --es args "TS_BPS SECONDS NAME.ts [AUDIO_BPS (0: none)] [LEAD_S]"
+ *   adb shell am start -n com.ok1cdj.atvrx/.MuxSelfTestActivity --es args "TS_BPS SECONDS NAME.ts [AUDIO_BPS (0: none)] [LEAD_S] [beep|cw|mic|miccw]"
  *   -> /sdcard/Android/data/com.ok1cdj.atvrx/files/NAME.ts and NAME.ts.log
  * (app_process gets killed by the system now and then: the app has a foreground process.)
  */
@@ -54,7 +54,13 @@ object MuxSelfTest {
             }
             override fun stop() {}
         }
-        val aac = if (audioBps > 0) AacEncoder(audioBps, pcm) { f, us, dur -> m.addAudio(f, us, dur) } else null
+        val src: PcmSource = when (a.getOrNull(5) ?: "beep") {
+            "cw" -> cwPcm(CwId("N0CALL", 10.0))
+            "mic" -> MicPcm()
+            "miccw" -> MicPcm(CwId("N0CALL", 10.0))
+            else -> pcm
+        }
+        val aac = if (audioBps > 0) AacEncoder(audioBps, src) { f, us, dur -> m.addAudio(f, us, dur) } else null
         video.start()
         aac?.start()
         println("video ${video.encoderName} ${w}x$h $fps fps ${videoBps / 1000} kb/s; audio ${aac?.let { "${it.encoderName} ${it.description}" } ?: "none"}; " +

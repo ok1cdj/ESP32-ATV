@@ -17,8 +17,8 @@ import android.os.PowerManager
 
 /**
  * Foreground service that owns the [Transmitter], so that TX goes on with the screen off or the app in the
- * background (type connectedDevice, plus camera when the camera is the picture: a camera may only be used in the
- * background by a camera-type service started while the app was in front). The notification shows the state and has
+ * background (type connectedDevice, plus camera / microphone when they are used: they may only be used in the
+ * background by a service of that type started while the app was in front). The notification shows the state and has
  * a Stop action; [TxActivity] binds to it for the status and the log.
  */
 class TxService : Service() {
@@ -57,7 +57,8 @@ class TxService : Service() {
         if (tx != null) return
         startForegroundService(Intent(this, TxService::class.java))
         val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
-            (if (cfg.source != Transmitter.SOURCE_CARD) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0)
+            (if (cfg.source != Transmitter.SOURCE_CARD) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0) or
+            (if (cfg.sound == Transmitter.SOUND_MIC || cfg.sound == Transmitter.SOUND_MIC_CW) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0)
         startForeground(NOTIFICATION_ID, notification("starting", cfg), type)
         wake = (getSystemService(POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "atvrx:transmitter").apply { acquire() }

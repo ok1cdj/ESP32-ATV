@@ -79,6 +79,9 @@ class TxActivity : Activity() {
     private lateinit var call: EditText
     private lateinit var videoKbps: Spinner
     private lateinit var fps: Spinner
+    private lateinit var sound: Spinner
+    private lateinit var audioKbps: Spinner
+    private val audioChoices = listOf(0, 8, 12, 16, 24, 32, 48, 64)    // 0 = auto
     private val kbpsChoices = listOf(0, 50, 75, 100, 150, 200, 300, 400)       // 0 = auto
     private val loopChoices = listOf(10, 20, 30, 60)
     private lateinit var loopSeconds: Spinner
@@ -142,6 +145,10 @@ class TxActivity : Activity() {
         fps = spinner(fpsChoices.map(::choice), choice(prefs.getInt("fps", 0)))
         body.addView(row(label("picture"), source, pilots))
         body.addView(row(label("video kb/s"), videoKbps, label("fps"), fps))
+        // sound: auto sends none below 80 kb/s of TS (the picture needs the bits), a value by hand always
+        sound = spinner(Transmitter.SOUNDS, prefs.getString("sound", Transmitter.SOUND_OFF)!!)
+        audioKbps = spinner(audioChoices.map(::choice), choice(prefs.getInt("audioKbps", 0)))
+        body.addView(row(label("sound"), sound, label("kb/s"), audioKbps))
         startStop = button("Start TX") { if (tx == null) start() else stop() }
         body.addView(startStop, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = 8 })
         // a stand-alone beacon: the C3 keeps transmitting this loop by itself (QPSK, up to ~333 kS/s)
@@ -207,6 +214,12 @@ class TxActivity : Activity() {
             requestPermissions(arrayOf(android.Manifest.permission.CAMERA), REQ_CAMERA)
             return null
         }
+        val snd = sound.selectedItem as String
+        if ((snd == Transmitter.SOUND_MIC || snd == Transmitter.SOUND_MIC_CW) &&
+            checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), REQ_AUDIO)
+            return null
+        }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFY)
         val mhz = freq.text.toString().replace(',', '.').toDoubleOrNull() ?: return null.also { log("frequency?") }
@@ -222,11 +235,13 @@ class TxActivity : Activity() {
         if (c == "8PSK" && sr < 125_000) log("8PSK below 125 kS/s: the C3 uses a slower DAC loop")
         val vk = kbpsChoices[videoKbps.selectedItemPosition]
         val f = fpsChoices[fps.selectedItemPosition]
+        val ak = audioChoices[audioKbps.selectedItemPosition]
         prefs.edit().putString("freq", freq.text.toString()).putInt("sr", sr).putString("const", c).putString("fec", r)
             .putString("frame", frame.selectedItem as String).putBoolean("pilots", pilots.isChecked)
-            .putInt("amp", a).putString("call", cs).putString("source", src).putInt("videoKbps", vk).putInt("fps", f).apply()
+            .putInt("amp", a).putString("call", cs).putString("source", src).putInt("videoKbps", vk).putInt("fps", f)
+            .putString("sound", snd).putInt("audioKbps", ak).apply()
         val cfg = Transmitter.Config(Math.round(mhz * 1000), sr, r, shortFrame, pilots.isChecked, a, cs, cs, "$cs ESP32-ATV",
-            src, c, vk, f)
+            src, c, vk, f, snd, ak)
         Receiver.leandvbWarning(c, r, if (shortFrame) Receiver.FRAMES_SHORT else Receiver.FRAMES_NORMAL)
             ?.let { log(it.replace("leandvb does not decode", "leandvb-based receivers (this app, rx_dvbs2.py) do not decode")) }
         return cfg to dev
@@ -272,6 +287,9 @@ class TxActivity : Activity() {
         if (code == REQ_CAMERA) {
             if (results.firstOrNull() == PackageManager.PERMISSION_GRANTED) afterPermission() else log("camera permission denied")
         }
+        if (code == REQ_AUDIO) {
+            if (results.firstOrNull() == PackageManager.PERMISSION_GRANTED) afterPermission() else log("microphone permission denied")
+        }
     }
 
     private fun stop() = service?.stopTx()
@@ -286,7 +304,8 @@ class TxActivity : Activity() {
                 val secs = if (s.since > 0) (System.nanoTime() - s.since) / 1e9 else 0.0
                 // lines of at most STATUS_CHARS characters (fitStatusText)
                 append("%s %.0f s  LO %s\n".format(s.state, secs, s.lo.toDoubleOrNull()?.let { "%.3f MHz".format(it / 1e6) } ?: "–"))
-                append("%.0f Bd  TS %.1f kb/s  video %d\n".format(s.baud, s.tsRate / 1e3, s.videoKbps))
+                append("%.0f Bd  TS %.1f kb/s  video %d%s\n".format(s.baud, s.tsRate / 1e3, s.videoKbps,
+                    if (s.audioKbps > 0) " + ${s.audioKbps}" else ""))
                 append("C3 buf %d/3000  under %d  frames %d\n".format(s.fill, s.underruns, s.plframes))
                 t.mux?.let { m ->
                     val total = m.time * m.rate / 1504
@@ -295,6 +314,7 @@ class TxActivity : Activity() {
                         if (total > 0) 100.0 * m.nullPackets / total else 0.0, m.queuedBytes, m.droppedAus))
                 }
                 t.video?.let { append("H.264 ${it.width}x${it.height} ${it.fps} fps  ${it.frames}${it.error?.let { e -> "  $e" } ?: ""}") }
+                t.audio?.let { append("\n${it.description}  ${it.frames}${it.error?.let { e -> "  $e" } ?: ""}") }
                 t.camera?.let { append("\ncamera ${it.size}  ${it.frames}${it.error?.let { e -> "  $e" } ?: ""}") }
             }
             ui.postDelayed(this, 1000)
@@ -349,5 +369,6 @@ class TxActivity : Activity() {
     companion object {
         private const val REQ_CAMERA = 2
         private const val REQ_NOTIFY = 3
+        private const val REQ_AUDIO = 4
     }
 }

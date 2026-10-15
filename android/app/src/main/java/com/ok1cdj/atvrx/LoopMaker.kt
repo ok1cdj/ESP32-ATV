@@ -40,8 +40,12 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
 
             // the TS, recorded in real time (the mux clock must follow the picture's)
             val ts = ByteArray(188 * npk)
-            val videoBps = if (cfg.videoKbps > 0) minOf(cfg.videoKbps * 1000, (tsRate * 0.9).toInt()) else (tsRate * 0.70).toInt()
-            val m = TsMux(tsRate, cfg.service, cfg.provider, delay = TsMux.delayFor(videoBps))
+            val audioBps = Transmitter.audioBps(cfg, tsRate)
+            val videoBps = if (cfg.videoKbps > 0) minOf(cfg.videoKbps * 1000, (tsRate * 0.9).toInt() - audioBps)
+                else (tsRate * 0.70).toInt() - audioBps
+            if (videoBps < 10_000) throw IOException("no room for the picture: less sound (audio kb/s)")
+            Transmitter.soundNote(cfg, tsRate, audioBps)?.let(log)
+            val m = TsMux(tsRate, cfg.service, cfg.provider, audio = audioBps > 0, delay = TsMux.delayFor(videoBps))
             val (w, h) = if (videoBps < 80_000) 320 to 180 else if (videoBps < 200_000) 480 to 270 else 640 to 360
             val fps = if (cfg.fps > 0) cfg.fps else if (videoBps < 80_000) 5 else if (videoBps < 200_000) 10 else 15
             val mode = "DVB-S2 QPSK ${cfg.rate}${if (cfg.shortFrame) " short" else ""}  %.1f kS/s".format(java.util.Locale.ROOT, baud / 1e3)
@@ -53,6 +57,9 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
             painter = p
             val video = CanvasEncoder(w, h, fps, videoBps, 2, p) { au, key, us -> m.addAu(au, key, us) }
             video.start()
+            // the callsign in Morse once per loop
+            val audio = if (audioBps > 0) AacEncoder(audioBps, Transmitter.pcmSource(cfg, nsym / baud)) { f, us, dur -> m.addAudio(f, us, dur) }
+                .also { it.start(); log("sound ${cfg.sound}: ${it.description}") } else null
             log("recording ${w}x$h $fps fps ${videoBps / 1000} kb/s for %.1f s…".format(npk * 1504.0 / tsRate))
             try {
                 val t0 = System.nanoTime()
@@ -64,13 +71,16 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
                     if (i % 64 == 0) progress("Recording the picture… %.0f / %.0f s".format(i * 1504.0 / tsRate, npk * 1504.0 / tsRate), 0.8 * i / npk)
                     video.error?.let { throw IOException(it) }
                     camera?.error?.let { throw IOException(it) }
+                    audio?.error?.let { throw IOException(it) }
                 }
             } finally {
                 video.stop()
+                audio?.stop()
                 camera?.stop()
                 painter = null
             }
-            log("recorded: video %.0f kb/s, %d frames dropped".format(m.videoBytes * 8 / m.time / 1e3, m.droppedAus))
+            log("recorded: video %.0f kb/s, sound %.0f kb/s, %d frames dropped".format(m.videoBytes * 8 / m.time / 1e3,
+                m.audioBytes * 8 / m.time / 1e3, m.droppedAus))
 
             // symbols: 4 per byte, first in the low bits (bit 0 = I > 0, bit 1 = Q > 0); then the first 64 bytes again
             progress("Encoding the loop…", 0.8)

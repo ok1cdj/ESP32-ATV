@@ -4,12 +4,14 @@
     <uses-feature android:name="android.hardware.usb.host" android:required="true" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- the boards' current firmware from GitHub Pages (FirmwareStore) -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- one of the prerequisites of a connectedDevice foreground service besides USB permission (a replay has none) -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
@@ -53,7 +55,7 @@
         <service
             android:name=".TxService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice|camera" />
+            android:foregroundServiceType="connectedDevice|camera|microphone" />
         <service
             android:name=".ReceiverService"
             android:exported="false"
