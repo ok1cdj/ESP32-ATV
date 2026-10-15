@@ -126,6 +126,7 @@ s PC). C3 potřebuje firmware ESP32-DATV-SA (stejný jako pro maják výše: př
 | obraz nejde, rámce ano | špatný kódový poměr nebo modulace v předvolbě (maják = QPSK 3/4) |
 | TX: *no ESP32-DATV answer* | připojená je S3, ne C3 (obě jsou `303a:1001`), nebo má C3 jiný firmware |
 | TX: příjem slabý, nízké MER | dej C3 s anténou dál od telefonu |
+| zámek i MER v pořádku, ale žádné rámce: **QPSK 3/5 nebo 5/6 normální rámce**, **8PSK krátké rámce** | tyto režimy leandvb nedekóduje (známá chyba, i z čistého signálu) – zvol jiný poměr nebo velikost rámců; aplikace na to upozorní |
 
 Hlášení chyb a nápady: [issues](https://github.com/ok1cdj/ESP32-ATV/issues).
 

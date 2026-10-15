@@ -129,6 +129,7 @@ command from USB stops the beacon and starts the live mode).
 | frames but no picture | wrong code rate or modulation in the preset (the beacon is QPSK 3/4) |
 | TX: *no ESP32-DATV answer* | the S3 is connected, not the C3 (both are `303a:1001`), or the C3 has another firmware |
 | TX: received weak, MER low | move the C3 and its antenna away from the phone |
+| locked, good MER, but no frames: **QPSK 3/5 or 5/6 normal frames**, **8PSK short frames** | leandvb does not decode these modes (known issue, also from a clean signal) – choose another code rate or frame size; the app warns |
 
 Bugs and ideas: [issues](https://github.com/ok1cdj/ESP32-ATV/issues).
 

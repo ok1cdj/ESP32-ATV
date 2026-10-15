@@ -205,6 +205,8 @@ class TxActivity : Activity() {
             .putInt("amp", a).putString("call", cs).putString("source", src).putInt("videoKbps", vk).putInt("fps", f).apply()
         val cfg = Transmitter.Config(Math.round(mhz * 1000), sr, r, shortFrame, pilots.isChecked, a, cs, cs, "$cs ESP32-ATV",
             src, c, vk, f)
+        Receiver.leandvbWarning(c, r, if (shortFrame) Receiver.FRAMES_SHORT else Receiver.FRAMES_NORMAL)
+            ?.let { log(it.replace("leandvb does not decode", "leandvb-based receivers (this app, rx_dvbs2.py) do not decode")) }
         svc.startTx(cfg, dev)
     }
 
