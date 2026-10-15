@@ -101,12 +101,15 @@ class TxActivity : Activity() {
         val w = resources.displayMetrics.widthPixels - 48
         preview = ImageView(this)
         root.addView(preview, LinearLayout.LayoutParams(MATCH_PARENT, w * 9 / 16))
-        info = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 12f; setPadding(0, 12, 0, 8) }
-        root.addView(info)
+        // below the preview everything scrolls: nothing is cut off on a small screen
+        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(ScrollView(this).apply { addView(body) }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+        info = TextView(this).apply { typeface = Typeface.MONOSPACE; setPadding(0, 12, 0, 8); fitStatusText(this) }
+        body.addView(info)
 
         freq = edit(prefs.getString("freq", "2340.000")!!, InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
         rate = spinner(rates.map { "%.1f kS/s".format(it / 1e3) }, "%.1f kS/s".format(prefs.getInt("sr", 50_000) / 1e3))
-        root.addView(row(label("MHz"), freq, label("SR"), rate))
+        body.addView(row(label("MHz"), freq, label("SR"), rate))
         constel = spinner(listOf("QPSK", "8PSK"), prefs.getString("const", "QPSK")!!)
         fec = spinner(rateList(constel.selectedItem as String), prefs.getString("fec", "3/4")!!)
         constel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -119,26 +122,26 @@ class TxActivity : Activity() {
             override fun onNothingSelected(a: AdapterView<*>?) {}
         }
         frame = spinner(listOf("normal", "short"), prefs.getString("frame", "short")!!)
-        pilots = CheckBox(this).apply { text = "pilots"; isChecked = prefs.getBoolean("pilots", true) }
-        root.addView(row(constel, fec, frame, pilots))
+        pilots = CheckBox(this).apply { text = "pilots"; isSingleLine = true; isChecked = prefs.getBoolean("pilots", true) }
+        body.addView(row(constel, fec, frame))
         amp = edit(prefs.getInt("amp", 300).toString(), InputType.TYPE_CLASS_NUMBER)
         call = edit(prefs.getString("call", "")!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS).apply { hint = "callsign" }
-        root.addView(row(label("call"), call, label("AMP"), amp))
+        body.addView(row(label("call"), call, label("AMP"), amp))
         source = spinner(listOf(Transmitter.SOURCE_CARD, Transmitter.SOURCE_BACK, Transmitter.SOURCE_FRONT),
             prefs.getString("source", Transmitter.SOURCE_CARD)!!)
         videoKbps = edit(prefs.getInt("videoKbps", 0).takeIf { it > 0 }?.toString() ?: "", InputType.TYPE_CLASS_NUMBER).apply { hint = "auto" }
         fps = edit(prefs.getInt("fps", 0).takeIf { it > 0 }?.toString() ?: "", InputType.TYPE_CLASS_NUMBER).apply { hint = "auto" }
-        root.addView(row(label("picture"), source))
-        root.addView(row(label("video kb/s"), videoKbps, label("fps"), fps))
+        body.addView(row(label("picture"), source, pilots))
+        body.addView(row(label("video kb/s"), videoKbps, label("fps"), fps))
         startStop = button("Start TX") { if (tx == null) start() else stop() }
-        root.addView(startStop, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = 8 })
-        root.addView(TextView(this).apply {
+        body.addView(startStop, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = 8 })
+        body.addView(TextView(this).apply {
             text = "Licensed radio amateurs only. AMP 300 = 0 dB (a few mW), 13 = −27 dB; 8PSK up to 420. Keep the C3 and " +
                 "its antenna away from the phone. TX goes on with the screen off (Stop in the notification)."
             textSize = 11f; setPadding(0, 8, 0, 0)
         })
         logView = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 11f; setTextIsSelectable(true) }
-        root.addView(ScrollView(this).apply { addView(logView) }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f).apply { topMargin = 12 })
+        body.addView(logView, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = 12 })
 
         setContentView(root)
         root.setOnApplyWindowInsetsListener { v, insets ->
@@ -226,17 +229,18 @@ class TxActivity : Activity() {
             startStop.text = if (t == null) "Start TX" else "Stop TX"
             info.text = if (s == null) "stopped" else buildString {
                 val secs = if (s.since > 0) (System.nanoTime() - s.since) / 1e9 else 0.0
-                append("${s.state}  %.0f s  LO ${s.lo}\n".format(secs))
-                append("%.1f Bd  TS %.1f kb/s  video %d kb/s\n".format(s.baud, s.tsRate / 1e3, s.videoKbps))
-                append("C3 buffer %d / 3000  underruns %d  PLFRAMEs %d\n".format(s.fill, s.underruns, s.plframes))
+                // lines of at most STATUS_CHARS characters (fitStatusText)
+                append("%s %.0f s  LO %s\n".format(s.state, secs, s.lo.toDoubleOrNull()?.let { "%.3f MHz".format(it / 1e6) } ?: "–"))
+                append("%.0f Bd  TS %.1f kb/s  video %d\n".format(s.baud, s.tsRate / 1e3, s.videoKbps))
+                append("C3 buf %d/3000  under %d  frames %d\n".format(s.fill, s.underruns, s.plframes))
                 t.mux?.let { m ->
                     val total = m.time * m.rate / 1504
-                    append("TS: video %.1f kb/s  null %.0f %%  queued %d B  dropped %d\n".format(
+                    append("video %.0f kb/s null %.0f%% q %d drop %d\n".format(
                         if (m.time > 0) m.videoBytes * 8 / m.time / 1e3 else 0.0,
                         if (total > 0) 100.0 * m.nullPackets / total else 0.0, m.queuedBytes, m.droppedAus))
                 }
-                t.video?.let { append("H.264 ${it.width}x${it.height} ${it.fps} fps, frames ${it.frames}${it.error?.let { e -> "  $e" } ?: ""}") }
-                t.camera?.let { append("\ncamera ${it.size}  frames ${it.frames}${it.error?.let { e -> "  $e" } ?: ""}") }
+                t.video?.let { append("H.264 ${it.width}x${it.height} ${it.fps} fps  ${it.frames}${it.error?.let { e -> "  $e" } ?: ""}") }
+                t.camera?.let { append("\ncamera ${it.size}  ${it.frames}${it.error?.let { e -> "  $e" } ?: ""}") }
             }
             ui.postDelayed(this, 1000)
         }
@@ -245,17 +249,25 @@ class TxActivity : Activity() {
     /** preview: the picture source drawn again, 5 times a second */
     private val previewTick = object : Runnable {
         override fun run() {
-            tx?.video?.painter?.let { p ->
-                val b = previewBitmap ?: Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888).also { previewBitmap = it }
-                p.draw(Canvas(b), 640, 360)
-                preview.setImageBitmap(b)
-                preview.invalidate()
-            }
+            // while TX runs the picture being sent; while stopped the test card with the current settings
+            val p = tx?.video?.painter ?: TestCard(call.text.toString().trim().uppercase().ifEmpty { "CALLSIGN" },
+                "ESP32-ATV TX  ${freq.text} MHz", "DVB-S2 ${constel.selectedItem} ${fec.selectedItem}" +
+                    "${if (frame.selectedItem == "short") " short" else ""}  ${rate.selectedItem}")
+            val b = previewBitmap ?: Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888).also { previewBitmap = it }
+            p.draw(Canvas(b), 640, 360)
+            preview.setImageBitmap(b)
+            preview.invalidate()
             ui.postDelayed(this, 200)
         }
     }
 
-    private fun log(s: String) { logView.append(s + "\n") }
+    /** The log at the bottom of the page: the last 60 lines. */
+    private fun log(s: String) {
+        logLines.addLast(s)
+        while (logLines.size > 60) logLines.removeFirst()
+        logView.text = logLines.joinToString("\n")
+    }
+    private val logLines = ArrayDeque<String>()
 
     private fun edit(v: String, type: Int) = EditText(this).apply { inputType = type; setText(v) }
     private fun label(t: String) = TextView(this).apply { text = t; setPadding(8, 0, 8, 0) }

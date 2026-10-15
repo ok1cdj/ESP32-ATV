@@ -62,16 +62,16 @@ app or in the notification.
 
 | line | meaning |
 |---|---|
-| `carrier` | carrier offset from the tuned frequency; `NCO` = software correction, `residual` = what the demodulator still sees |
+| `carrier` | carrier offset from the tuned frequency; `NCO` = software correction, `res` = the residual the demodulator still sees |
 | `drift … Hz/s` | how fast the app is following the oscillator drift (ESP32 boards have no TCXO; the C3 moves by kHz, up to some 260 Hz/s, while warming up) |
-| `re-searches` | how often the signal was lost and searched again (10 s – at low rates 2.5 LDPC batches – without a good frame) |
-| `LOCK`, `FRAME` | demodulator lock and DVB-S2 frame sync |
+| `re-search` | how often the signal was lost and searched again (10 s – at low rates 2.5 LDPC batches – without a good frame) |
+| `LOCK`, `FRAME` | demodulator lock and DVB-S2 frame sync (✓ / ✗) |
 | `MER` | modulation error ratio in dB – the main quality figure; QPSK 3/4 needs about > 5 dB, 8PSK 3/5 > 10 dB |
 | `CNR` | carrier-to-noise ratio (only when the sample rate is > 3× the symbol rate, i.e. up to 100 kS/s) |
 | `frames ok / fixed / bad` | frames without errors / corrected by BCH / not decoded |
 | `TS`, `TEI`, `CC` | transport stream rate (10 s average), packets with errors, continuity counter breaks |
 | `service`, `video` | service and provider name from the SDT, codec and resolution |
-| `USB lost`, `queue drops` | losses on USB and in the queue to the demodulator – should be 0 |
+| `USB lost`, `ESP drop`, `queue` | losses on USB, in the ESP32-S3 and in the queue to the demodulator – should be 0 |
 | constellation (square) | symbol points: QPSK 4 clusters, 8PSK 8 clusters; a ring = too little signal or phase noise |
 
 ## 4. Transmitter (ESP32-C3 beacon)
@@ -136,7 +136,7 @@ command from USB stops the beacon and starts the live mode).
 | *searching: no signal* | transmitter on, right frequency, antennas on both boards; more gain |
 | locked but `bad` grows | too little signal (low MER) – more TX level / gain, better antennas; QPSK rather than 8PSK |
 | MER drops with a strong signal | receiver overloaded – less gain |
-| `USB lost` / `queue drops` > 0 | another OTG cable / adapter; no heavy apps at the same time |
+| `USB lost` / `queue` > 0 | another OTG cable / adapter; no heavy apps at the same time |
 | frames but no picture | wrong code rate or modulation in the preset (the beacon is QPSK 3/4) |
 | TX: *no ESP32-DATV answer* | the S3 is connected, not the C3 (both are `303a:1001`), or the C3 has another firmware |
 | TX: received weak, MER low | move the C3 and its antenna away from the phone |

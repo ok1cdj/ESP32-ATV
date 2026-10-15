@@ -61,16 +61,16 @@ v aplikaci nebo v oznámení.
 
 | řádek | význam |
 |---|---|
-| `carrier` | odchylka nosné od naladěného kmitočtu; `NCO` = softwarové doladění, `residual` = zbytek, který hlásí demodulátor |
+| `carrier` | odchylka nosné od naladěného kmitočtu; `NCO` = softwarové doladění, `res` = zbytek, který hlásí demodulátor |
 | `drift … Hz/s` | jak rychle aplikace dolaďuje drift oscilátorů (ESP32 nemají TCXO; C3 se při zahřívání posouvá o kHz, až asi 260 Hz/s) |
-| `re-searches` | kolikrát se signál ztratil a hledal znovu (10 s – u nízkých rychlostí 2,5 dávky LDPC – bez dobrého rámce) |
-| `LOCK`, `FRAME` | zámek demodulátoru a rámcové synchronizace DVB-S2 |
+| `re-search` | kolikrát se signál ztratil a hledal znovu (10 s – u nízkých rychlostí 2,5 dávky LDPC – bez dobrého rámce) |
+| `LOCK`, `FRAME` | zámek demodulátoru a rámcové synchronizace DVB-S2 (✓ / ✗) |
 | `MER` | modulation error ratio v dB – hlavní míra kvality; QPSK 3/4 potřebuje zhruba > 5 dB, 8PSK 3/5 > 10 dB |
 | `CNR` | poměr nosná/šum (jen když vzorkování > 3× symbolová rychlost, tj. do 100 kS/s) |
 | `frames ok / fixed / bad` | rámce bez chyb / opravené kódem BCH / nedekódované |
 | `TS`, `TEI`, `CC` | tok transport streamu (průměr 10 s), pakety s chybou, nespojitosti čítače |
 | `service`, `video` | název služby a poskytovatele z SDT, kodek a rozlišení |
-| `USB lost`, `queue drops` | ztráty na USB a ve frontě k demodulátoru – mají být 0 |
+| `USB lost`, `ESP drop`, `queue` | ztráty na USB, v ESP32-S3 a ve frontě k demodulátoru – mají být 0 |
 | konstelace (čtverec) | body symbolů: QPSK 4 shluky, 8PSK 8 shluků; prstenec = málo signálu nebo fázový šum |
 
 ## 4. Vysílač (maják ESP32-C3)
@@ -133,7 +133,7 @@ s PC). C3 potřebuje firmware ESP32-DATV-SA (stejný jako pro maják výše: př
 | *searching: no signal* | zapnutý vysílač, správný kmitočet, anténa na obou deskách; vyšší gain |
 | zámek je, ale `bad` přibývá | málo signálu (MER nízké) – vyšší úroveň vysílače / gain, lepší antény; u 8PSK spíš QPSK |
 | MER klesá při silném signálu | přijímač zahlcen – snížit gain |
-| `USB lost` / `queue drops` > 0 | jiný OTG kabel / redukce; nepouštět náročné aplikace souběžně |
+| `USB lost` / `queue` > 0 | jiný OTG kabel / redukce; nepouštět náročné aplikace souběžně |
 | obraz nejde, rámce ano | špatný kódový poměr nebo modulace v předvolbě (maják = QPSK 3/4) |
 | TX: *no ESP32-DATV answer* | připojená je S3, ne C3 (obě jsou `303a:1001`), nebo má C3 jiný firmware |
 | TX: příjem slabý, nízké MER | dej C3 s anténou dál od telefonu |

@@ -127,13 +127,17 @@ class MainActivity : Activity() {
             addView(blank, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         }, LinearLayout.LayoutParams(MATCH_PARENT, w * 9 / 16))
 
-        info = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 12f; setPadding(0, 12, 0, 8) }
-        root.addView(info)
+        // below the picture everything scrolls: status, spectrum, controls, log - nothing is cut off on a small screen
+        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        logScroll = ScrollView(this).apply { addView(body) }
+        root.addView(logScroll, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+        info = TextView(this).apply { typeface = Typeface.MONOSPACE; setPadding(0, 12, 0, 8); fitStatusText(this) }
+        body.addView(info)
         // spectrum (wide) and constellation (square) side by side
         constView = ConstellationView(this)
         specView = SpectrumView(this)
         val side = (resources.displayMetrics.widthPixels * 0.3).toInt()
-        root.addView(LinearLayout(this).apply {
+        body.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(specView, LinearLayout.LayoutParams(0, side, 1f).apply { rightMargin = 8 })
             addView(constView, LinearLayout.LayoutParams(side, side))
@@ -160,12 +164,12 @@ class MainActivity : Activity() {
             override fun onNothingSelected(a: android.widget.AdapterView<*>?) {}
         }
         // preset and frequency share a row; Save / Delete live in the ⋮ menu
-        root.addView(LinearLayout(this).apply {
+        body.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
             addView(presetSpinner, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         })
-        root.addView(row(label("MHz"), freq, label("SR"), rate))
+        body.addView(row(label("MHz"), freq, label("SR"), rate))
         constel = spinner(consts, prefs.getString("const", "QPSK")!!)
         codeRate = spinner(rateList(constel.selectedItem as String), prefs.getString("cr", "3/4")!!)
         constel.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
@@ -179,7 +183,7 @@ class MainActivity : Activity() {
             override fun onNothingSelected(a: android.widget.AdapterView<*>?) {}
         }
         frames = spinner(frameChoices.map { Receiver.frameSizeName(it) }, Receiver.frameSizeName(prefs.getInt("frames", Receiver.FRAMES_NORMAL)))
-        root.addView(LinearLayout(this).apply {
+        body.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(constel, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             addView(codeRate, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
@@ -188,19 +192,23 @@ class MainActivity : Activity() {
         startStop = button("Start") { if (receiver == null) start() else stop() }
         track = android.widget.CheckBox(this).apply { text = "drift"; isChecked = prefs.getBoolean("track", true) }
         val more = button("⋮") { v -> showMenu(v) }.apply { minWidth = 0; minimumWidth = 0; setPadding(36, 0, 36, 0) }
-        root.addView(LinearLayout(this).apply {
+        // gain and drift on one row, Start / Stop and the menu on the next: one row did not fit a phone's width
+        body.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
             addView(label("gain dB"))
-            addView(gain, LinearLayout.LayoutParams(0, WRAP_CONTENT, 0.8f))
-            addView(track)
-            addView(startStop, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.4f))
-            addView(more, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { leftMargin = 8 })
+            addView(gain, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(track, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { leftMargin = 16 })
         })
+        body.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            addView(startStop, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(more, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { leftMargin = 8 })
+        }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = 8 })
 
         logView = TextView(this).apply { typeface = Typeface.MONOSPACE; textSize = 11f; setTextIsSelectable(true) }
-        logScroll = ScrollView(this).apply { addView(logView) }
-        root.addView(logScroll, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f).apply { topMargin = 12 })
+        body.addView(logView, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = 12 })
 
         setContentView(root)
         root.setOnApplyWindowInsetsListener { v, insets ->
@@ -315,10 +323,13 @@ class MainActivity : Activity() {
 
     private fun say(s: String) = service?.say(s) ?: runOnUiThread { appendLog(s) }
 
+    /** The log at the bottom of the page: the last LOG_LINES lines (the page does not jump to it). */
     private fun appendLog(s: String) {
-        logView.append(s + "\n")
-        logScroll.post { logScroll.fullScroll(ScrollView.FOCUS_DOWN) }
+        logLines.addLast(s)
+        while (logLines.size > LOG_LINES) logLines.removeFirst()
+        logView.text = logLines.joinToString("\n")
     }
+    private val logLines = ArrayDeque<String>()
 
     private fun findDevice(): UsbDevice? =
         usbManager.deviceList.values.firstOrNull { it.vendorId == 0x303A && it.productId == 0x1001 }
@@ -386,26 +397,27 @@ class MainActivity : Activity() {
             val carrier = s.offsetHz + (if (s.freq.isNaN() || !live) 0.0 else s.freq)
             buildString {
                 append("%s   %.0f s\n".format(s.state, (now - (service?.startedAt ?: now)) / 1e9))
-                append("carrier %+.2f kHz  (NCO %+.2f, residual %s Hz)\n".format(carrier / 1e3, s.offsetHz / 1e3, if (live) num(s.freq, "%.0f") else "–"))
-                append("drift %s %+.0f Hz/s  re-searches %d  search %.0f dB\n".format(if (r.cfg.track) "on" else "off",
-                    s.driftRate, s.researches, s.searchDb))
-                append("LOCK %s  FRAME %s  MER %s dB  CNR %s dB\n".format(yn(s.lock), yn(s.frameLock), num(s.mer, "%.1f"), num(s.cnr, "%.1f")))
-                append("frames ok %d  fixed %d  bad %d  locks %d\n".format(s.framesOk, s.framesFixed, s.framesBad, s.locks))
-                append("TS %.0f kb/s (10 s)  %d pkts  TEI %d  CC %d\n".format(tsRate, d.packets, d.errorPackets, d.ccErrors))
+                append("carrier %+.2f kHz NCO %+.2f res %s Hz\n".format(carrier / 1e3, s.offsetHz / 1e3, if (live) num(s.freq, "%.0f") else "–"))
+                append("drift %s  re-search %d  search %.0f dB\n".format(if (r.cfg.track) "%+.0f Hz/s".format(s.driftRate) else "off",
+                    s.researches, s.searchDb))
+                append("LOCK %s FRAME %s  MER %s  CNR %s dB\n".format(yn(s.lock), yn(s.frameLock), num(s.mer, "%.1f"), num(s.cnr, "%.1f")))
+                append("frames ok %d fixed %d bad %d locks %d\n".format(s.framesOk, s.framesFixed, s.framesBad, s.locks))
+                append("TS %.0f kb/s  %d pkts  TEI %d  CC %d\n".format(tsRate, d.packets, d.errorPackets, d.ccErrors))
                 append("service %s / %s\n".format(d.service ?: "–", d.provider ?: "–"))
                 append("video %s %dx%d  %d frames%s\n".format(v?.mime?.substringAfter('/') ?: "–", v?.width ?: 0, v?.height ?: 0,
                     v?.frames ?: 0, v?.error?.let { "  ERR $it" } ?: ""))
-                append("USB lost %d  jumps %d  ESP dropped %d  queue drops %d".format(usb?.lost ?: 0, usb?.jumps ?: 0, usb?.dropped ?: 0, s.queueDrops))
+                append("USB lost %d jumps %d ESP drop %d queue %d".format(usb?.lost ?: 0, usb?.jumps ?: 0, usb?.dropped ?: 0, s.queueDrops))
             }
         }
         ui.postDelayed(::refresh, 500)
     }
 
-    private fun yn(b: Boolean) = if (b) "yes" else "no"
+    private fun yn(b: Boolean) = if (b) "✓" else "✗"
     private fun num(x: Double, f: String) = if (x.isNaN()) "–" else f.format(x)
 
     companion object {
         /** IARU R1 13 cm ATV segment 2322-2355 MHz; ATV_FREQ of boards.sh on the PC side */
         const val DEFAULT_FREQ = "2340.000"
+        private const val LOG_LINES = 60
     }
 }
