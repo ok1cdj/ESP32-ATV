@@ -312,7 +312,7 @@ def test_mode(a, tx_port, rx_port, freq0):
                 stream = Stream(rx_port, stream_lo, a.gain)
                 meter.f = None
             log = []
-            t0 = time.time()
+            t0 = [time.time()]
 
             def measure(i, q, blocks=a.blocks):
                 tx.bdc(f"BDC {i:.3f} {q:.3f}")
@@ -329,7 +329,7 @@ def test_mode(a, tx_port, rx_port, freq0):
                         print(f"  receiver overloaded ({clip:.1%} of the samples at full scale): lower --gain", flush=True)
                     dbs.append(db)
                 db = 10 * np.log10(np.mean(10 ** (np.array(dbs) / 10)))
-                log.append({"i": i, "q": q, "db": float(db), "f": float(stream_lo + ftone), "t": round(time.time() - t0, 3)})
+                log.append({"i": i, "q": q, "db": float(db), "f": float(stream_lo + ftone), "t": round(time.time() - t0[0], 3)})
                 print(f"  BDC {i:+8.3f} {q:+8.3f}: tone {db:6.1f} dB above the noise, at {(stream_lo + ftone) / 1e6:.5f} MHz",
                       flush=True)
                 return float(db)
@@ -346,6 +346,7 @@ def test_mode(a, tx_port, rx_port, freq0):
                     print(f"  warming up {t_end - time.time():3.0f} s: tone {db:5.1f} dB at {(stream_lo + ftone) / 1e6:.5f} MHz, "
                           f"drift {meter.rate:+.0f} Hz/s", flush=True)
                     time.sleep(0.5)
+            t0[0] = time.time()                                 # the calibration's own time, without the warm-up
             # find the tone with the correction 8 codes off (strong even when the C3 is nulled already)
             for off in (8.0, 16.0, 32.0):
                 db = measure(st[0] + off, st[1])
@@ -365,7 +366,7 @@ def test_mode(a, tx_port, rx_port, freq0):
                 for i, q in cal.next_points():
                     cal.add(i, q, measure(i, q))
             r = cal.result()
-            secs = time.time() - t0
+            secs = time.time() - t0[0]
             ref = measure(0.0, 0.0, 4 * a.blocks)              # without a correction: the yardstick
             last = measure(r["i"], r["q"], 4 * a.blocks)
             res = {"freq_mhz": f_mhz, "start": list(st), "step": a.step, "i": r["i"], "q": r["q"], "converged": r["converged"],
