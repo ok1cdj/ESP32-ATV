@@ -12,6 +12,12 @@ fun interface Painter {
     fun draw(cv: Canvas, w: Int, h: Int)
 }
 
+/** A picture source that runs on its own (camera, file): started before the encoder, stopped after it. */
+interface LivePainter : Painter {
+    val error: String?
+    fun stop()
+}
+
 /**
  * Video for TX: [painter] draws every frame with a Canvas straight into a hardware H.264 encoder's input surface at
  * [fps]. Every access unit goes to [onAu] in Annex B with an access unit delimiter, key frames with SPS / PPS in front

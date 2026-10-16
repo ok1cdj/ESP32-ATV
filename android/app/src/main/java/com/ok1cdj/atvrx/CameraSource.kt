@@ -2,12 +2,10 @@ package com.ok1cdj.atvrx
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ImageFormat
 import android.graphics.Paint
-import android.graphics.Typeface
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
@@ -15,7 +13,6 @@ import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
-import android.media.Image
 import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
@@ -29,16 +26,14 @@ import java.util.concurrent.Executor
  * landscape fills the frame, portrait shows a band of it.
  */
 class CameraSource(private val ctx: Context, private val back: Boolean, private val maxWidth: Int,
-                   @Volatile var call: String, @Volatile var line: String) : Painter {
+                   @Volatile var call: String, @Volatile var line: String) : LivePainter {
     private val thread = HandlerThread("tx-camera").apply { start() }
     private val handler = Handler(thread.looper)
     private var device: CameraDevice? = null
     private var session: CameraCaptureSession? = null
     private var reader: ImageReader? = null
-    @Volatile private var bitmap: Bitmap? = null        // the newest frame (swapped whole, never drawn into while shown)
-    private var spare: Bitmap? = null
-    private var argb = IntArray(0)
-    @Volatile var error: String? = null; private set
+    private val yuv = YuvToBitmap()
+    @Volatile override var error: String? = null; private set
     @Volatile var size = ""; private set
     @Volatile var frames = 0L; private set
     /** how the phone is held: 0 natural (portrait), 90, 180, 270 degrees clockwise */
@@ -61,7 +56,7 @@ class CameraSource(private val ctx: Context, private val back: Boolean, private 
         val r = ImageReader.newInstance(sz.width, sz.height, ImageFormat.YUV_420_888, 3)
         r.setOnImageAvailableListener({ ir ->
             val img = try { ir.acquireLatestImage() } catch (_: Exception) { null } ?: return@setOnImageAvailableListener
-            try { convert(img) } catch (e: Exception) { error = "camera: ${e.message}" } finally { img.close() }
+            try { yuv.convert(img); frames++ } catch (e: Exception) { error = "camera: ${e.message}" } finally { img.close() }
         }, handler)
         reader = r
         cm.openCamera(id, object : CameraDevice.StateCallback() {
@@ -86,7 +81,7 @@ class CameraSource(private val ctx: Context, private val back: Boolean, private 
         }, handler)
     }
 
-    fun stop() {
+    override fun stop() {
         try { session?.close() } catch (_: Exception) {}
         try { device?.close() } catch (_: Exception) {}
         reader?.close()
@@ -94,38 +89,11 @@ class CameraSource(private val ctx: Context, private val back: Boolean, private 
         session = null; device = null; reader = null
     }
 
-    /** YUV_420_888 -> ARGB (BT.601, limited range), into the spare bitmap, then swapped in. */
-    private fun convert(img: Image) {
-        val w = img.width; val h = img.height
-        if (argb.size != w * h) argb = IntArray(w * h)
-        val yp = img.planes[0]; val up = img.planes[1]; val vp = img.planes[2]
-        val yb = yp.buffer; val ub = up.buffer; val vb = vp.buffer
-        val yrs = yp.rowStride; val urs = up.rowStride; val ups = up.pixelStride; val vrs = vp.rowStride; val vps = vp.pixelStride
-        var o = 0
-        for (y in 0 until h) {
-            val yo = y * yrs; val uo = (y shr 1) * urs; val vo = (y shr 1) * vrs
-            for (x in 0 until w) {
-                val Y = ((yb.get(yo + x).toInt() and 0xFF) - 16).coerceAtLeast(0) * 1192
-                val U = (ub.get(uo + (x shr 1) * ups).toInt() and 0xFF) - 128
-                val V = (vb.get(vo + (x shr 1) * vps).toInt() and 0xFF) - 128
-                val r = (Y + 1634 * V) shr 10
-                val g = (Y - 833 * V - 400 * U) shr 10
-                val b = (Y + 2066 * U) shr 10
-                argb[o++] = (0xFF shl 24) or (r.coerceIn(0, 255) shl 16) or (g.coerceIn(0, 255) shl 8) or b.coerceIn(0, 255)
-            }
-        }
-        val bm = spare?.takeIf { it.width == w && it.height == h } ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        bm.setPixels(argb, 0, w, 0, 0, w, h)
-        synchronized(this) { spare = bitmap; bitmap = bm }
-        frames++
-    }
-
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val matrix = android.graphics.Matrix()
 
     @Synchronized
-    override fun draw(cv: Canvas, w: Int, h: Int) {
-        val bm = bitmap
+    override fun draw(cv: Canvas, w: Int, h: Int) = yuv.draw { bm ->
         if (bm == null) {
             cv.drawColor(Color.DKGRAY)
         } else {
@@ -142,18 +110,6 @@ class CameraSource(private val ctx: Context, private val back: Boolean, private 
             cv.drawColor(Color.BLACK)
             cv.drawBitmap(bm, matrix, paint)
         }
-        // identification strip
-        val sh = h * 0.13f
-        paint.color = Color.argb(170, 0, 0, 0)
-        cv.drawRect(0f, h - sh, w.toFloat(), h.toFloat(), paint)
-        paint.color = Color.WHITE
-        paint.typeface = Typeface.DEFAULT_BOLD
-        paint.textSize = sh * 0.72f
-        paint.textAlign = Paint.Align.LEFT
-        cv.drawText(call, h * 0.03f, h - sh * 0.24f, paint)
-        paint.typeface = Typeface.DEFAULT
-        paint.textSize = sh * 0.45f
-        paint.textAlign = Paint.Align.RIGHT
-        cv.drawText(line, w - h * 0.03f, h - sh * 0.3f, paint)
+        IdStrip.draw(cv, w, h, call, line, paint)
     }
 }
