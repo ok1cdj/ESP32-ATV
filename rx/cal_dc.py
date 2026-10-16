@@ -203,6 +203,7 @@ class ToneMeter:
     SUB = 4
     TRACK = 400.0                   # once found (about 0.7 s per measurement at up to 100 Hz/s)
     STRONG = 12.0
+    LOCATE = 3.0
 
     def __init__(self):
         self.w = np.hanning(self.N // self.SUB).astype(np.float32)
@@ -221,6 +222,22 @@ class ToneMeter:
         x = x[:self.N] - np.mean(x[:self.N])                 # the receiver's own DC out
         p = np.mean(np.abs(np.fft.fftshift(np.fft.fft(x.reshape(self.SUB, m) * self.w, axis=1), axes=1)) ** 2, 0)
         return (np.arange(m) - m / 2) * FS / m, p
+
+    def locate(self, blocks):
+        """The leakage tone among other lines (the receiver has one of its own at exactly the nominal frequency): spectra at
+        different corrections, the line whose level changes most between them (at least LOCATE dB) and is strong in one;
+        its frequency is then the tracked one (the drift learned afresh). False if there is none."""
+        ps = [self._spectrum(x)[1] for x in blocks]
+        f = self._spectrum(blocks[0])[0]
+        hi, lo = np.max(ps, 0), np.min(ps, 0)
+        ring = (np.abs(f) > 3e3)
+        noise = np.median(hi[ring]) / 0.84
+        score = np.where(ring & (hi > noise * 10 ** (self.STRONG / 10)), hi / np.maximum(lo, 1e-30), 0)
+        k = int(np.argmax(score))
+        if score[k] < 10 ** (self.LOCATE / 10):
+            return False
+        self.f, self.t, self.rate, self.hist = float(f[k]), time.time(), 0.0, []
+        return True
 
     def gap(self, x):
         """Did the transmitter stop within x? The tone's level in the 4 windows differs by more than 10 dB (a strong tone only;
@@ -384,6 +401,17 @@ def session(a, freqs, tx_port, rx_port):
                 return float(db)
 
             print(f"{f_mhz:.3f} MHz: BDC TEST, start {st[0]:+.3f} {st[1]:+.3f} ({src})")
+            def locate():
+                xs = []
+                for di, dq in ((8.0, 0.0), (0.0, 0.0), (0.0, 8.0)):
+                    tx.bdc(f"BDC {st[0] + di:.3f} {st[1] + dq:.3f}")
+                    xs.append(stream.take(ToneMeter.N, settle=SETTLE))
+                if not meter.locate(xs):
+                    sys.exit("no leakage tone found (no line follows the correction): is the C3 transmitting (BDC TEST), "
+                             "the receiver's antenna on, --gain enough?")
+                print(f"  the leakage tone at {(stream_lo + meter.f) / 1e6:.5f} MHz", flush=True)
+
+            locate()
             if a.warmup > 0 and not runs:
                 # opening the port resets the C3: its frequency runs away for the first seconds (about -100 Hz/s)
                 # (8 codes off: a strong tone, so that the meter finds it and learns its drift)
@@ -395,15 +423,8 @@ def session(a, freqs, tx_port, rx_port):
                     print(f"  warming up {t_end - time.time():3.0f} s: tone {db:5.1f} dB at {(stream_lo + ftone) / 1e6:.5f} MHz, "
                           f"drift {meter.rate:+.0f} Hz/s", flush=True)
                     time.sleep(0.5)
+                locate()                                        # again: it drifted
             t0[0] = time.time()                                 # the calibration's own time, without the warm-up
-            # find the tone with the correction 8 codes off (strong even when the C3 is nulled already)
-            for off in (8.0, 16.0, 32.0):
-                db = measure(st[0] + off, st[1])
-                if db >= ToneMeter.STRONG:
-                    break
-                meter.f = None
-            else:
-                sys.exit("no leakage tone found: is the C3 transmitting (BDC TEST), the receiver's antenna on, --gain enough?")
             if a.eval is not None:
                 ref = measure(0.0, 0.0, 4 * a.blocks)
                 got = measure(*a.eval, 4 * a.blocks)
