@@ -2,6 +2,17 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## Unreleased
+
+### TX: your own picture or video (users' request)
+- **Picture → picture / video file** (live TX and *Save as beacon*): **File…** picks a picture or video from the phone
+  (the system's picker, no storage permission). A picture is sent whole, a video loops at its own pace and turns upright
+  by its rotation tag; any resolution (shrunk to the video size). **callsign** puts the camera's strip over it (on by
+  default).
+- **Sound *from the video*:** its sound track, in sync with the picture on every pass of the loop (up to 10 minutes).
+- *Save as beacon*: length **video** = the whole video (up to what the C3's flash holds at that rate).
+- The preview shows the chosen file while TX is stopped.
+
 ## 0.10-beta – 2026-10-16
 
 ### Transmitter calibration (the C3's carrier leakage)

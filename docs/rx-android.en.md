@@ -6,7 +6,7 @@ title: ATV RX/TX – guide (beta)
 an **Android phone or tablet** demodulates (leandvb), decodes the LDPC (ldpc_tool) and shows the picture together
 with MER, constellation and stream information. Its counterpart is the stand-alone ESP32-C3 beacon
 ([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)) – and the same app also **transmits**: with a XIAO
-ESP32-C3 on USB-OTG it sends a test card or the phone's camera live as DVB-S2 (switch **RX | TX** at the top).
+ESP32-C3 on USB-OTG it sends a test card, the phone's camera or a picture / video from the phone live as DVB-S2 (switch **RX | TX** at the top).
 
 > ⚠ **The transmitter works on the 13 cm amateur radio band (2.3–2.45 GHz). Transmitting requires an amateur radio
 > licence.** Transmit only with your own callsign, on frequencies and at power levels your licence and national band
@@ -104,8 +104,9 @@ you store a beacon with your callsign in it:
 
 1. Connect the C3 through OTG, switch to **TX** and set it up as for live TX (section 5): frequency, symbol rate (up to
    333 kS/s), QPSK code rate, frame size (**short** is best at low rates), pilots, **callsign**, **AMP**, picture (test
-   card or camera), **sound** (CW ID: the callsign in Morse once per loop; at 40–50 kS/s choose a kb/s, *auto* sends
-   none there) and the length (10–60 s).
+   card, camera, or your own picture / video – **File…**), **sound** (CW ID: the callsign in Morse once per loop; *from
+   the video*; at 40–50 kS/s choose a kb/s, *auto* sends none there) and the length (10–60 s, or **video**: as long as
+   the video file, none of it cut – up to what the flash holds at that rate).
 2. Tap **Save as beacon in the C3**. The phone records the picture for that long, encodes it as a loop and stores it in
    the C3's flash (progress bar: recording, encoding, storing – about half a minute for 20 s).
 3. Unplug the C3 and power it from anything – a power bank, a charger. It transmits the loop by itself after every
@@ -138,8 +139,9 @@ beacon and starts the live mode.
 2. Switch to **TX** at the top, allow USB access (and the camera when you use it).
 3. Set frequency (2300–2450 MHz, the firmware refuses anything else), symbol rate, **QPSK / 8PSK**, code rate,
    frame size (**short** gives the first picture 4× sooner at low rates), pilots, **callsign**, **AMP** (300 = 0 dB,
-   a few mW; 13 = −27 dB; 8PSK up to 420), the **picture** (test card, back or front camera) and the **sound**: off,
-   microphone, CW ID (your callsign in Morse, 20 WPM, 700 Hz, every 30 s) or mic + CW ID, with its bit rate.
+   a few mW; 13 = −27 dB; 8PSK up to 420), the **picture** (test card, back or front camera, or **picture / video
+   file**) and the **sound**: off, microphone, CW ID (your callsign in Morse, 20 WPM, 700 Hz, every 30 s), mic + CW ID
+   or *from the video*, with its bit rate.
 4. **Start TX.** The app reads the C3's DC calibration (`BDC`) and starts it; the status shows the C3 buffer (it
    should stay near 3000), the TS and video rates. TX runs in the background with the screen off; stop it with
    **Stop TX** or in the notification.
@@ -157,6 +159,13 @@ beacon and starts the live mode.
 
 - The camera picture turns upright the way you hold the phone (landscape fills the frame) and carries the callsign
   and the mode in a strip at the bottom.
+- **Picture / video file:** **File…** opens the phone's file picker (pictures and videos; no storage permission, the
+  app keeps the choice). A picture is sent whole (black bars where its shape differs from 16:9), a video loops
+  endlessly at its own pace, turned upright by its rotation tag (phone videos shot upright). **callsign** puts the same
+  strip as the camera's over it (on by default: the station's identification; turn it off if the picture carries it).
+  Sound *from the video* plays its sound track in sync with the loop (up to 10 minutes); a video without sound, or a
+  picture, sends none. The preview shows the file while TX is stopped. Any resolution works: the app shrinks it to the
+  video size (at most 640×360).
 - **Sound** is AAC: HE-AAC up to 32 kb/s, AAC-LC above. *auto* sends **none below 80 kb/s of TS** (40–50 kS/s: the
   picture needs the bits; choose 8–16 kb/s to send it anyway), 24 kb/s up to 200 kb/s, 64 kb/s above; the sound's
   bits come off the video's. Picture and sound carry time stamps from the moment they were captured, so they stay

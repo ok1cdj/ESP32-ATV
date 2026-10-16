@@ -6,7 +6,7 @@ title: ATV RX/TX – návod (beta)
 USB-OTG, **telefon nebo tablet s Androidem** signál demoduluje (leandvb), dekóduje LDPC (ldpc_tool) a ukazuje obraz
 spolu s MER, konstelací a údaji o streamu. Protějškem je samostatný maják s ESP32-C3
 ([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)) – a stejná aplikace také **vysílá**: s XIAO ESP32-C3 na
-USB-OTG posílá živě testkartu nebo obraz z kamery telefonu jako DVB-S2 (přepínač **RX | TX** nahoře).
+USB-OTG posílá živě testkartu, obraz z kamery nebo obrázek či video z telefonu jako DVB-S2 (přepínač **RX | TX** nahoře).
 
 > ⚠ **Vysílá se v radioamatérském pásmu 13 cm (2,3–2,45 GHz). K vysílání je nutné platné oprávnění (koncese)
 > radioamatéra.** Vysílej jen se svou značkou, na kmitočtech a s výkonem, které tvé oprávnění a národní kmitočtový
@@ -99,8 +99,9 @@ licence PolyForm Noncommercial) **sám nic nevysílá**, dokud do něj neuloží
 
 1. Připoj C3 přes OTG, přepni na **TX** a nastav vše jako pro živé vysílání (kapitola 5): kmitočet, symbolovou rychlost
    (do 333 kS/s), kódový poměr QPSK, velikost rámců (při nízkých rychlostech nejlépe **short**), piloty, **značku**,
-   **AMP**, obraz (testkarta nebo kamera), **zvuk** (CW ID: značka v Morseovce jednou za smyčku; při 40–50 kS/s zvol
-   kb/s, *auto* tam zvuk neposílá) a délku (10–60 s).
+   **AMP**, obraz (testkarta, kamera, nebo vlastní obrázek či video – **File…**), **zvuk** (CW ID: značka v Morseovce
+   jednou za smyčku; *from the video*; při 40–50 kS/s zvol kb/s, *auto* tam zvuk neposílá) a délku (10–60 s, nebo
+   **video**: celá délka videa, nic se neusekne – do toho, co se při dané rychlosti vejde do flash).
 2. Klepni na **Save as beacon in the C3**. Telefon po tu dobu nahrává obraz, zakóduje ho jako smyčku a uloží do flash C3
    (ukazatel průběhu: nahrávání, kódování, ukládání – pro 20 s asi půl minuty).
 3. Odpoj C3 a napájej ho čímkoli – powerbankou, nabíječkou. Po každém zapnutí vysílá smyčku sám, na uloženém kmitočtu
@@ -132,8 +133,9 @@ s PC). C3 potřebuje firmware vysílače (kapitola 1); příkaz z USB zastaví b
 2. Nahoře přepni na **TX**, povol přístup k USB (a ke kameře, když ji použiješ).
 3. Nastav kmitočet (2300–2450 MHz, jinak ho firmware odmítne), symbolovou rychlost, **QPSK / 8PSK**, kódový poměr,
    velikost rámců (**short** dá při nízkých rychlostech první obraz 4× dřív), piloty, **značku**, **AMP** (300 = 0 dB,
-   pár mW; 13 = −27 dB; 8PSK až 420), **obraz** (testkarta, zadní nebo přední kamera) a **zvuk**: vypnutý, mikrofon,
-   CW ID (tvoje značka v Morseovce, 20 WPM, 700 Hz, každých 30 s) nebo mikrofon + CW ID, s jeho datovým tokem.
+   pár mW; 13 = −27 dB; 8PSK až 420), **obraz** (testkarta, zadní nebo přední kamera, nebo **soubor s obrázkem či
+   videem**) a **zvuk**: vypnutý, mikrofon, CW ID (tvoje značka v Morseovce, 20 WPM, 700 Hz, každých 30 s), mikrofon
+   + CW ID nebo *from the video*, s jeho datovým tokem.
 4. **Start TX.** Aplikace si z C3 přečte jeho DC kalibraci (`BDC`) a spustí ho; ve stavu je zaplnění bufferu C3 (má
    se držet kolem 3000), rychlost TS a videa. TX běží na pozadí i se zhasnutým displejem; zastavíš ho **Stop TX**
    nebo v oznámení.
@@ -151,6 +153,12 @@ s PC). C3 potřebuje firmware vysílače (kapitola 1); příkaz z USB zastaví b
 
 - Obraz z kamery se otáčí podle toho, jak telefon držíš (naležato vyplní celý rámec), a dole nese pruh se značkou
   a módem.
+- **Obrázek / video ze souboru:** **File…** otevře systémový výběr souborů (obrázky a videa; bez oprávnění k úložišti,
+  aplikace si volbu pamatuje). Obrázek se vysílá celý (černé pruhy, když nemá tvar 16:9), video běží dokola svým
+  tempem, otočené podle značky rotace (videa natočená na výšku). **callsign** přes něj dá stejný pruh se značkou jako
+  u kamery (výchozí zapnuto kvůli identifikaci stanice; vypni, pokud ji obrázek obsahuje). Zvuk *from the video* hraje
+  zvukovou stopu souběžně se smyčkou (do 10 minut); video bez zvuku nebo obrázek zvuk neposílá. Náhled ukazuje soubor
+  i při zastaveném TX. Rozlišení nevadí: aplikace ho zmenší na velikost videa (nejvýš 640×360).
 - **Zvuk** je AAC: do 32 kb/s HE-AAC, nad tím AAC-LC. *auto* **pod 80 kb/s TS zvuk neposílá** (40–50 kS/s: obraz
   potřebuje každý bit; zvol 8–16 kb/s, když ho chceš i tak), do 200 kb/s 24 kb/s, nad tím 64 kb/s; bity zvuku se
   berou videu. Obraz i zvuk nesou časové značky z okamžiku zachycení, takže jdou spolu (změřeno do 20 ms; na stole
