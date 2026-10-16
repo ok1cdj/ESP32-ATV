@@ -342,7 +342,7 @@ class TxActivity : Activity() {
         try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         catch (e: Exception) { log("file: cannot keep the permission (${e.message}); choose it again after a restart") }
         fileUri = uri.toString()
-        prefs.edit().putString("fileUri", fileUri).apply()
+        prefs.edit().putString("fileUri", fileUri).putString("source", Transmitter.SOURCE_FILE).apply()
         source.setSelection(Transmitter.SOURCES.indexOf(Transmitter.SOURCE_FILE))
         showFile()
         try { log("file ${FileSource.probe(this, uri)}") } catch (e: Exception) { log("file: ${e.message}") }

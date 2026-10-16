@@ -18,6 +18,12 @@ class YuvToBitmap(private val step: Int = 1) {
     private var argb = IntArray(0)
 
     fun convert(img: Image) {
+        val bm = convertTo(img, spare)
+        synchronized(this) { spare = bitmap; bitmap = bm }
+    }
+
+    /** [img] into [into] if it has the right size, else into a new bitmap; returns the one written */
+    fun convertTo(img: Image, into: Bitmap?): Bitmap {
         val crop = img.cropRect
         val w = crop.width() / step; val h = crop.height() / step
         if (argb.size != w * h) argb = IntArray(w * h)
@@ -40,9 +46,9 @@ class YuvToBitmap(private val step: Int = 1) {
                 argb[o++] = (0xFF shl 24) or (r.coerceIn(0, 255) shl 16) or (g.coerceIn(0, 255) shl 8) or b.coerceIn(0, 255)
             }
         }
-        val bm = spare?.takeIf { it.width == w && it.height == h } ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val bm = into?.takeIf { it.width == w && it.height == h } ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         bm.setPixels(argb, 0, w, 0, 0, w, h)
-        synchronized(this) { spare = bitmap; bitmap = bm }
+        return bm
     }
 
     /** [f] with the newest frame (null before the first), which stays untouched until [f] returns */

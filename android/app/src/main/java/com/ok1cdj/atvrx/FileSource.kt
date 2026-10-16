@@ -6,18 +6,15 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ImageDecoder
-import android.graphics.ImageFormat
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.media.AudioFormat
-import android.media.ImageReader
 import android.media.MediaCodec
+import android.media.MediaCodecInfo
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
-import android.os.Handler
-import android.os.HandlerThread
 import android.provider.OpenableColumns
 import java.io.IOException
 import java.nio.ByteOrder
@@ -25,10 +22,13 @@ import java.nio.ByteOrder
 /**
  * A picture or a video from the phone's storage as the TX picture (live and "Save as beacon"), chosen with the system's
  * file picker (a content URI, no storage permission). A picture is shown whole (black bars), a video plays in an endless
- * loop at its own pace: MediaExtractor -> MediaCodec into an ImageReader, each frame released at [t0] + its time stamp
- * (+ the loop period after every pass), converted at most [fps] times a second and shrunk while converting (a 4K video
- * costs what a 640x360 one does). With [overlay] the callsign strip of the camera goes over it. Its sound: [FilePcm],
- * on the same clock.
+ * loop at its own pace: MediaExtractor -> MediaCodec in flexible YUV (getOutputImage; an ImageReader as the decoder's
+ * surface gets a vendor format on Qualcomm phones whose planes cannot be read - the app crashed). Frame k is due at [t0]
+ * + its time stamp (+ the loop period after every pass); it is converted [LEAD_NS] ahead (at most [fps] a second, shrunk
+ * while converting: a 4K video costs what a 640x360 one does) into a small queue, and [draw] shows the newest one that is
+ * due - so the picture is drawn, and time-stamped by the encoder, when it is due, as its sound is (converting it only when
+ * due made it 0.1 s late). With [overlay] the callsign strip of the camera goes over it. Its sound: [FilePcm], on the
+ * same clock.
  */
 class FileSource(private val ctx: Context, private val uri: Uri, private val maxWidth: Int, private val fps: Int,
                  @Volatile var call: String, @Volatile var line: String, private val overlay: Boolean) : LivePainter {
@@ -43,11 +43,13 @@ class FileSource(private val ctx: Context, private val uri: Uri, private val max
 
     private var still: Bitmap? = null
     private var yuv: YuvToBitmap? = null
+    /** converted frames not yet due (due time, frame), the one shown, and bitmaps free for reuse: all under this lock */
+    private val queue = ArrayDeque<Pair<Long, Bitmap>>()
+    private var current: Bitmap? = null
+    private val pool = ArrayList<Bitmap>()
     private var rotation = 0
     @Volatile private var running = false
     private var thread: Thread? = null
-    private var readerThread: HandlerThread? = null
-    private var reader: ImageReader? = null
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val matrix = Matrix()
 
@@ -68,26 +70,14 @@ class FileSource(private val ctx: Context, private val uri: Uri, private val max
         val fmt = ex.getTrackFormat(track)
         val vw = fmt.getInteger(MediaFormat.KEY_WIDTH); val vh = fmt.getInteger(MediaFormat.KEY_HEIGHT)
         rotation = if (fmt.containsKey(MediaFormat.KEY_ROTATION)) fmt.getInteger(MediaFormat.KEY_ROTATION) else i.rotation
-        fmt.setInteger(MediaFormat.KEY_ROTATION, 0)          // an ImageReader gets the frames unturned anyway: drawn turned
+        fmt.setInteger(MediaFormat.KEY_ROTATION, 0)          // the decoder's images are unturned anyway: drawn turned
+        fmt.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
         periodUs = if (fmt.containsKey(MediaFormat.KEY_DURATION)) fmt.getLong(MediaFormat.KEY_DURATION) else i.durationUs
         if (periodUs <= 0) throw IOException("${i.name}: unknown length")
-        val y = YuvToBitmap(maxOf(1, maxOf(vw, vh) / maxWidth))
-        yuv = y
-        val rt = HandlerThread("tx-file").apply { start() }
-        readerThread = rt
-        val r = ImageReader.newInstance(vw, vh, ImageFormat.YUV_420_888, 3)
-        var last = 0L
-        r.setOnImageAvailableListener({ ir ->
-            val img = try { ir.acquireLatestImage() } catch (_: Exception) { null } ?: return@setOnImageAvailableListener
-            try {
-                val now = System.nanoTime()
-                if (now - last >= 800_000_000L / fps) { y.convert(img); last = now; frames++ }
-            } catch (e: Exception) { error = "video: ${e.message}" } finally { img.close() }
-        }, Handler(rt.looper))
-        reader = r
+        yuv = YuvToBitmap(maxOf(1, maxOf(vw, vh) / maxWidth))
         val codec = MediaCodec.createDecoderByType(fmt.getString(MediaFormat.KEY_MIME)!!)
         try {
-            codec.configure(fmt, r.surface, null, 0)
+            codec.configure(fmt, null, null, 0)
             codec.start()
         } catch (e: Exception) {
             codec.release()
@@ -100,13 +90,13 @@ class FileSource(private val ctx: Context, private val uri: Uri, private val max
     override fun stop() {
         running = false
         thread?.join(2000)
-        reader?.close(); reader = null
-        readerThread?.quitSafely(); readerThread = null
     }
 
-    /** decoding in an endless loop, every frame released at its time on the [t0] clock */
+    /** decoding in an endless loop, every frame taken at its time on the [t0] clock */
     private fun decode(ex: MediaExtractor, c: MediaCodec) {
         val info = MediaCodec.BufferInfo()
+        val y = yuv!!
+        var lastDue = Long.MIN_VALUE
         var base = t0
         var inputDone = false
         try {
@@ -133,12 +123,21 @@ class FileSource(private val ctx: Context, private val uri: Uri, private val max
                 }
                 val due = base + info.presentationTimeUs * 1000
                 while (running) {
-                    val wait = due - System.nanoTime()
+                    val wait = due - LEAD_NS - System.nanoTime()
                     if (wait <= 0) break
                     Thread.sleep(minOf(wait / 1_000_000, 50), if (wait < 50_000_000) (wait % 1_000_000).toInt() else 0)
                 }
-                // a frame more than 0.25 s late is skipped (the decoder fell behind), except while there is none yet
-                c.releaseOutputBuffer(o, System.nanoTime() - due < 250_000_000L || frames == 0L)
+                // at most fps frames a second; a frame more than 0.25 s late is skipped (the decoder fell behind), except
+                // while there is none yet
+                if ((System.nanoTime() - due < 250_000_000L && due - lastDue >= 800_000_000L / fps) || frames == 0L) {
+                    c.getOutputImage(o)?.use { img ->
+                        val into = synchronized(this) { pool.removeLastOrNull() }
+                        val bm = y.convertTo(img, into)
+                        synchronized(this) { queue.addLast(due to bm) }
+                        lastDue = due; frames++
+                    }
+                }
+                c.releaseOutputBuffer(o, false)
             }
         } catch (e: Exception) {
             if (running) error = "video: ${e.message}"
@@ -152,7 +151,16 @@ class FileSource(private val ctx: Context, private val uri: Uri, private val max
     @Synchronized
     override fun draw(cv: Canvas, w: Int, h: Int) {
         val s = still
-        if (s != null) drawFit(cv, w, h, s, 0) else yuv?.draw { bm -> drawFit(cv, w, h, bm, rotation) } ?: drawFit(cv, w, h, null, 0)
+        if (s != null) drawFit(cv, w, h, s, 0) else {
+            // the frame nearest to now (due within half a drawing period: the encoder draws at fps, so a frame shown only
+            // once it is due came 0..1 period late - measured 8..94 ms); the ones it replaces go back to the pool
+            val now = System.nanoTime() + 500_000_000L / fps
+            while (queue.isNotEmpty() && queue.first().first <= now) {
+                current?.let { pool.add(it) }
+                current = queue.removeFirst().second
+            }
+            drawFit(cv, w, h, current, rotation)
+        }
         if (overlay) IdStrip.draw(cv, w, h, call, line, paint)
     }
 
@@ -179,6 +187,8 @@ class FileSource(private val ctx: Context, private val uri: Uri, private val max
     }
 
     companion object {
+        /** how long before it is due a frame is converted (more than the conversion takes, up to 4K) */
+        const val LEAD_NS = 300_000_000L
         /** the longest sound kept in memory (mono 16 bit: 48 kHz x 10 min = 58 MB) */
         const val MAX_SOUND_US = 600_000_000L
 
