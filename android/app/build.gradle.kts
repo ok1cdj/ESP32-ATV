@@ -40,6 +40,15 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    // DcCalibratorTest reads the vectors of rx/dccal (the same as rx/dccal/test_core.py)
+    testOptions {
+        unitTests.all { it.systemProperty("dccal.vectors", rootProject.file("../rx/dccal/vectors").absolutePath) }
+    }
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20250517")     // the android.jar stub of org.json throws in unit tests
 }
 
 // the native receiver tools are built outside Gradle (they come from third_party/ESP32-DATV-RX/build)
