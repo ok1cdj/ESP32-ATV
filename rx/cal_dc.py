@@ -3,6 +3,18 @@
 tone with the S3 receiver, fit, repeat; then save it in the C3 (BDC SAVE) and in tx/cal_c3.json (used by tx/make_beacons.sh).
 
     third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py [--freq 2340.03] [--step 4] [--rounds 3] [--save]
+    third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py --mode test [--freq 2340] [--save] [--log run.json]
+    third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py --mode test --freq-sweep 2300:2450:5 --log sweep.json
+    third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py --mode test --eval I Q      # the leakage of a correction
+
+--mode test (needs the C3 firmware with BDC TEST): the C3 sends the leakage alone (BDC TEST on f: no modulation, the PA off), the
+receiver streams without a break (one espdr.nb for the whole run), the tone is found by FFT and measured by a Goertzel filter at
+its frequency against the noise floor, and the search is rx/dccal/core.py (a quadratic fitted to every measurement). The
+frequency is --freq (default ATV_FREQ of boards.sh), set by the command, so --freq-sweep calibrates a series of them. --save
+keeps the result in the C3's table for that frequency (BDC SAVE, up to 16 frequencies) and in tx/cal_c3.json. Afterwards the
+transmitter is off (BDC TEST off, INFO).
+
+--mode beacon (the default, any firmware with BDC):
 
 The leakage is a fixed tone at the transmitter's carrier, i.e. in the middle of the signal; its complex amplitude is linear in the
 correction, so its power is a paraboloid P = c |d - d*|^2 + floor. Per round: measure at d, d +- step on I and on Q, put the vertex of
@@ -14,10 +26,14 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 
 import numpy as np
 import serial
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dccal.core import Calibrator  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
@@ -52,6 +68,28 @@ class Beacon:
         r = self.cmd(f"BDC {i:.3f} {q:.3f}")
         if "BDC " not in r or "ERR" in r:
             sys.exit(f"the transmitter did not take BDC (old firmware?):\n{r}")
+
+    def line(self, cmd, prefix, timeout=2.0):
+        """Sends cmd and returns the first line starting with prefix (an ERR line ends the program)."""
+        self.s.reset_input_buffer()
+        self.s.write((cmd + "\r\n").encode())
+        self.s.flush()
+        buf, t0 = "", time.time()
+        while time.time() - t0 < timeout:
+            buf += self.s.read(256).decode(errors="replace")
+            for ln in buf.splitlines():
+                if ln.startswith("ERR"):
+                    sys.exit(f"{cmd}: {ln}")
+                if ln.startswith(prefix) and "\n" in buf[buf.index(ln):]:
+                    return ln.strip()
+        sys.exit(f"{cmd}: no answer from the transmitter")
+
+    def bdc(self, cmd="BDC"):
+        """BDC ... -> (i, q, source, f_kHz, test) from "BDC i q (src) F f TEST t"; needs the firmware with BDC TEST."""
+        p = self.line(cmd, "BDC ").replace("(", "").replace(")", "").split()
+        if len(p) < 8 or p[4] != "F":
+            sys.exit(f"the transmitter's firmware has no BDC TEST (answer: {' '.join(p)}); flash the current one")
+        return float(p[1]), float(p[2]), p[3], int(p[5]), p[7] == "1"
 
 
 def capture(rx_port, lo_hz, gain, seconds):
@@ -108,10 +146,233 @@ def null(measure, d, step, rounds):
     return d
 
 
+class Stream:
+    """espdr.nb running for the whole calibration; a thread keeps the newest samples."""
+
+    def __init__(self, rx_port, lo_hz, gain):
+        py = os.path.join(RX, ".venv", "bin", "python")
+        self.p = subprocess.Popen([py, "-m", "espdr.nb", "-p", rx_port, "run", "--freq", str(round(lo_hz)), "--decim", "3",
+                                   "--format", "cs8", "--gain", str(gain), "--seconds", "0", "--convert", "cf32", "-o", "-"],
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.lock = threading.Lock()
+        self.buf = []
+        self.n = 0
+        threading.Thread(target=self._read, daemon=True).start()
+        self.take(int(0.5 * FS), settle=0.5)          # the start of the stream
+
+    def _read(self):
+        while True:
+            b = self.p.stdout.read(65536)
+            if not b:
+                return
+            x = np.frombuffer(b[:len(b) // 8 * 8], np.complex64)
+            with self.lock:
+                self.buf.append(x)
+                self.n += len(x)
+
+    def take(self, n, settle=0.15):
+        """n samples received after now + settle s (the transmitter's change has passed the pipeline by then)."""
+        time.sleep(settle)
+        with self.lock:
+            self.buf, self.n = [], 0
+        t0 = time.time()
+        while True:
+            with self.lock:
+                if self.n >= n:
+                    return np.concatenate(self.buf)[:n]
+            if self.p.poll() is not None:
+                sys.exit("espdr.nb stopped:\n" + self.p.stderr.read().decode(errors="ignore"))
+            if time.time() - t0 > 10:
+                sys.exit("no samples from the receiver")
+            time.sleep(0.02)
+
+    def close(self):
+        self.p.terminate()
+        self.p.wait(5)
+
+
+class ToneMeter:
+    """The leakage tone: FFT for the strongest line (first anywhere but the receiver's own DC, then within +-TRACK Hz of the last
+    one: the crystals drift), then a Goertzel filter at its interpolated frequency; dB against the noise in the same bandwidth.
+    A line under STRONG dB does not move the frequency: near the null the strongest bin is noise, and picking it would put a
+    floor of about 8 dB under the measurement; the Goertzel filter stays at the last strong line's frequency instead."""
+    N = 1 << 16                     # 0.2 s at 333 ksps, 5 Hz bins
+    TRACK = 2e3
+    STRONG = 15.0
+
+    def __init__(self):
+        self.w = np.hanning(self.N).astype(np.float32)
+        self.f = None
+
+    def measure(self, x):
+        clip = float(np.mean((np.abs(x.real) >= 0.99) | (np.abs(x.imag) >= 0.99)))
+        x = x[:self.N] - np.mean(x[:self.N])      # the receiver's own DC out
+        X = np.fft.fftshift(np.fft.fft(x * self.w))
+        p = np.abs(X) ** 2
+        f = (np.arange(self.N) - self.N / 2) * FS / self.N
+        look = (np.abs(f) > 3e3) if self.f is None else (np.abs(f - self.f) < self.TRACK) & (np.abs(f) > 3e3)
+        k = np.flatnonzero(look)[np.argmax(p[look])]
+        a, b, c = np.log(p[k - 1:k + 2] + 1e-30)
+        d = 0.5 * (a - c) / (a - 2 * b + c) if a - 2 * b + c < 0 else 0.0
+        fk = f[k] + d * FS / self.N
+        n = np.arange(self.N)
+        ring = (np.abs(f - fk) > 3e3) & (np.abs(f - fk) < 20e3) & (np.abs(f) > 3e3)
+        noise = np.median(p[ring]) / np.log(2)      # the median of an exponential is ln 2 times its mean
+
+        def goertzel(fr):
+            return 10 * np.log10(np.abs(np.sum(x * self.w * np.exp(-2j * np.pi * fr * n / FS))) ** 2 / noise)
+
+        db = goertzel(fk)
+        if db >= self.STRONG:
+            self.f = fk
+        elif self.f is not None:
+            fk = self.f
+            db = goertzel(fk)
+        return db, fk, clip
+
+
+def signal_rms(amp, S=200, beta=0.35, span=8):
+    """RMS of the beacon's complex baseband at level amp [DAC codes], with the scaling of the firmware's tables (the worst sample
+    sum of |pulse| = amp): the yardstick for dBc."""
+    t = np.arange(span * S) / S - span / 2
+    h = np.empty_like(t)
+    for k, x in enumerate(t):
+        if x == 0:
+            h[k] = 1 - beta + 4 * beta / np.pi
+        elif abs(abs(4 * beta * x) - 1) < 1e-9:
+            h[k] = beta / np.sqrt(2) * ((1 + 2 / np.pi) * np.sin(np.pi / (4 * beta)) + (1 - 2 / np.pi) * np.cos(np.pi / (4 * beta)))
+        else:
+            h[k] = (np.sin(np.pi * x * (1 - beta)) + 4 * beta * x * np.cos(np.pi * x * (1 + beta))) / (np.pi * x * (1 - (4 * beta * x) ** 2))
+    h = h.reshape(span, S)                          # h[l, j]: the symbol of age l at sample j
+    sc = amp / np.max(np.sum(np.abs(h), 0))
+    return float(np.sqrt(2 * np.mean(np.sum((sc * h) ** 2, 0))))
+
+
+def test_mode(a, tx_port, rx_port, freq0):
+    freqs = [a.freq]
+    if a.freq_sweep:
+        f1, f2, st = (float(v) for v in a.freq_sweep.split(":"))
+        freqs = [round(f1 + k * st, 3) for k in range(int(round((f2 - f1) / st)) + 1)]
+    elif a.freq is None:
+        freqs = [freq0 / 1e6]
+    tx = Beacon(tx_port)
+    meter = ToneMeter()
+    runs = []
+    start = tuple(a.start) if a.start is not None else None
+    stream = None
+    try:
+        for f_mhz in freqs:
+            i0, q0, src, fk, _ = tx.bdc(f"BDC TEST on {f_mhz:.3f}")
+            st = start if start is not None else (i0, q0)
+            # the receiver 50 kHz above the frequency asked for (its DC outside); the crystals are tens of kHz off
+            if stream is None or abs(stream_lo - (f_mhz * 1e6 + RX_OFFSET)) > 1:
+                if stream:
+                    stream.close()
+                stream_lo = f_mhz * 1e6 + RX_OFFSET
+                stream = Stream(rx_port, stream_lo, a.gain)
+                meter.f = None
+            log = []
+            t0 = time.time()
+
+            def measure(i, q, blocks=a.blocks):
+                tx.bdc(f"BDC {i:.3f} {q:.3f}")
+                dbs = []
+                for b in range(blocks):
+                    db, ftone, clip = meter.measure(stream.take(ToneMeter.N, settle=0.2 if b == 0 else 0.0))
+                    if clip > 1e-3:
+                        print(f"  receiver overloaded ({clip:.1%} of the samples at full scale): lower --gain", flush=True)
+                    dbs.append(db)
+                db = 10 * np.log10(np.mean(10 ** (np.array(dbs) / 10)))
+                log.append({"i": i, "q": q, "db": float(db), "f": float(stream_lo + ftone), "t": round(time.time() - t0, 3)})
+                print(f"  BDC {i:+8.3f} {q:+8.3f}: tone {db:6.1f} dB above the noise, at {(stream_lo + ftone) / 1e6:.5f} MHz",
+                      flush=True)
+                return float(db)
+
+            print(f"{f_mhz:.3f} MHz: BDC TEST, start {st[0]:+.3f} {st[1]:+.3f} ({src})")
+            # find the tone with the correction 8 codes off (strong even when the C3 is nulled already)
+            for off in (8.0, 16.0, 32.0):
+                db = measure(st[0] + off, st[1])
+                if db >= ToneMeter.STRONG:
+                    break
+                meter.f = None
+            else:
+                sys.exit("no leakage tone found: is the C3 transmitting (BDC TEST), the receiver's antenna on, --gain enough?")
+            if a.eval is not None:
+                ref = measure(0.0, 0.0, 4 * a.blocks)
+                got = measure(*a.eval, 4 * a.blocks)
+                print(f"BDC 0 0: {ref:.1f} dB, BDC {a.eval[0]} {a.eval[1]}: {got:.1f} dB -> {ref - got:.1f} dB less leakage")
+                runs.append({"freq_mhz": f_mhz, "eval": list(a.eval), "measurements": log})
+                continue
+            cal = Calibrator(start=st, step=a.step)
+            while not cal.done:
+                for i, q in cal.next_points():
+                    cal.add(i, q, measure(i, q))
+            r = cal.result()
+            secs = time.time() - t0
+            ref = measure(0.0, 0.0, 4 * a.blocks)              # without a correction: the yardstick
+            last = measure(r["i"], r["q"], 4 * a.blocks)
+            res = {"freq_mhz": f_mhz, "start": list(st), "step": a.step, "i": r["i"], "q": r["q"], "converged": r["converged"],
+                   "measurements_n": r["measurements"], "seconds": round(secs, 1), "uncorrected_db": ref, "final_db": last,
+                   "suppression_db": ref - last, "measurements": log}
+            # dBc against the beacon at AMP 300: the tone above the noise is |L|^2 * curvature; at BDC 0 0, |L| = leak_codes
+            if r.get("leak_codes"):
+                rms = signal_rms(300)
+                p_ref, p_last = 10 ** (ref / 10) - 1, max(10 ** (last / 10) - 1, 1e-3)
+                res["leak_dbc"] = 20 * np.log10(r["leak_codes"] / rms)
+                res["residual_dbc"] = res["leak_dbc"] - 10 * np.log10(p_ref / p_last)
+            runs.append(res)
+            print(f"result {f_mhz:.3f} MHz: BDC {r['i']:.3f} {r['q']:.3f}{'' if r['converged'] else ' (NOT converged)'}, "
+                  f"{r['measurements']} measurements in {secs:.0f} s; leakage {ref:.1f} -> {last:.1f} dB above the noise "
+                  f"({ref - last:.1f} dB less)" + (f", {res['leak_dbc']:.1f} -> {res['residual_dbc']:.1f} dBc of AMP 300"
+                                                    if "leak_dbc" in res else ""))
+            if a.save:
+                if not r["converged"]:
+                    print("not saved: the search did not converge")
+                else:
+                    tx.bdc("BDC SAVE")
+                    save_json(f_mhz, r["i"], r["q"], ref - last)
+            if a.freq_sweep:                                    # the next frequency starts from this one
+                start = (r["i"], r["q"])
+    finally:
+        if stream:
+            stream.close()
+        try:
+            tx.cmd("BDC TEST off", wait=0.5)
+            tx.cmd("INFO", wait=0.5)                            # the transmitter off (until a command or a reset)
+        except serial.SerialException:
+            pass
+    if a.log:
+        json.dump({"note": f"rx/cal_dc.py --mode test on {time.strftime('%Y-%m-%d %H:%M')}", "runs": runs}, open(a.log, "w"), indent=1)
+        print(f"-> {a.log}")
+
+
+def save_json(f_mhz, i, q, gain_db):
+    path = os.path.join(ROOT, "tx", "cal_c3.json")
+    cal = json.load(open(path)) if os.path.exists(path) else {"iq_gain": 1.0, "iq_phase_deg": 0.0}
+    table = {round(e["freq_mhz"], 3): e for e in cal.get("table", [])}
+    table[round(f_mhz, 3)] = {"freq_mhz": round(f_mhz, 3), "dc": [round(i, 3), round(q, 3)], "date": time.strftime("%Y-%m-%d"),
+                             "suppression_db": round(gain_db, 1)}
+    cal["table"] = [table[k] for k in sorted(table)]
+    _, _, f0 = ports()
+    if abs(f_mhz * 1e6 - f0) < 1e3:                     # make_beacons.sh bakes "dc" into the beacons of ATV_FREQ
+        cal.update(note=f"Carrier leakage of our XIAO ESP32-C3, nulled with rx/cal_dc.py --mode test on {time.strftime('%Y-%m-%d')} "
+                        f"at {f_mhz:.3f} MHz ({gain_db:.1f} dB less leakage).", dc=[round(i, 3), round(q, 3)])
+    json.dump(cal, open(path, "w"), indent=2)
+    print(f"-> {path}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--freq", type=float, help="carrier [MHz] (default: the strongest line near ATV_FREQ of boards.sh)")
-    ap.add_argument("--start", type=float, nargs=2, default=(0.0, 0.0), metavar=("I", "Q"), help="starting correction [codes]")
+    ap.add_argument("--mode", choices=("beacon", "test"), default="beacon",
+                    help="beacon: the old way (beacon at a low level); test: BDC TEST (the leakage alone)")
+    ap.add_argument("--freq", type=float, help="carrier [MHz] (default: the strongest line near ATV_FREQ of boards.sh; "
+                                               "test: the frequency to transmit on, default ATV_FREQ)")
+    ap.add_argument("--freq-sweep", metavar="F1:F2:STEP", help="test: calibrate F1, F1+STEP ... F2 [MHz]")
+    ap.add_argument("--eval", type=float, nargs=2, metavar=("I", "Q"), help="test: only measure the leakage at BDC 0 0 and I Q")
+    ap.add_argument("--blocks", type=int, default=1, help="test: 0.2 s blocks averaged per measurement (default 1)")
+    ap.add_argument("--log", help="write the measurements as JSON (for rx/dccal/make_vectors.py --log)")
+    ap.add_argument("--start", type=float, nargs=2, default=None, metavar=("I", "Q"),
+                    help="starting correction [codes] (default 0 0; test: the value the C3 holds for the frequency)")
     ap.add_argument("--step", type=float, default=4.0, help="first step [DAC codes] (default 4)")
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--gain", type=int, default=60, help="espdr gain selector (default 60)")
@@ -120,8 +381,12 @@ def main():
     a = ap.parse_args()
 
     tx_port, rx_port, freq0 = ports()
+    if a.mode == "test":
+        return test_mode(a, tx_port, rx_port, freq0)
+    if a.freq_sweep or a.eval:
+        sys.exit("--freq-sweep and --eval need --mode test")
     tx = Beacon(tx_port)
-    d = np.array(a.start, float)
+    d = np.array(a.start if a.start is not None else (0.0, 0.0), float)
     tx.set_dc(*d)
     time.sleep(0.5)
     if a.freq:
@@ -133,18 +398,29 @@ def main():
         carrier = freq0 + 30e3 + f[ok][np.argmax(p[ok])]
     lo = carrier + RX_OFFSET
 
+    log = []
+    t0 = time.time()
+
     def measure(i, q):
         tx.set_dc(i, q)
         time.sleep(0.3)
         db, fk = tone_db(capture(rx_port, lo, a.gain, a.seconds), -RX_OFFSET)
         print(f"  BDC {i:+8.3f} {q:+8.3f}: leakage {db:+6.1f} dB (line at {(lo + fk) / 1e6:.5f} MHz)", flush=True)
+        log.append({"i": float(i), "q": float(q), "db": float(db), "t": round(time.time() - t0, 3)})
         return db
 
     print(f"carrier {carrier / 1e6:.5f} MHz, receiver at {lo / 1e6:.5f} MHz")
     first = measure(*d)
     d = null(measure, d, a.step, a.rounds)
     last = measure(*d)
-    print(f"result: BDC {d[0]:.3f} {d[1]:.3f}, leakage {first:+.1f} dB -> {last:+.1f} dB")
+    print(f"result: BDC {d[0]:.3f} {d[1]:.3f}, leakage {first:+.1f} dB -> {last:+.1f} dB, {len(log)} measurements in "
+          f"{time.time() - t0:.0f} s")
+    if a.log:
+        json.dump({"note": f"rx/cal_dc.py --mode beacon on {time.strftime('%Y-%m-%d %H:%M')}",
+                   "runs": [{"freq_mhz": carrier / 1e6, "start": [float(v) for v in a.start or (0, 0)], "step": a.step,
+                             "i": float(d[0]), "q": float(d[1]), "first_db": first, "final_db": last,
+                             "seconds": round(time.time() - t0, 1), "measurements": log}]}, open(a.log, "w"), indent=1)
+        print(f"-> {a.log}")
     if a.save:
         r = tx.cmd("BDC SAVE")
         print(r.strip())

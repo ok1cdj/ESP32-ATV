@@ -2,7 +2,7 @@
 """Test vectors for the leakage search (core.py and the app's DcCalibrator.kt) -> rx/dccal/vectors/*.json.
 
     python3 rx/dccal/make_vectors.py                       # the synthetic set
-    python3 rx/dccal/make_vectors.py --log run.json NAME    # a recorded run of rx/cal_dc.py --log -> vectors/NAME.json
+    python3 rx/dccal/make_vectors.py --log run.json [--run K] NAME    # a run recorded by rx/cal_dc.py --log -> vectors/NAME.json
 
 A vector is a transmitter model and a noise sequence, so that both languages measure the same numbers at whatever points they
 ask for: model {l0, gi, gq: [re, im], floor}, noise [dB, used in turn], start, step, and the expected result: the optimum of
@@ -62,10 +62,12 @@ def synthetic():
     return vs
 
 
-def from_log(path, name):
+def from_log(path, name, run_index=0):
     """A recorded run: fit the physical model to the measurements by Gauss-Newton in dB."""
     import numpy as np
     log = json.load(open(path))
+    note = log.get("note", path)
+    log = log["runs"][run_index]
     pts = np.array([(m["i"], m["q"], m["db"]) for m in log["measurements"]], float)
     i, q, db = pts.T
     # start: the quadratic fit of core.py, then the model's parameters [l0r, l0i, gir, gii, gqr, gqi, log floor]
@@ -96,16 +98,17 @@ def from_log(path, name):
     print(f"{name}: {len(db)} measurements, fit rms {np.sqrt(np.mean(res ** 2)):.2f} dB")
     return vector(name, (x[0], x[1]), (x[2], x[3]), (x[4], x[5]), float(np.exp(x[6])), [float(v) for v in res],
                   tuple(log.get("start", (0.0, 0.0))), float(log.get("step", 4.0)),
-                  note=f"recorded: {log.get('note', path)}")
+                  note=f"recorded: {note}, {log.get('freq_mhz', 0):.3f} MHz")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--log", help="a run recorded by rx/cal_dc.py --log")
+    ap.add_argument("--run", type=int, default=0, help="which run of the log (a sweep has one per frequency)")
     ap.add_argument("name", nargs="?")
     a = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
-    vs = [from_log(a.log, a.name or "recorded")] if a.log else synthetic()
+    vs = [from_log(a.log, a.name or "recorded", a.run)] if a.log else synthetic()
     for v in vs:
         p = os.path.join(OUT, v["name"] + ".json")
         json.dump(v, open(p, "w"), indent=1)
