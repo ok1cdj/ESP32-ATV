@@ -33,7 +33,7 @@ import numpy as np
 import serial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from dccal.core import Calibrator  # noqa: E402
+from dccal.core import Calibrator, bowl_db  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
@@ -289,12 +289,61 @@ def signal_rms(amp, S=200, beta=0.35, span=8):
 
 
 def test_mode(a, tx_port, rx_port, freq0):
-    freqs = [a.freq]
-    if a.freq_sweep:
+    """--boots sessions (each one opens the port: a reset of the C3), then per frequency the mean of the converged results;
+    --save stores the means in the C3's table and in tx/cal_c3.json."""
+    if a.freqs:
+        freqs = [float(v) for v in a.freqs.split(",")]
+    elif a.freq_sweep:
         f1, f2, st = (float(v) for v in a.freq_sweep.split(":"))
         freqs = [round(f1 + k * st, 3) for k in range(int(round((f2 - f1) / st)) + 1)]
-    elif a.freq is None:
-        freqs = [freq0 / 1e6]
+    else:
+        freqs = [a.freq if a.freq is not None else freq0 / 1e6]
+    if a.save and len(freqs) > 16:
+        sys.exit("the C3's table holds 16 frequencies")
+    runs = []
+    for boot in range(a.boots):
+        if a.boots > 1:
+            print(f"=== boot {boot + 1} of {a.boots}")
+        for r in session(a, freqs, tx_port, rx_port):
+            r["boot"] = boot
+            runs.append(r)
+        if a.log:                                               # after every boot: a long run keeps what it has
+            json.dump({"note": f"rx/cal_dc.py --mode test on {time.strftime('%Y-%m-%d %H:%M')}", "runs": runs},
+                      open(a.log, "w"), indent=1)
+    if a.log:
+        print(f"-> {a.log}")
+    if a.eval is not None:
+        return
+    table = []
+    for f_mhz in freqs:
+        ok = [r for r in runs if r["freq_mhz"] == f_mhz and r.get("converged")]
+        if not ok:
+            print(f"{f_mhz:.3f} MHz: no converged result")
+            continue
+        mi = float(np.mean([r["i"] for r in ok]))
+        mq = float(np.mean([r["q"] for r in ok]))
+        sd = float(np.sqrt(np.sum([(r["i"] - mi) ** 2 + (r["q"] - mq) ** 2 for r in ok]) / (len(ok) - 1))) if len(ok) > 1 else None
+        sup = float(np.median([r["suppression_db"] for r in ok]))
+        table.append((f_mhz, mi, mq, sd, sup, len(ok)))
+        print(f"{f_mhz:.3f} MHz: BDC {mi:.3f} {mq:.3f} from {len(ok)} result(s)"
+              + (f", spread {sd:.2f} codes rms" if sd is not None else "") + f", in-boot suppression {sup:.1f} dB (median)")
+    if a.save and table:
+        tx = Beacon(tx_port)
+        try:
+            for f_mhz, mi, mq, sd, sup, n in table:
+                tx.bdc(f"BDC TEST on {f_mhz:.3f}")
+                tx.bdc(f"BDC {mi:.3f} {mq:.3f}")
+                tx.bdc("BDC SAVE")
+                save_json(f_mhz, mi, mq, sup, sd, n)
+            print(tx.cmd("BDC LIST", wait=0.8).strip())
+        finally:
+            tx.cmd("BDC TEST off", wait=0.5)
+            tx.cmd("INFO", wait=0.5)
+            tx.s.close()
+
+
+def session(a, freqs, tx_port, rx_port):
+    """One boot of the C3: warm-up, then each frequency --repeat times; the results."""
     tx = Beacon(tx_port)
     meter = ToneMeter()
     runs = []
@@ -372,24 +421,23 @@ def test_mode(a, tx_port, rx_port, freq0):
             res = {"freq_mhz": f_mhz, "start": list(st), "step": a.step, "i": r["i"], "q": r["q"], "converged": r["converged"],
                    "measurements_n": r["measurements"], "seconds": round(secs, 1), "uncorrected_db": ref, "final_db": last,
                    "suppression_db": ref - last, "measurements": log}
-            # dBc against the beacon at AMP 300: the tone above the noise is |L|^2 * curvature; at BDC 0 0, |L| = leak_codes
-            if r.get("leak_codes"):
+            # dBc against the beacon at AMP 300: the leakage at BDC 0 0 in codes from the fit (sqrt((P(0) - P(null)) / mean
+            # curvature)), the residual by the measured ratio
+            if cal.fit:
+                x = cal.fit
+                p0, pn = 10 ** (bowl_db(x, 0.0, 0.0)[0] / 10), 10 ** (bowl_db(x, x[0], x[1])[0] / 10)
+                leak = np.sqrt(max(p0 - pn, 0.0) / ((x[2] ** 2 + x[3] ** 2 + x[4] ** 2) / 2))
                 rms = signal_rms(300)
                 p_ref, p_last = 10 ** (ref / 10) - 1, max(10 ** (last / 10) - 1, 1e-3)
-                res["leak_dbc"] = 20 * np.log10(r["leak_codes"] / rms)
+                res["leak_codes"] = float(leak)
+                res["leak_dbc"] = 20 * np.log10(leak / rms)
                 res["residual_dbc"] = res["leak_dbc"] - 10 * np.log10(p_ref / p_last)
             runs.append(res)
             print(f"result {f_mhz:.3f} MHz: BDC {r['i']:.3f} {r['q']:.3f}{'' if r['converged'] else ' (NOT converged)'}, "
                   f"{r['measurements']} measurements in {secs:.0f} s; leakage {ref:.1f} -> {last:.1f} dB above the noise "
                   f"({ref - last:.1f} dB less)" + (f", {res['leak_dbc']:.1f} -> {res['residual_dbc']:.1f} dBc of AMP 300"
                                                     if "leak_dbc" in res else ""))
-            if a.save:
-                if not r["converged"]:
-                    print("not saved: the search did not converge")
-                else:
-                    tx.bdc("BDC SAVE")
-                    save_json(f_mhz, r["i"], r["q"], ref - last)
-            if a.freq_sweep and a.repeat == 1:                  # the next frequency starts from this one
+            if len(freqs) > 1 and a.repeat == 1:                  # the next frequency starts from this one
                 start = (r["i"], r["q"])
     finally:
         if stream:
@@ -397,19 +445,19 @@ def test_mode(a, tx_port, rx_port, freq0):
         try:
             tx.cmd("BDC TEST off", wait=0.5)
             tx.cmd("INFO", wait=0.5)                            # the transmitter off (until a command or a reset)
+            tx.s.close()
         except serial.SerialException:
             pass
-    if a.log:
-        json.dump({"note": f"rx/cal_dc.py --mode test on {time.strftime('%Y-%m-%d %H:%M')}", "runs": runs}, open(a.log, "w"), indent=1)
-        print(f"-> {a.log}")
+    return runs
 
 
-def save_json(f_mhz, i, q, gain_db):
+def save_json(f_mhz, i, q, gain_db, spread=None, n=1):
     path = os.path.join(ROOT, "tx", "cal_c3.json")
     cal = json.load(open(path)) if os.path.exists(path) else {"iq_gain": 1.0, "iq_phase_deg": 0.0}
     table = {round(e["freq_mhz"], 3): e for e in cal.get("table", [])}
     table[round(f_mhz, 3)] = {"freq_mhz": round(f_mhz, 3), "dc": [round(i, 3), round(q, 3)], "date": time.strftime("%Y-%m-%d"),
-                             "suppression_db": round(gain_db, 1)}
+                             "suppression_db": round(gain_db, 1), "boots": n,
+                             "spread_codes": None if spread is None else round(spread, 2)}
     cal["table"] = [table[k] for k in sorted(table)]
     _, _, f0 = ports()
     if abs(f_mhz * 1e6 - f0) < 1e3:                     # make_beacons.sh bakes "dc" into the beacons of ATV_FREQ
@@ -427,6 +475,9 @@ def main():
                                                "test: the frequency to transmit on, default ATV_FREQ)")
     ap.add_argument("--freq-sweep", metavar="F1:F2:STEP", help="test: calibrate F1, F1+STEP ... F2 [MHz]")
     ap.add_argument("--eval", type=float, nargs=2, metavar=("I", "Q"), help="test: only measure the leakage at BDC 0 0 and I Q")
+    ap.add_argument("--freqs", metavar="F1,F2,...", help="test: calibrate these frequencies [MHz]")
+    ap.add_argument("--boots", type=int, default=1, help="test: N sessions, each after a reset of the C3; the mean is the result "
+                                                        "(the leakage moves by about 1.5 codes rms from boot to boot)")
     ap.add_argument("--repeat", type=int, default=1, help="test: calibrate each frequency N times (in one boot of the C3)")
     ap.add_argument("--blocks", type=int, default=1, help="test: 0.2 s blocks averaged per measurement (default 1)")
     ap.add_argument("--warmup", type=float, default=15.0, help="test: seconds of transmitting before the first measurement "
