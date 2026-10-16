@@ -178,7 +178,7 @@ class TxActivity : Activity() {
         val filter = IntentFilter(permissionAction)
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(permissionReceiver, filter, RECEIVER_NOT_EXPORTED)
         else registerReceiver(permissionReceiver, filter)
-        log(device()?.let { "ESP32 (303a:1001) connected – the C3 is told apart from the S3 on Start" } ?: "no ESP32 (303a:1001) on USB")
+        log(UsbBoards.describe(this, usbManager))
         bindService(Intent(this, TxService::class.java), connection, BIND_AUTO_CREATE)
         ui.post(tick)
         ui.post(previewTick)
@@ -198,16 +198,15 @@ class TxActivity : Activity() {
 
     private fun rateList(c: String) = if (c == "8PSK") S2Encoder.PSK8_RATES else S2Encoder.QPSK_RATES
 
-    private fun device() = usbManager.deviceList.values.firstOrNull { it.vendorId == 0x303A && it.productId == 0x1001 }
-
     /** The settings of the form with USB / camera permission in place; null (and a log line or a permission request) if not. */
     private fun config(onGranted: () -> Unit): Pair<Transmitter.Config, android.hardware.usb.UsbDevice>? {
         afterPermission = onGranted
-        val dev = device() ?: return null.also { log("no ESP32 (303a:1001) on USB") }
-        if (!usbManager.hasPermission(dev)) {
-            val flags = if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
-            usbManager.requestPermission(dev, PendingIntent.getBroadcast(this, 0, Intent(permissionAction).setPackage(packageName), flags))
-            return null
+        // the C3: the only board on USB, or the one of the two on a hub that is the transmitter
+        val dev = when (val p = UsbBoards.pick(this, UsbBoards.Role.C3) { afterPermission() }) {
+            is UsbBoards.Pick.Found -> p.dev
+            is UsbBoards.Pick.Ask -> { UsbBoards.requestPermission(this, p.dev, permissionAction); return null }
+            is UsbBoards.Pick.Wait -> return null.also { log("identifying the boards on USB…") }
+            is UsbBoards.Pick.Missing -> return null.also { log(p.message) }
         }
         val src = source.selectedItem as String
         if (src != Transmitter.SOURCE_CARD && checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -224,6 +223,10 @@ class TxActivity : Activity() {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFY)
         val mhz = freq.text.toString().replace(',', '.').toDoubleOrNull() ?: return null.also { log("frequency?") }
         if (mhz < 2300.0 || mhz > 2450.0) return null.also { log("the C3 transmits only in 2300..2450 MHz") }
+        UsbBoards.serial(usbManager, dev)?.let { mac ->
+            if (DcStore.all(this, mac).isNotEmpty() && DcStore.near(this, mac, mhz, CAL_NEAR_MHZ) == null)
+                log("no calibration of the C3 within %.0f MHz of %.3f: RX screen, menu → Transmitter calibration".format(CAL_NEAR_MHZ, mhz))
+        }
         val a = amp.text.toString().toIntOrNull()?.takeIf { it in 1..480 } ?: return null.also { log("AMP 1..480") }
         val cs = call.text.toString().trim().uppercase()
         if (cs.isEmpty()) return null.also { log("callsign?") }
@@ -367,6 +370,7 @@ class TxActivity : Activity() {
     }
 
     companion object {
+        const val CAL_NEAR_MHZ = 10.0           // a calibration this near counts (the leakage changes little with frequency)
         private const val REQ_CAMERA = 2
         private const val REQ_NOTIFY = 3
         private const val REQ_AUDIO = 4

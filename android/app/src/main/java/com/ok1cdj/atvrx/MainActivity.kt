@@ -223,7 +223,7 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(permissionReceiver, filter, RECEIVER_NOT_EXPORTED)
         else registerReceiver(permissionReceiver, filter)
         appendLog("ATV RX/TX ${BuildConfig.VERSION_NAME} · ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
-        appendLog(findDevice()?.let { "ESP32-S3 connected" } ?: "ESP32-S3 (303a:1001) not connected")
+        appendLog(UsbBoards.describe(this, usbManager))
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
             android.content.pm.PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
@@ -252,6 +252,7 @@ class MainActivity : Activity() {
             "Replay recording" to ::startReplay,
             "USB test" to { stop(); startActivity(Intent(this, BenchActivity::class.java)) },
             "Firmware (S3 / C3)" to { stop(); startActivity(Intent(this, FirmwareActivity::class.java)) },
+            "Transmitter calibration (S3 + C3)" to { stop(); startActivity(Intent(this, CalibrationActivity::class.java)) },
             "About" to { startActivity(Intent(this, AboutActivity::class.java)) },
         )
         items.forEachIndexed { i, (t, _) -> m.menu.add(0, i, i, t) }
@@ -340,16 +341,14 @@ class MainActivity : Activity() {
     }
     private val logLines = ArrayDeque<String>()
 
-    private fun findDevice(): UsbDevice? =
-        usbManager.deviceList.values.firstOrNull { it.vendorId == 0x303A && it.productId == 0x1001 }
-
     private fun start() {
         if (receiver != null) return
-        val dev = findDevice() ?: return say("ESP32-S3 (303a:1001) not connected")
-        if (!usbManager.hasPermission(dev)) {
-            val flags = if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
-            usbManager.requestPermission(dev, PendingIntent.getBroadcast(this, 0, Intent(permissionAction).setPackage(packageName), flags))
-            return
+        // the S3: the only board on USB, or the one of the two on a hub that is the receiver
+        val dev = when (val p = UsbBoards.pick(this, UsbBoards.Role.S3, ::start)) {
+            is UsbBoards.Pick.Found -> p.dev
+            is UsbBoards.Pick.Ask -> { UsbBoards.requestPermission(this, p.dev, permissionAction); return }
+            is UsbBoards.Pick.Wait -> return say("identifying the boards on USB…")
+            is UsbBoards.Pick.Missing -> return say(p.message)
         }
         val mhz = freq.text.toString().replace(',', '.').toDoubleOrNull() ?: return say("frequency?")
         val g = gain.text.toString().toIntOrNull() ?: return say("gain?")

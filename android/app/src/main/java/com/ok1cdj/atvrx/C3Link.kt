@@ -111,12 +111,36 @@ class C3Link(private val usb: UsbCdc) : AutoCloseable {
         return id to beacon
     }
 
-    /** The DC correction the firmware holds (BDC: "BDC i q (saved|built-in)"), in DAC codes. */
-    fun dc(): Pair<Double, Double>? {
-        command("BDC")
-        val l = waitLine(1000) { it.startsWith("BDC ") } ?: return null
+    /**
+     * The DC correction the firmware holds, in DAC codes: for [mhz] from its table ("BDC GET f": "BDC i q (src) F f_kHz TEST t"),
+     * or the one it uses now ("BDC"; older firmware: "BDC i q (saved|built-in)", and no GET).
+     */
+    fun dc(mhz: Double? = null): Pair<Double, Double>? {
+        command(if (mhz != null) "BDC GET %.3f".format(java.util.Locale.ROOT, mhz) else "BDC")
+        val l = waitLine(1000) { it.startsWith("BDC ") || it.startsWith("ERR") } ?: return null
+        if (l.startsWith("ERR")) return if (mhz != null) dc() else null
         val p = l.split(' ')
         return p.getOrNull(1)?.toDoubleOrNull()?.let { i -> p.getOrNull(2)?.toDoubleOrNull()?.let { q -> i to q } }
+    }
+
+    /** The DC table (BDC LIST: "BDCT n", then "BDCT f_kHz i q"): f [MHz] to (i, q); null if the firmware has none. */
+    fun dcTable(): List<Triple<Double, Double, Double>>? {
+        command("BDC LIST")
+        val head = waitLine(1000) { it.startsWith("BDCT ") || it.startsWith("ERR") } ?: return null
+        if (head.startsWith("ERR")) return null
+        val n = head.split(' ').getOrNull(1)?.trim()?.toIntOrNull() ?: return null
+        return (0 until n).mapNotNull {
+            val p = waitLine(500) { l -> l.startsWith("BDCT ") }?.trim()?.split(' ') ?: return@mapNotNull null
+            val f = p.getOrNull(1)?.toDoubleOrNull() ?: return@mapNotNull null
+            Triple(f / 1000, p.getOrNull(2)?.toDoubleOrNull() ?: 0.0, p.getOrNull(3)?.toDoubleOrNull() ?: 0.0)
+        }
+    }
+
+    /** BDC PUT: an entry of the table without transmitting; false if the firmware refuses it (or has no PUT). */
+    fun dcPut(mhz: Double, i: Double, q: Double): Boolean {
+        command("BDC PUT %.3f %.3f %.3f".format(java.util.Locale.ROOT, mhz, i, q))
+        val l = waitLine(1000) { it.startsWith("BDC ") || it.startsWith("ERR") } ?: return false
+        return l.startsWith("BDC ")
     }
 
     /** PA n: the external PA enable output; the firmware answers "OK PA n GPIO g" (older firmware: nothing). */

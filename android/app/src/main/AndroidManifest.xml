@@ -42,6 +42,10 @@
         <activity
             android:name=".AboutActivity"
             android:exported="false" />
+        <activity
+            android:name=".CalibrationActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
         <!-- portrait only: turning the phone must not restart the screen (and stop TX); the camera picture follows the
              phone's orientation by itself -->
         <activity
