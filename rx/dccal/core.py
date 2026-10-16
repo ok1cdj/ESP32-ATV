@@ -2,12 +2,15 @@
 for line port and both pass the same vectors in rx/dccal/vectors/).
 
 The leakage is a tone of complex amplitude L0 + gi * i + gq * q for the DC correction (i, q) in DAC codes, so its power is a
-quadratic form plus the floor of the measurement: P = a i^2 + b q^2 + c i q + d i + e q + f (linear power; an ellipse, not a
-circle, when the I and Q paths differ). Per round the caller measures a pattern of 7 points around the centre (centre, +-h on I,
-+-h on Q, two diagonals), in dB; then the quadratic is fitted to every point so far (weights 1 / P^2: the noise of a power
-measurement is relative), its vertex is the new centre, at most 2 h from the old one; h halves, or doubles (up to max_step) when
-that limit cut the move short. Without a bowl (no positive definite fit yet) the centre goes 2 h downhill on the
-fit and h doubles (up to max_step). Done when the centre moves less than tol after round 2, or after max_rounds.
+quadratic bowl over a floor: P = (d - d*)^T M (d - d*) + F, M positive definite (an ellipse, not a circle, when the I and Q paths
+differ), F the noise and what no correction removes. It is fitted in dB (Levenberg-Marquardt, every point weighted the same: the
+noise of a power measurement is relative, and on the board it is several dB near the null, where a fit in linear power would
+follow the lowest point alone), with M = L L^T, L lower triangular, and F = exp(lf): the parameters ci, cq, l11, l21, l22, lf.
+Per round the caller measures a pattern of 7 points around the centre (centre, +-h on I, +-h on Q, two diagonals); the null of
+the fit to every point so far is the new centre, at most 2 h from the old one; h halves, or doubles (up to max_step) when that
+limit cut the move short; the centre stays within reach of the start. A fit counts when the measurements span SIGNIFICANT times its rms misfit (per degree of freedom); without one the centre goes
+to the lowest point measured. Done when the centre moves less than tol after round 2 on a fit that counts (converged), or after
+max_rounds.
 
     cal = Calibrator(start=(0, 0), step=4)
     while not cal.done:
@@ -18,7 +21,8 @@ fit and h doubles (up to max_step). Done when the centre moves less than tol aft
 import math
 
 ROUND = 1e-6          # points closer than this are the same point
-SIGNIFICANT = 6.0     # a fit counts when the measurements span this many times its rms misfit
+SIGNIFICANT = 6.0     # a fit counts when the measurements span this many times its rms misfit [dB]
+DB = 10 / math.log(10)
 
 
 def _solve(m, v):
@@ -41,64 +45,84 @@ def _solve(m, v):
     return x
 
 
-def fit_quadratic(points):
-    """Weighted least squares of P = a i^2 + b q^2 + c i q + d i + e q + f to [(i, q, p_db)]; None if under-determined.
-    The coordinates are taken relative to the mean point (conditioning)."""
-    if len(points) < 6:
-        return None
-    i0 = sum(p[0] for p in points) / len(points)
-    q0 = sum(p[1] for p in points) / len(points)
-    m = [[0.0] * 6 for _ in range(6)]
-    v = [0.0] * 6
-    for i, q, db in points:
-        p = 10 ** (db / 10)
-        x, y = i - i0, q - q0
-        row = (x * x, y * y, x * y, x, y, 1.0)
-        w = 1.0 / (p * p)
-        for r in range(6):
-            v[r] += w * row[r] * p
-            for c in range(6):
-                m[r][c] += w * row[r] * row[c]
-    k = _solve(m, v)
-    if k is None:
-        return None
-    a, b, c, d, e, f = k
-    # back to absolute coordinates: x = i - i0, y = q - q0
-    return (a, b, c,
-            d - 2 * a * i0 - c * q0,
-            e - 2 * b * q0 - c * i0,
-            f + a * i0 * i0 + b * q0 * q0 + c * i0 * q0 - d * i0 - e * q0)
+def bowl_db(x, i, q):
+    """The model in dB at (i, q), and its gradient with respect to the parameters x = (ci, cq, l11, l21, l22, lf)."""
+    ci, cq, l11, l21, l22, lf = x
+    di, dq = i - ci, q - cq
+    u = l11 * di + l21 * dq
+    v = l22 * dq
+    f = math.exp(lf)
+    p = u * u + v * v + f
+    k = DB / p
+    return DB * math.log(p), (-2 * u * l11 * k, (-2 * u * l21 - 2 * v * l22) * k, 2 * u * di * k, 2 * u * dq * k,
+                              2 * v * dq * k, f * k)
 
 
-def quad_value(k, i, q):
-    a, b, c, d, e, f = k
-    return a * i * i + b * q * q + c * i * q + d * i + e * q + f
+def fit_bowl(points, x0, iters=60):
+    """Least squares in dB of the bowl to [(i, q, p_db)] from x0 (Levenberg-Marquardt); (x, sum of squares [dB^2])."""
+    lf_min = (min(p[2] for p in points) - 40) / DB          # the floor from 40 dB under the lowest point
+    lf_max = (max(p[2] for p in points) + 10) / DB          # to 10 dB over the highest
+
+    def cost(x):
+        return sum((db - bowl_db(x, i, q)[0]) ** 2 for i, q, db in points)
+
+    x = list(x0)
+    x[5] = min(max(x[5], lf_min), lf_max)
+    c = cost(x)
+    lam = 1e-3
+    for _ in range(iters):
+        jtj = [[0.0] * 6 for _ in range(6)]
+        jtr = [0.0] * 6
+        for i, q, db in points:
+            m, g = bowl_db(x, i, q)
+            r = db - m
+            for a in range(6):
+                jtr[a] += g[a] * r
+                for b in range(6):
+                    jtj[a][b] += g[a] * g[b]
+        better = False
+        while lam < 1e10:
+            m = [[jtj[a][b] + (lam * jtj[a][a] + 1e-12 if a == b else 0.0) for b in range(6)] for a in range(6)]
+            dx = _solve(m, jtr)
+            if dx is not None:
+                xn = [x[k] + dx[k] for k in range(6)]
+                xn[5] = min(max(xn[5], lf_min), lf_max)
+                cn = cost(xn)
+                if cn < c:
+                    x, c, lam, better = xn, cn, lam / 3, True
+                    break
+            lam *= 4
+        if not better or max(abs(d) for d in dx) < 1e-7:
+            break
+    return x, c
 
 
-def quad_vertex(k):
-    """The minimum of the quadratic, None unless it is a bowl (positive definite)."""
-    a, b, c, d, e, _ = k
-    det = 4 * a * b - c * c
-    if a <= 0 or b <= 0 or det <= 0:
-        return None
-    return ((-2 * b * d + c * e) / det, (-2 * a * e + c * d) / det)
+def bowl_start(points):
+    """A first guess: the null at the lowest point, a round bowl through the highest one, the floor at the lowest."""
+    lo = min(points, key=lambda p: p[2])
+    hi = max(points, key=lambda p: p[2])
+    r2 = max((hi[0] - lo[0]) ** 2 + (hi[1] - lo[1]) ** 2, 1e-6)
+    a = math.sqrt(max(10 ** (hi[2] / 10) - 10 ** (lo[2] / 10), 1e-6) / r2)
+    return [lo[0], lo[1], a, 0.0, a, lo[2] / DB]
 
 
 class Calibrator:
-    def __init__(self, start=(0.0, 0.0), step=4.0, tol=0.05, max_rounds=8, min_step=0.25, max_step=16.0):
+    def __init__(self, start=(0.0, 0.0), step=4.0, tol=0.1, max_rounds=8, min_step=0.5, max_step=None, reach=16.0):
         self.centre = (float(start[0]), float(start[1]))
         self.start = self.centre
         self.step = float(step)
         self.tol = tol
         self.max_rounds = max_rounds
         self.min_step = min_step
-        self.max_step = max_step
+        self.max_step = 2 * self.step if max_step is None else max_step
+        self.reach = reach            # the centre stays within this distance of the start [codes]
         self.points = []              # (i, q, p_db) in the order measured
         self.round = 0                # rounds finished
         self.done = False
-        self.fit = None
+        self.fit = None               # the last fit that counted (parameters as bowl_db)
+        self.misfit = None            # its rms misfit [dB]
         self.moves = []               # how far the centre moved in each round
-        self.converged = False        # done because the centre stood still on a significant bowl (not out of rounds)
+        self.converged = False        # done because the centre stood still on a fit that counts (not out of rounds)
 
     def pattern(self):
         ci, cq = self.centre
@@ -127,49 +151,40 @@ class Calibrator:
     def _best(self):
         return min(self.points, key=lambda p: p[2])
 
-    def _significant(self, k):
-        """Is the bowl more than noise? The measurements have to span SIGNIFICANT times the rms misfit (dB) of the fit."""
-        res = []
-        for i, q, db in self.points:
-            p = quad_value(k, i, q)
-            res.append(db - 10 * math.log10(p) if p > 0 else 30.0)
-        rms = math.sqrt(sum(r * r for r in res) / len(res))
-        span = max(p[2] for p in self.points) - min(p[2] for p in self.points)
-        return span >= SIGNIFICANT * rms
-
     def _finish_round(self):
         self.round += 1
-        k = fit_quadratic(self.points)
-        v = quad_vertex(k) if k and self._significant(k) else None
+        # from the last fit and from a fresh guess (a wrong early fit must not hold the search): the better one
+        x, c = fit_bowl(self.points, bowl_start(self.points))
+        if self.fit:
+            x2, c2 = fit_bowl(self.points, self.fit)
+            if c2 < c:
+                x, c = x2, c2
+        n = len(self.points)
+        rms = math.sqrt(c / (n - 6)) if n > 6 else float("inf")      # per degree of freedom: 7 points hardly test 6 parameters
+        span = max(p[2] for p in self.points) - min(p[2] for p in self.points)
+        counts = span >= SIGNIFICANT * rms and abs(x[2] * x[4]) > 1e-9
+        if counts:
+            self.fit, self.misfit = x, rms
+            v = (x[0], x[1])
+        else:
+            b = self._best()
+            v = (b[0], b[1])
         ci, cq = self.centre
-        if v is None:
-            # no bowl (far from the optimum the curvature drowns in the noise): to the lowest point measured, with a
-            # bigger step; zoom in only when the centre itself is the lowest
-            if k:                     # downhill on the fit: 2 h against its gradient at the centre
-                gi = 2 * k[0] * ci + k[2] * cq + k[3]
-                gq = 2 * k[1] * cq + k[2] * ci + k[4]
-                g = math.hypot(gi, gq)
-                b = (ci - 2 * self.step * gi / g, cq - 2 * self.step * gq / g) if g > 0 else self._best()
-            else:
-                b = self._best()
-            move = math.hypot(b[0] - ci, b[1] - cq)
-            self.centre = (b[0], b[1])
-            self.step = min(self.step * 2, self.max_step) if move > ROUND else max(self.step / 2, self.min_step)
-            self.moves.append(move)
-            if self.round >= self.max_rounds:
-                self.done = True
-            return
-        self.fit = k
         lim = 2 * self.step
         dx = max(-lim, min(lim, v[0] - ci))
         dy = max(-lim, min(lim, v[1] - cq))
-        self.centre = (ci + dx, cq + dy)
+        clipped = dx != v[0] - ci or dy != v[1] - cq
+        ni, nq = ci + dx, cq + dy
+        far = math.hypot(ni - self.start[0], nq - self.start[1])
+        if far > self.reach:          # out of reach: back onto its edge
+            ni = self.start[0] + (ni - self.start[0]) * self.reach / far
+            nq = self.start[1] + (nq - self.start[1]) * self.reach / far
+            dx, dy = ni - ci, nq - cq
+        self.centre = (ni, nq)
         move = math.hypot(dx, dy)
         self.moves.append(move)
-        clipped = dx != v[0] - ci or dy != v[1] - cq
-        # the vertex within reach: zoom in; else walk on with a bigger step
         self.step = min(self.step * 2, self.max_step) if clipped else max(self.step / 2, self.min_step)
-        if self.round >= 2 and move < self.tol:
+        if counts and self.round >= 2 and move < self.tol:
             self.done = self.converged = True
         elif self.round >= self.max_rounds:
             self.done = True
@@ -177,36 +192,37 @@ class Calibrator:
     def result(self):
         """The correction found and what the fit says about it (None where there is no fit)."""
         r = {"i": self.centre[0], "q": self.centre[1], "rounds": self.round, "measurements": len(self.points),
-             "moves": list(self.moves), "done": self.done,
-             "converged": self.converged}
-        k = self.fit
-        if k:
-            p_min = quad_value(k, *self.centre)
-            if p_min <= 0:            # the fit dips below zero at a deep null: the lowest measurement instead
-                p_min = 10 ** (self._best()[2] / 10)
-            p_start = quad_value(k, *self.start)
-            a, b = k[0], k[1]
-            r["floor_db"] = 10 * math.log10(p_min)
-            r["suppression_db"] = 10 * math.log10(p_start / p_min) if p_start > 0 else None
-            # the leakage at the start in DAC codes: sqrt((P(start) - P(vertex)) / mean curvature)
-            r["leak_codes"] = math.sqrt(max(0.0, p_start - p_min) / ((a + b) / 2))
+             "moves": list(self.moves), "done": self.done, "converged": self.converged,
+             "floor_db": None, "suppression_db": None, "leak_codes": None, "misfit_db": self.misfit}
+        x = self.fit
+        if x:
+            at, _ = bowl_db(x, *self.centre)
+            st, _ = bowl_db(x, *self.start)
+            r["floor_db"] = at
+            r["suppression_db"] = st - at
+            # the leakage at the start in DAC codes: sqrt((P(start) - P(null)) / mean curvature); M = L L^T
+            trace = x[2] ** 2 + x[3] ** 2 + x[4] ** 2
+            r["leak_codes"] = math.sqrt(max(0.0, 10 ** (st / 10) - 10 ** (at / 10)) / (trace / 2))
         return r
 
 
 class LeakModel:
-    """A synthetic transmitter: tone |L0 + gi i + gq q|^2 + floor, in dB, with a given noise sequence (dB, used in turn)."""
+    """A synthetic transmitter: tone |L0 + gi i + gq q|^2 + floor, in dB, with a given noise sequence, used in turn. An entry is
+    a number (dB added to the measurement) or a pair [n, j]: the floor times n (the noise power fluctuates) and j dB added."""
 
     def __init__(self, l0, gi, gq, floor, noise=()):
         self.l0, self.gi, self.gq, self.floor = complex(*l0), complex(*gi), complex(*gq), floor
         self.noise = list(noise)
         self.k = 0
 
-    def true_db(self, i, q):
-        return 10 * math.log10(abs(self.l0 + self.gi * i + self.gq * q) ** 2 + self.floor)
+    def true_db(self, i, q, floor_factor=1.0):
+        return 10 * math.log10(abs(self.l0 + self.gi * i + self.gq * q) ** 2 + self.floor * floor_factor)
 
     def measure(self, i, q):
         n = self.noise[self.k % len(self.noise)] if self.noise else 0.0
         self.k += 1
+        if isinstance(n, (list, tuple)):
+            return self.true_db(i, q, n[0]) + n[1]
         return self.true_db(i, q) + n
 
     def optimum(self):

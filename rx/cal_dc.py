@@ -40,7 +40,7 @@ ROOT = os.path.join(HERE, "..")
 RX = os.path.join(ROOT, "third_party", "ESP32-DATV-RX")
 FS = 1e6 / 3                       # espdr.nb --decim 3
 RX_OFFSET = 50e3                   # receiver LO above the carrier
-SETTLE = 0.45                      # test mode: wait after a BDC command [s]
+SETTLE = 0.25                      # test mode: wait after a BDC command [s] (the pipeline of the receiver)
 
 
 def ports():

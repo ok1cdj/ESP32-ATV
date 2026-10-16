@@ -9,7 +9,7 @@ import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
-from dccal.core import Calibrator, LeakModel, fit_quadratic, quad_vertex, run  # noqa: E402
+from dccal.core import Calibrator, LeakModel, bowl_db, bowl_start, fit_bowl, run  # noqa: E402
 
 VECTORS = sorted(glob.glob(os.path.join(HERE, "vectors", "*.json")))
 
@@ -32,25 +32,29 @@ def test_vectors_exist():
 
 
 def test_fit_exact():
-    k = (2.0, 3.0, 0.5, -1.0, 2.0, 7.0)
-    pts = [(i, q, 10 * math.log10(k[0] * i * i + k[1] * q * q + k[2] * i * q + k[3] * i + k[4] * q + k[5]))
-           for i, q in [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (2, -1)]]
-    f = fit_quadratic(pts)
-    assert f == pytest.approx(k, rel=1e-9)
-    vi, vq = quad_vertex(f)
-    assert 4 * vi + 0.5 * vq - 1 == pytest.approx(0, abs=1e-9)        # dP/di = 0
-    assert 0.5 * vi + 6 * vq + 2 == pytest.approx(0, abs=1e-9)        # dP/dq = 0
+    # points of a known bowl, no noise: the fit finds it again from a rough guess
+    x = [1.5, -2.0, 3.0, 0.4, 2.5, math.log(0.01)]
+    pts = [(i, q, bowl_db(x, i, q)[0]) for i in (-1, 0.5, 2, 4) for q in (-4, -2.5, -1, 0.5)]
+    got, c = fit_bowl(pts, bowl_start(pts))
+    assert c < 1e-12
+    assert got[0] == pytest.approx(1.5, abs=1e-6) and got[1] == pytest.approx(-2.0, abs=1e-6)
 
 
-def test_no_bowl_goes_downhill():
-    # a plane: no vertex; the centre moves 2 steps against the gradient (1, 2), the step doubles, not converged
-    cal = Calibrator(step=1.0, max_rounds=1)
+def test_gradient():
+    x = [0.3, -1.1, 1.7, -0.2, 0.9, math.log(0.5)]
+    m, g = bowl_db(x, 1.2, 0.4)
+    for k in range(6):
+        xp = list(x)
+        xp[k] += 1e-6
+        assert (bowl_db(xp, 1.2, 0.4)[0] - m) / 1e-6 == pytest.approx(g[k], rel=1e-4, abs=1e-6)
+
+
+def test_first_round_goes_to_the_lowest():
+    # 7 points cannot test 6 parameters: round 1 moves to the lowest point measured, not to a vertex fitted through noise
+    cal = Calibrator(step=4.0)
     for i, q in cal.next_points():
-        cal.add(i, q, 10 * math.log10(10 + i + 2 * q))
-    g = math.hypot(1, 2)
-    assert cal.done and not cal.converged
-    assert cal.centre == pytest.approx((-2 / g, -4 / g))
-    assert cal.step == 2.0
+        cal.add(i, q, 5.0 if (i, q) == (0.0, -4.0) else 27.0 + 0.1 * i + 0.2 * q)
+    assert cal.round == 1 and cal.centre == pytest.approx((0.0, -4.0))
 
 
 def test_converges():

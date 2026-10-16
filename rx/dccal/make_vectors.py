@@ -7,8 +7,7 @@
 A vector is a transmitter model and a noise sequence, so that both languages measure the same numbers at whatever points they
 ask for: model {l0, gi, gq: [re, im], floor}, noise [dB, used in turn], start, step, and the expected result: the optimum of
 the model with a tolerance, and the result of core.py (the port has to agree with it closely).
-A recorded run becomes a model by fitting |L0 + gi i + gq q|^2 + floor to its measurements (least squares in dB); its
-residuals are the noise sequence.
+A recorded run becomes a model by fitting core.py's bowl to its measurements; its residuals are the noise sequence.
 """
 import argparse
 import json
@@ -19,7 +18,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
-from dccal.core import Calibrator, LeakModel, run  # noqa: E402
+from dccal.core import Calibrator, LeakModel, bowl_db, bowl_start, fit_bowl, run  # noqa: E402
 
 OUT = os.path.join(HERE, "vectors")
 
@@ -56,49 +55,39 @@ def synthetic():
         vs.append(vector(f"random-{k}", l0, (1, 0), gq, floor, [rnd.gauss(0, sigma) for _ in range(128)], start, step,
                          tol=0.1 if sigma <= 0.5 else 0.2, note=f"noise {sigma} dB, floor {10 * math.log10(floor / (l0[0] ** 2 + l0[1] ** 2)):.0f} dB, "
                               f"I/Q gain {g:.2f} phase {math.degrees(ph):.0f} deg"))
+    # like the board (2026-10-16): |L0| 2..8 codes, the tone 25..35 dB above the noise at BDC 0 0, the noise power of a
+    # measurement fluctuating (4 windows x 3 bins: gamma, 12 degrees of freedom), 0.7 dB of jitter
+    for k in range(8):
+        l0 = complex(rnd.uniform(-1, 1), rnd.uniform(-1, 1))
+        l0 *= rnd.uniform(2, 8) / abs(l0)
+        snr = rnd.uniform(25, 35)
+        g, ph = rnd.uniform(0.85, 1.15), math.radians(rnd.uniform(-10, 10))
+        floor = abs(l0) ** 2 / 10 ** (snr / 10)
+        noise = [[rnd.gammavariate(12, 1 / 12), rnd.gauss(0, 0.7)] for _ in range(128)]
+        vs.append(vector(f"board-{k}", (l0.real, l0.imag), (1, 0), (g * math.sin(ph), g * math.cos(ph)), floor, noise,
+                         tol=0.3, note=f"board-like: |L0| {abs(l0):.1f} codes, tone {snr:.0f} dB above the noise"))
     # far away: the optimum 15 codes off, step 2 (the trust region has to walk there)
     vs.append(vector("far", (12.0, -9.0), (1, 0), (0, 1), 0.02, [rnd.gauss(0, 0.3) for _ in range(64)], step=2.0,
                      note="15 codes away with a small first step"))
     return vs
 
 
-def from_log(path, name, run_index=0):
-    """A recorded run: fit the physical model to the measurements by Gauss-Newton in dB."""
-    import numpy as np
+def from_log(path, name, run_index=0, tol=0.3):
+    """A recorded run: the bowl of core.py fitted to its measurements, as a transmitter model (u + j v with u = l11 di + l21 dq,
+    v = l22 dq: gi = l11, gq = l21 + j l22, L0 = -(gi ci + gq cq)); its residuals are the noise sequence."""
     log = json.load(open(path))
     note = log.get("note", path)
     log = log["runs"][run_index]
-    pts = np.array([(m["i"], m["q"], m["db"]) for m in log["measurements"]], float)
-    i, q, db = pts.T
-    # start: the quadratic fit of core.py, then the model's parameters [l0r, l0i, gir, gii, gqr, gqi, log floor]
-    x = np.array([0.0, 0.0, 1.0, 0.0, 0.0, 1.0, math.log(10 ** (db.min() / 10))])
-    best = pts[np.argmin(db)]
-    x[0], x[1] = -best[0], -best[1]
-    scale = 10 ** ((db.max()) / 10) / max(1.0, float(np.max(best[0] ** 2 + best[1] ** 2)))
-    x[2:6] *= math.sqrt(scale)
-    x[0:2] *= math.sqrt(scale)
-
-    def model(x):
-        lr = x[0] + x[2] * i + x[4] * q
-        li = x[1] + x[3] * i + x[5] * q
-        return 10 * np.log10(lr * lr + li * li + np.exp(x[6]))
-
-    for _ in range(200):
-        r = db - model(x)
-        jac = np.empty((len(db), 7))
-        for k in range(7):
-            dx = np.zeros(7)
-            dx[k] = 1e-6 * max(1.0, abs(x[k]))
-            jac[:, k] = (model(x + dx) - model(x)) / dx[k]
-        step, *_ = np.linalg.lstsq(jac, r, rcond=None)
-        x += step
-        if np.max(np.abs(step)) < 1e-9:
-            break
-    res = db - model(x)
-    print(f"{name}: {len(db)} measurements, fit rms {np.sqrt(np.mean(res ** 2)):.2f} dB")
-    return vector(name, (x[0], x[1]), (x[2], x[3]), (x[4], x[5]), float(np.exp(x[6])), [float(v) for v in res],
-                  tuple(log.get("start", (0.0, 0.0))), float(log.get("step", 4.0)),
-                  note=f"recorded: {note}, {log.get('freq_mhz', 0):.3f} MHz")
+    pts = [(m["i"], m["q"], m["db"]) for m in log["measurements"]]
+    x, c = fit_bowl(pts, bowl_start(pts))
+    ci, cq, l11, l21, l22, lf = x
+    gi, gq = complex(l11, 0), complex(l21, l22)
+    l0 = -(gi * ci + gq * cq)
+    res = [db - bowl_db(x, i, q)[0] for i, q, db in pts]
+    print(f"{name}: {len(pts)} measurements, null {ci:+.3f} {cq:+.3f}, fit rms {math.sqrt(c / len(pts)):.1f} dB")
+    return vector(name, (l0.real, l0.imag), (gi.real, gi.imag), (gq.real, gq.imag), math.exp(lf), res,
+                  tuple(log.get("start", (0.0, 0.0))), float(log.get("step", 4.0)), tol=tol,
+                  note=f"recorded: {note}, {log.get('freq_mhz', 0):.3f} MHz, fit rms {math.sqrt(c / len(pts)):.1f} dB")
 
 
 def main():
