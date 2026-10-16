@@ -1,0 +1,39 @@
+{
+ "name": "noiseless",
+ "note": "no noise: the exact optimum",
+ "model": {
+  "l0": [
+   3.0,
+   -2.0
+  ],
+  "gi": [
+   1,
+   0
+  ],
+  "gq": [
+   0,
+   1
+  ],
+  "floor": 0.001
+ },
+ "noise": [],
+ "start": [
+  0.0,
+  0.0
+ ],
+ "step": 4.0,
+ "expect": {
+  "optimum": [
+   -3.0,
+   2.0
+  ],
+  "tol": 0.1,
+  "core": {
+   "i": -2.999999999557343,
+   "q": 1.9999999999450133,
+   "measurements": 14,
+   "rounds": 2,
+   "converged": true
+  }
+ }
+}
