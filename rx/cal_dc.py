@@ -40,6 +40,7 @@ ROOT = os.path.join(HERE, "..")
 RX = os.path.join(ROOT, "third_party", "ESP32-DATV-RX")
 FS = 1e6 / 3                       # espdr.nb --decim 3
 RX_OFFSET = 50e3                   # receiver LO above the carrier
+SETTLE = 0.45                      # test mode: wait after a BDC command [s]
 
 
 def ports():
@@ -76,7 +77,7 @@ class Beacon:
         self.s.flush()
         buf, t0 = "", time.time()
         while time.time() - t0 < timeout:
-            buf += self.s.read(256).decode(errors="replace")
+            buf += self.s.read(max(1, self.s.in_waiting)).decode(errors="replace")
             for ln in buf.splitlines():
                 if ln.startswith("ERR"):
                     sys.exit(f"{cmd}: {ln}")
@@ -192,42 +193,81 @@ class Stream:
 
 
 class ToneMeter:
-    """The leakage tone: FFT for the strongest line (first anywhere but the receiver's own DC, then within +-TRACK Hz of the last
-    one: the crystals drift), then a Goertzel filter at its interpolated frequency; dB against the noise in the same bandwidth.
-    A line under STRONG dB does not move the frequency: near the null the strongest bin is noise, and picking it would put a
-    floor of about 8 dB under the measurement; the Goertzel filter stays at the last strong line's frequency instead."""
-    N = 1 << 16                     # 0.2 s at 333 ksps, 5 Hz bins
-    TRACK = 2e3
-    STRONG = 15.0
+    """The leakage tone in a block of N samples: the power spectrum averaged over 4 windows of N / 4 (20 Hz bins), the tone's
+    power the sum of the 3 bins around its frequency, against the mean noise per bin around it [dB; noise alone: about 0].
+    Its frequency: first the strongest line anywhere but the receiver's own DC; then, from a line at least STRONG dB above the
+    noise, the strongest bin within +-TRACK Hz of the prediction. Weaker lines do not move it (near the null the strongest bin is
+    noise): the tone is taken where it should be by now, as the crystals drift (about 10 Hz/s while warming up), with the drift
+    rate from the last strong lines."""
+    N = 1 << 16                     # 0.2 s at 333 ksps
+    SUB = 4
+    TRACK = 400.0                   # once found (about 0.7 s per measurement at up to 100 Hz/s)
+    STRONG = 12.0
 
     def __init__(self):
-        self.w = np.hanning(self.N).astype(np.float32)
-        self.f = None
+        self.w = np.hanning(self.N // self.SUB).astype(np.float32)
+        self.f = None               # the last strong line [Hz] and when it was seen
+        self.t = 0.0
+        self.rate = 0.0             # drift [Hz/s]
+        self.hist = []
+
+    def predict(self, now=None):
+        if self.f is None:
+            return None
+        return self.f + self.rate * ((time.time() if now is None else now) - self.t)
+
+    def _spectrum(self, x):
+        m = self.N // self.SUB
+        x = x[:self.N] - np.mean(x[:self.N])                 # the receiver's own DC out
+        p = np.mean(np.abs(np.fft.fftshift(np.fft.fft(x.reshape(self.SUB, m) * self.w, axis=1), axes=1)) ** 2, 0)
+        return (np.arange(m) - m / 2) * FS / m, p
+
+    def gap(self, x):
+        """Did the transmitter stop within x? The tone's level in the 4 windows differs by more than 10 dB (a strong tone only;
+        near the null the windows are noise)."""
+        fr = self.predict()
+        if fr is None:
+            return False
+        m = self.N // self.SUB
+        f = (np.arange(m) - m / 2) * FS / m
+        k = int(np.argmin(np.abs(f - fr)))
+        lv = []
+        for j in range(self.SUB):
+            p = np.abs(np.fft.fftshift(np.fft.fft((x[j * m:(j + 1) * m] - np.mean(x[j * m:(j + 1) * m])) * self.w))) ** 2
+            lv.append(10 * np.log10(p[k - 1:k + 2].sum() / np.median(p) + 1e-30))
+        return max(lv) - min(lv) > 10 and max(lv) > 25
 
     def measure(self, x):
         clip = float(np.mean((np.abs(x.real) >= 0.99) | (np.abs(x.imag) >= 0.99)))
-        x = x[:self.N] - np.mean(x[:self.N])      # the receiver's own DC out
-        X = np.fft.fftshift(np.fft.fft(x * self.w))
-        p = np.abs(X) ** 2
-        f = (np.arange(self.N) - self.N / 2) * FS / self.N
-        look = (np.abs(f) > 3e3) if self.f is None else (np.abs(f - self.f) < self.TRACK) & (np.abs(f) > 3e3)
-        k = np.flatnonzero(look)[np.argmax(p[look])]
-        a, b, c = np.log(p[k - 1:k + 2] + 1e-30)
-        d = 0.5 * (a - c) / (a - 2 * b + c) if a - 2 * b + c < 0 else 0.0
-        fk = f[k] + d * FS / self.N
-        n = np.arange(self.N)
-        ring = (np.abs(f - fk) > 3e3) & (np.abs(f - fk) < 20e3) & (np.abs(f) > 3e3)
-        noise = np.median(p[ring]) / np.log(2)      # the median of an exponential is ln 2 times its mean
+        now = time.time()
+        f, p = self._spectrum(x)
+        df = f[1] - f[0]
+        fr = self.predict(now)
+        look = (np.abs(f) > 3e3) if fr is None else (np.abs(f - fr) < self.TRACK) & (np.abs(f) > 3e3)
+        if not look.any():
+            look = np.abs(f) > 3e3
+        k = int(np.flatnonzero(look)[np.argmax(p[look])])
 
-        def goertzel(fr):
-            return 10 * np.log10(np.abs(np.sum(x * self.w * np.exp(-2j * np.pi * fr * n / FS))) ** 2 / noise)
+        def level(k):
+            ring = (np.abs(f - f[k]) > 3e3) & (np.abs(f - f[k]) < 20e3) & (np.abs(f) > 3e3)
+            noise = np.mean(np.sort(p[ring])[:int(0.9 * ring.sum())]) / 0.84   # the lowest 90 %: no stray lines
+            return 10 * np.log10(p[k - 1:k + 2].sum() / (3 * noise))
 
-        db = goertzel(fk)
+        db = level(k)
         if db >= self.STRONG:
-            self.f = fk
-        elif self.f is not None:
-            fk = self.f
-            db = goertzel(fk)
+            a, b, c = np.log(p[k - 1:k + 2])
+            fk = f[k] + (0.5 * (a - c) / (a - 2 * b + c) if a - 2 * b + c < 0 else 0.0) * df
+            self.hist = [h for h in self.hist if now - h[0] < 5] + [(now, fk)]
+            if len(self.hist) >= 2 and self.hist[-1][0] - self.hist[0][0] > 1.0:
+                tt, ff = np.array(self.hist).T
+                self.rate = float(np.clip(np.polyfit(tt - tt[-1], ff, 1)[0], -300, 300))
+            self.f, self.t = fk, now
+        elif fr is not None:
+            k = int(np.argmin(np.abs(f - fr)))
+            fk = fr
+            db = level(k)
+        else:
+            fk = f[k]
         return db, fk, clip
 
 
@@ -261,7 +301,7 @@ def test_mode(a, tx_port, rx_port, freq0):
     start = tuple(a.start) if a.start is not None else None
     stream = None
     try:
-        for f_mhz in freqs:
+        for f_mhz in [f for f in freqs for _ in range(a.repeat)]:
             i0, q0, src, fk, _ = tx.bdc(f"BDC TEST on {f_mhz:.3f}")
             st = start if start is not None else (i0, q0)
             # the receiver 50 kHz above the frequency asked for (its DC outside); the crystals are tens of kHz off
@@ -278,7 +318,13 @@ def test_mode(a, tx_port, rx_port, freq0):
                 tx.bdc(f"BDC {i:.3f} {q:.3f}")
                 dbs = []
                 for b in range(blocks):
-                    db, ftone, clip = meter.measure(stream.take(ToneMeter.N, settle=0.2 if b == 0 else 0.0))
+                    # BDC restarts the transmitter: about 0.25 s without a carrier after the answer (the PLL is set again)
+                    for _ in range(3):
+                        x = stream.take(ToneMeter.N, settle=SETTLE if b == 0 else 0.0)
+                        if not meter.gap(x):
+                            break
+                        print("  (a gap in the carrier: again)", flush=True)
+                    db, ftone, clip = meter.measure(x)
                     if clip > 1e-3:
                         print(f"  receiver overloaded ({clip:.1%} of the samples at full scale): lower --gain", flush=True)
                     dbs.append(db)
@@ -289,6 +335,17 @@ def test_mode(a, tx_port, rx_port, freq0):
                 return float(db)
 
             print(f"{f_mhz:.3f} MHz: BDC TEST, start {st[0]:+.3f} {st[1]:+.3f} ({src})")
+            if a.warmup > 0 and not runs:
+                # opening the port resets the C3: its frequency runs away for the first seconds (about -100 Hz/s)
+                # (8 codes off: a strong tone, so that the meter finds it and learns its drift)
+                t_end = time.time() + a.warmup
+                while time.time() < t_end:
+                    tx.bdc(f"BDC {st[0] + 8:.3f} {st[1]:.3f}")     # also keeps BDC TEST alive
+                    x = stream.take(ToneMeter.N, settle=SETTLE)
+                    db, ftone, _ = meter.measure(x)
+                    print(f"  warming up {t_end - time.time():3.0f} s: tone {db:5.1f} dB at {(stream_lo + ftone) / 1e6:.5f} MHz, "
+                          f"drift {meter.rate:+.0f} Hz/s", flush=True)
+                    time.sleep(0.5)
             # find the tone with the correction 8 codes off (strong even when the C3 is nulled already)
             for off in (8.0, 16.0, 32.0):
                 db = measure(st[0] + off, st[1])
@@ -303,7 +360,7 @@ def test_mode(a, tx_port, rx_port, freq0):
                 print(f"BDC 0 0: {ref:.1f} dB, BDC {a.eval[0]} {a.eval[1]}: {got:.1f} dB -> {ref - got:.1f} dB less leakage")
                 runs.append({"freq_mhz": f_mhz, "eval": list(a.eval), "measurements": log})
                 continue
-            cal = Calibrator(start=st, step=a.step)
+            cal = Calibrator(start=st, step=a.step, tol=0.1, min_step=a.min_step)
             while not cal.done:
                 for i, q in cal.next_points():
                     cal.add(i, q, measure(i, q))
@@ -331,7 +388,7 @@ def test_mode(a, tx_port, rx_port, freq0):
                 else:
                     tx.bdc("BDC SAVE")
                     save_json(f_mhz, r["i"], r["q"], ref - last)
-            if a.freq_sweep:                                    # the next frequency starts from this one
+            if a.freq_sweep and a.repeat == 1:                  # the next frequency starts from this one
                 start = (r["i"], r["q"])
     finally:
         if stream:
@@ -369,7 +426,12 @@ def main():
                                                "test: the frequency to transmit on, default ATV_FREQ)")
     ap.add_argument("--freq-sweep", metavar="F1:F2:STEP", help="test: calibrate F1, F1+STEP ... F2 [MHz]")
     ap.add_argument("--eval", type=float, nargs=2, metavar=("I", "Q"), help="test: only measure the leakage at BDC 0 0 and I Q")
+    ap.add_argument("--repeat", type=int, default=1, help="test: calibrate each frequency N times (in one boot of the C3)")
     ap.add_argument("--blocks", type=int, default=1, help="test: 0.2 s blocks averaged per measurement (default 1)")
+    ap.add_argument("--warmup", type=float, default=15.0, help="test: seconds of transmitting before the first measurement "
+                                                                 "(the frequency settles; default 15)")
+    ap.add_argument("--min-step", type=float, default=0.5, help="test: smallest step of the search [codes] (default 0.5: "
+                                                                "smaller steps drown in the noise at about 30 dB of tone)")
     ap.add_argument("--log", help="write the measurements as JSON (for rx/dccal/make_vectors.py --log)")
     ap.add_argument("--start", type=float, nargs=2, default=None, metavar=("I", "Q"),
                     help="starting correction [codes] (default 0 0; test: the value the C3 holds for the frequency)")
