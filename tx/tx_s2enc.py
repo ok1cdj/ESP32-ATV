@@ -4,7 +4,7 @@
 for checking them on a PC. QPSK only.
 
     third_party/ESP32-DATV-RX/.venv/bin/python tx/tx_s2enc.py TS_FILE [--baud 50000] [--rate 3/4] [--frame short]
-        [--pilots] [--amp 300] [--seconds 40] [--freq 2340.000] [--port /dev/...]
+        [--pilots] [--amp 300] [--seconds 40] [--freq 2345.000] [--port /dev/...]
 
 The TS file is looped until --seconds (it should be a constant-rate stream at about the channel rate, e.g. a beacon.ts).
 """
@@ -77,7 +77,7 @@ def main():
     ap.add_argument("--pilots", action="store_true")
     ap.add_argument("--amp", type=int, default=300)
     ap.add_argument("--seconds", type=float, default=40)
-    ap.add_argument("--freq", type=float, default=2340.000)
+    ap.add_argument("--freq", type=float, default=2345.000)
     ap.add_argument("--port")
     ap.add_argument("--target", type=int, default=3000)
     a = ap.parse_args()

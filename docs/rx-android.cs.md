@@ -10,7 +10,7 @@ USB-OTG posílá živě testkartu nebo obraz z kamery telefonu jako DVB-S2 (pře
 
 > ⚠ **Vysílá se v radioamatérském pásmu 13 cm (2,3–2,45 GHz). K vysílání je nutné platné oprávnění (koncese)
 > radioamatéra.** Vysílej jen se svou značkou, na kmitočtech a s výkonem, které tvé oprávnění a národní kmitočtový
-> plán dovolují (2340 MHz leží v ATV segmentu band plánu IARU 1. oblasti). Část pásma kolem 2,4 GHz sdílí Wi-Fi a další
+> plán dovolují (2345 MHz leží v ATV segmentu band plánu IARU 1. oblasti). Část pásma kolem 2,4 GHz sdílí Wi-Fi a další
 > služby – bez koncese je vysílání nezákonné a ruší ostatní. Samotný příjem koncesi nevyžaduje.
 
 > **Beta.** Aplikace je ke stažení zdarma pod GNU GPL v3.
@@ -56,8 +56,9 @@ Aktualizace: nová verze z Releases se nainstaluje přes starou (stejný podpis)
 
 ## 3. Příjem
 
-1. Nahoře zvol **Preset…** – např. *Beacon 50k QPSK 3/4* (kmitočet 2340.000 MHz, 50 kS/s). Předvolba nastaví kmitočet,
-   symbolovou rychlost, modulaci, kódový poměr a velikost rámců; vlastní nastavení ulož tlačítkem **Save**.
+1. Nahoře zvol **Preset…** – např. *Beacon 50k QPSK 3/4* (kmitočet 2345.000 MHz, 50 kS/s). Předvolba nastaví kmitočet,
+   symbolovou rychlost, modulaci, kódový poměr a velikost rámců; vlastní nastavení ulož tlačítkem **Save**. Vyhni se kmitočtům na
+   násobcích 20 MHz (2320, 2340, 2360 …): S3 má přesně tam vlastní parazitní čáru, uvnitř signálu.
 2. **Gain**: na stole 10 dB, na vzdálenost 30 dB a víc. Při silném signálu a velkém zisku se přijímač zahltí (MER klesá,
    ztrácí zámek).
 3. **Start.** Aplikace nejdřív sekundu hledá signál (FFT), naladí se na jeho střed a spustí demodulátor.

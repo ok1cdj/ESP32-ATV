@@ -2,8 +2,8 @@
 """Null the carrier leakage of the C3 beacon: set its DC correction with "BDC i q" over the transmitter's USB, measure the leakage
 tone with the S3 receiver, fit, repeat; then save it in the C3 (BDC SAVE) and in tx/cal_c3.json (used by tx/make_beacons.sh).
 
-    third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py [--freq 2340.03] [--step 4] [--rounds 3] [--save]
-    third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py --mode test [--freq 2340] [--save] [--log run.json]
+    third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py [--freq 2345.03] [--step 4] [--rounds 3] [--save]
+    third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py --mode test [--freq 2345] [--save] [--log run.json]
     third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py --mode test --freq-sweep 2300:2450:5 --log sweep.json
     third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py --mode test --eval I Q      # the leakage of a correction
 

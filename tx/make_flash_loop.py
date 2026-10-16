@@ -50,7 +50,7 @@ def main():
     ap.add_argument("--width", type=int, default=0, help="picture width (default: 320 below 100 kb/s of video, else 480)")
     ap.add_argument("--fps", type=int, default=0, help="frames per second (default: 5 below 100 kb/s of video, else 15)")
     ap.add_argument("--call", required=True, help="your callsign: service name; provider '<call> ESP32-ATV'")
-    ap.add_argument("--freq", type=float, default=2340.000, help="MHz the C3 sends the loop on (2300..2450)")
+    ap.add_argument("--freq", type=float, default=2345.000, help="MHz the C3 sends the loop on (2300..2450)")
     ap.add_argument("--amp", type=int, default=300, help="DAC amplitude 1..480 (300 = 0 dB, 13 = -27 dB)")
     ap.add_argument("-o", "--out", required=True)
     a = ap.parse_args()

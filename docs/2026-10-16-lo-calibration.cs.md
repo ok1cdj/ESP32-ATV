@@ -73,3 +73,10 @@ vrátí ze své kopie. Obrazovka TX bere hodnotu C3 pro svůj kmitočet (`BDC GE
 otevření portu C3 neresetuje (ověřeno: bootovací hlášky ROM nepřijdou), takže dokud C3 zůstane napájený na hubu, platí
 kalibrace z aplikace pro následná vysílání naplno; po odpojení napájení zbude jen ~9 dB uložené hodnoty.
 Vyzkoušeno na telefonu (OnePlus 10 Pro, hub, 16. 10. 2026): obě desky rozpoznány, 12,8 dB v jednom běhu, uloženo do C3.
+
+## Vlastní čára přijímače na n × 20 MHz
+
+Čára, na kterou se jednou chytil měřič tónu, patří XIAO ESP32-S3: parazit jeho PLL přesně na násobcích 20 MHz (podle
+hodin S3), ať je LO naladěný kamkoli – 2320,000 MHz 28,5 dB nad šumem, 2340,000 MHz 12 dB, 2360,000 MHz 26 dB, na 2330
+ani 2350 MHz nic. Na 2340,000 MHz ležela uvnitř signálu majáku (nosná C3 je asi o 18 kHz výš), proto je `ATV_FREQ` teď
+**2345,000 MHz**. Kalibrace se tím nemění.

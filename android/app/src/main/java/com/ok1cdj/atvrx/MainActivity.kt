@@ -430,7 +430,7 @@ class MainActivity : Activity() {
 
     companion object {
         /** IARU R1 13 cm ATV segment 2322-2355 MHz; ATV_FREQ of boards.sh on the PC side */
-        const val DEFAULT_FREQ = "2340.000"
+        const val DEFAULT_FREQ = "2345.000"         // not on n x 20 MHz: the S3 has a spur there
         private const val LOG_LINES = 60
     }
 }

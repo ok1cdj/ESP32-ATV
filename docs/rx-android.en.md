@@ -10,7 +10,7 @@ ESP32-C3 on USB-OTG it sends a test card or the phone's camera live as DVB-S2 (s
 
 > ⚠ **The transmitter works on the 13 cm amateur radio band (2.3–2.45 GHz). Transmitting requires an amateur radio
 > licence.** Transmit only with your own callsign, on frequencies and at power levels your licence and national band
-> plan allow (2340 MHz lies in the ATV segment of the IARU Region 1 band plan). The band around 2.4 GHz is shared with
+> plan allow (2345 MHz lies in the ATV segment of the IARU Region 1 band plan). The band around 2.4 GHz is shared with
 > Wi-Fi and other services – without a licence, transmitting is illegal and disturbs others. Receiving alone needs no
 > licence.
 
@@ -60,8 +60,9 @@ Updates: a new version from Releases installs over the old one (same signature).
 
 ## 3. Receiving
 
-1. Pick a **Preset…** at the top, e.g. *Beacon 50k QPSK 3/4* (2340.000 MHz, 50 kS/s). A preset sets frequency, symbol
-   rate, modulation, code rate and frame size; **Save** stores your own settings.
+1. Pick a **Preset…** at the top, e.g. *Beacon 50k QPSK 3/4* (2345.000 MHz, 50 kS/s). A preset sets frequency, symbol
+   rate, modulation, code rate and frame size; **Save** stores your own settings. Avoid frequencies on a multiple of
+   20 MHz (2320, 2340, 2360 …): the S3 has a spur of its own exactly there, inside the signal.
 2. **Gain**: 10 dB on a desk, 30 dB and more over a distance. A strong signal with a high gain overloads the receiver
    (MER drops, lock comes and goes).
 3. **Start.** The app looks for the signal for a second (FFT), tunes to its centre and starts the demodulator.

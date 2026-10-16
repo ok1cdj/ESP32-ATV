@@ -90,7 +90,7 @@ class CalibrationActivity : Activity() {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         row.addView(TextView(this).apply { text = "MHz " })
         freq = EditText(this).apply {
-            setText(getSharedPreferences("tx", MODE_PRIVATE).getString("freq", null) ?: "2340.000"); isSingleLine = true
+            setText(getSharedPreferences("tx", MODE_PRIVATE).getString("freq", null) ?: MainActivity.DEFAULT_FREQ); isSingleLine = true
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
         }
         row.addView(freq, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))

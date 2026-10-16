@@ -77,3 +77,10 @@ C3's value for its frequency (`BDC GET f`). Unlike Linux, Android does not reset
 (checked: the ROM's boot lines do not come), so as long as the C3 stays powered on the hub, a calibration in the app
 holds for the transmissions after it in full; after a power cycle only the ~9 dB of a stored value remain.
 Tried on the phone (OnePlus 10 Pro, a hub, 2026-10-16): both boards identified, 12.8 dB in one run, stored in the C3.
+
+## The receiver's own line at n × 20 MHz
+
+The line that once caught the tone meter is the XIAO ESP32-S3's: a spur of its PLL exactly on multiples of 20 MHz (by
+the S3's clock), whatever the LO is set to – 2320.000 MHz 28.5 dB above the noise, 2340.000 MHz 12 dB, 2360.000 MHz
+26 dB, nothing at 2330 or 2350 MHz. At 2340.000 MHz it lay inside the beacon's signal (the C3's carrier is about 18 kHz
+higher), so `ATV_FREQ` is now **2345.000 MHz**. The calibration does not change with it.

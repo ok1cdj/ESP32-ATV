@@ -8,7 +8,7 @@
 > [!WARNING]
 > **This equipment transmits on the 13 cm amateur radio band (2.3–2.45 GHz). Using it requires an amateur radio
 > licence.** Transmit only with your own callsign, on frequencies and at power levels your licence and national band
-> plan allow (2340 MHz lies in the ATV segment of the IARU Region 1 band plan). The 2.4 GHz part of the band is shared
+> plan allow (2345 MHz lies in the ATV segment of the IARU Region 1 band plan). The 2.4 GHz part of the band is shared
 > with Wi-Fi and other services – without a licence, transmitting here is illegal and can disturb other users. The
 > receiver alone needs no licence.
 >
@@ -28,7 +28,7 @@ ESP32-C3 on USB-OTG: test card or camera, DVB-S2 QPSK / 8PSK encoded on the phon
 <p align="center"><img src="docs/img/atvrx-rx-tx.png" alt="ATV RX/TX on Android: receiving the ESP32-C3 beacon (RX) and transmitting a test card through the ESP32-C3 (TX)" width="640"></p>
 
 ```
-XIAO ESP32-C3 (ESP32-DATV-SA beacon, DVB-S2 QPSK 3/4, 40–500 kS/s, 2340.000 MHz)
+XIAO ESP32-C3 (ESP32-DATV-SA beacon, DVB-S2 QPSK 3/4, 40–500 kS/s, 2345.000 MHz)
    ~ 13 cm ~>
 XIAO ESP32-S3 (ESP32-DATV-RX firmware: radio dump 16 MS/s -> 500 ksps cs4 / 333 ksps cs8 over native USB)
    -> Android: ATV RX/TX (leandvb + ldpc_tool, MediaCodec)      or      PC: rx/rx.sh (rx_dvbs2.py, leandvb, ffplay)
@@ -80,16 +80,18 @@ git clone --depth 1 -b v6.1 --recursive --shallow-submodules https://github.com/
 Board ports are told apart by MAC address in `boards.sh` (both boards are `303a:1001`); edit it for your boards.
 
 ## Frequency
-One place: `ATV_FREQ` in `boards.sh` – **2340.000 MHz**, the 2322–2355 MHz ATV segment of the IARU Region 1 band plan
+One place: `ATV_FREQ` in `boards.sh` – **2345.000 MHz**, the 2322–2355 MHz ATV segment of the IARU Region 1 band plan
 (check your national rules). Used by `tx/make_beacons.sh`, `tx/tx_pc.sh`, `rx/rx.sh`, `rx/level_sweep.sh`,
-`rx/cal_dc.py`; the app defaults to it.
+`rx/cal_dc.py`; the app defaults to it. **Avoid multiples of 20 MHz** (2320, 2340, 2360 …): the XIAO ESP32-S3's PLL has
+a spur exactly there, 12–28 dB above the noise (strongest on multiples of 40 MHz), which lands inside the signal – also
+on another frequency, keep the carrier a few hundred kHz away from them. 2340.000 MHz was used until 2026-10-16.
 
 ## Transmitter – XIAO ESP32-C3
 **For everyone:** the firmware from the web (the app's menu ⋮ → Firmware, or the [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/))
 transmits nothing until a beacon is stored: the app's TX screen → *Save as beacon in the C3* (records the test card or
 the camera with your settings and stores the loop; the C3 then transmits it by itself), or from a PC:
 ```sh
-python3 tx/make_flash_loop.py video.mp4 --baud 40000 --frame short --call YOURCALL --freq 2340 --amp 300 -o loop.bin
+python3 tx/make_flash_loop.py video.mp4 --baud 40000 --frame short --call YOURCALL --freq 2345 --amp 300 -o loop.bin
 third_party/ESP32-DATV-RX/.venv/bin/python tx/c3_vidw.py loop.bin     # VIDW over USB (TX_PORT of boards.sh); --erase removes it
 . ~/esp/esp-idf-v6.1/export.sh && tx/build_c3_web.sh                     # the web build (no built-in beacon) -> build/c3-web/out
 ```

@@ -117,7 +117,7 @@ class TxActivity : Activity() {
         info = TextView(this).apply { typeface = Typeface.MONOSPACE; setPadding(0, 12, 0, 8); fitStatusText(this) }
         body.addView(info)
 
-        freq = edit(prefs.getString("freq", "2340.000")!!, InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
+        freq = edit(prefs.getString("freq", MainActivity.DEFAULT_FREQ)!!, InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
         rate = spinner(rates.map { "%.1f kS/s".format(it / 1e3) }, "%.1f kS/s".format(prefs.getInt("sr", 50_000) / 1e3))
         body.addView(row(label("MHz"), freq, label("SR"), rate))
         constel = spinner(listOf("QPSK", "8PSK"), prefs.getString("const", "QPSK")!!)
