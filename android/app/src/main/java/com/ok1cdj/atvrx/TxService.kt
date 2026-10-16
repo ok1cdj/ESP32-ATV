@@ -57,7 +57,7 @@ class TxService : Service() {
         if (tx != null) return
         startForegroundService(Intent(this, TxService::class.java))
         val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
-            (if (cfg.source != Transmitter.SOURCE_CARD) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0) or
+            (if (cfg.source == Transmitter.SOURCE_BACK || cfg.source == Transmitter.SOURCE_FRONT) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0) or
             (if (cfg.sound == Transmitter.SOUND_MIC || cfg.sound == Transmitter.SOUND_MIC_CW) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0)
         startForeground(NOTIFICATION_ID, notification("starting", cfg), type)
         wake = (getSystemService(POWER_SERVICE) as PowerManager)

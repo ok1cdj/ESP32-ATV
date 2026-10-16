@@ -5,18 +5,18 @@ import android.hardware.usb.UsbManager
 import java.util.concurrent.locks.LockSupport
 
 /**
- * Live DVB-S2 transmission through the XIAO ESP32-C3 (ESP32-DATV(-SA) firmware, PC streaming mode): test card or
- * camera ([TestCard], [CameraSource]) -> H.264 ([CanvasEncoder]), sound ([MicPcm], [CwId]) -> AAC ([AacEncoder]) -> constant-rate TS ([TsMux]) -> DVB-S2 ([S2Encoder], continuous framing) -> packed QPSK symbols
+ * Live DVB-S2 transmission through the XIAO ESP32-C3 (ESP32-DATV(-SA) firmware, PC streaming mode): test card,
+ * camera or a picture / video file ([TestCard], [CameraSource], [FileSource]) -> H.264 ([CanvasEncoder]), sound ([MicPcm], [CwId]) -> AAC ([AacEncoder]) -> constant-rate TS ([TsMux]) -> DVB-S2 ([S2Encoder], continuous framing) -> packed QPSK symbols
  * -> USB, kept at the firmware's buffer target by its fill reports.
  */
 class Transmitter(private val ctx: android.content.Context, private val usbManager: UsbManager, private val device: UsbDevice,
                   val cfg: Config, private val log: (String) -> Unit) {
-    /** const: QPSK or 8PSK; source: SOURCE_CARD, SOURCE_BACK or SOURCE_FRONT (camera); sound: SOUND_*; videoKbps, fps,
-     *  audioKbps: 0 = automatic */
+    /** const: QPSK or 8PSK; source: SOURCE_CARD, SOURCE_BACK or SOURCE_FRONT (camera), SOURCE_FILE ([fileUri]); sound:
+     *  SOUND_*; videoKbps, fps, audioKbps: 0 = automatic; overlay: the callsign strip over a file's picture */
     data class Config(val freqKhz: Long, val baud: Int, val rate: String, val shortFrame: Boolean, val pilots: Boolean,
                       val amp: Int, val call: String, val service: String, val provider: String, val source: String = SOURCE_CARD,
                       val const: String = "QPSK", val videoKbps: Int = 0, val fps: Int = 0, val sound: String = SOUND_OFF,
-                      val audioKbps: Int = 0)
+                      val audioKbps: Int = 0, val fileUri: String = "", val overlay: Boolean = true)
 
     class Status {
         @Volatile var state = "starting"
@@ -37,6 +37,7 @@ class Transmitter(private val ctx: android.content.Context, private val usbManag
     private var thread: Thread? = null
     @Volatile var video: CanvasEncoder? = null; private set
     @Volatile var camera: CameraSource? = null; private set
+    @Volatile var file: FileSource? = null; private set
     @Volatile var mux: TsMux? = null; private set
     @Volatile var audio: AacEncoder? = null; private set
 
@@ -85,18 +86,15 @@ class Transmitter(private val ctx: android.content.Context, private val usbManag
             val m = TsMux(tsRate, cfg.service, cfg.provider, audio = audioBps > 0, delay = TsMux.delayFor(videoBps))
             mux = m
             val mode = "DVB-S2 ${cfg.const} ${cfg.rate}${if (cfg.shortFrame) " short" else ""}  %.1f kS/s".format(java.util.Locale.ROOT, cfg.baud / 1000.0)
-            val painter: Painter = if (cfg.source == SOURCE_CARD)
-                TestCard(cfg.call, "ESP32-ATV TX  %.3f MHz".format(java.util.Locale.ROOT, cfg.freqKhz / 1000.0), mode)
-            else CameraSource(ctx, cfg.source == SOURCE_BACK, if (w > 320) 640 else 320, cfg.call,
-                "%.3f MHz  %s".format(java.util.Locale.ROOT, cfg.freqKhz / 1000.0, mode)).also {
-                camera = it
-                it.start()
-            }
+            val painter = picture(ctx, cfg, w, fps, "ESP32-ATV TX", mode)
+            camera = painter as? CameraSource
+            file = painter as? FileSource
             val c = CanvasEncoder(w, h, fps, videoBps, if (videoBps < 80_000) 4 else 2, painter) { au, key, us -> m.addAu(au, key, us) }
             video = c
             c.start()
             log("video ${c.encoderName}: ${w}x$h $fps fps, ${videoBps / 1000} kb/s; TS %.1f kb/s".format(tsRate / 1000))
             camera?.let { log("camera ${if (cfg.source == SOURCE_BACK) "back" else "front"} ${it.size}") }
+            file?.let { log("file ${it.info}") }
             soundNote(cfg, tsRate, audioBps)?.let(log)
 
             val target = 3000
@@ -110,7 +108,7 @@ class Transmitter(private val ctx: android.content.Context, private val usbManag
             status.state = "transmitting"
             status.since = System.nanoTime()
             // the sound starts with the mux: captured earlier, it would come too late for its time stamps
-            if (audioBps > 0) audio = AacEncoder(audioBps, pcmSource(cfg, CW_PERIOD_S)) { f, us, dur -> m.addAudio(f, us, dur) }.also {
+            if (audioBps > 0) audio = AacEncoder(audioBps, pcmSource(ctx, cfg, CW_PERIOD_S, file)) { f, us, dur -> m.addAudio(f, us, dur) }.also {
                 it.start()
                 log("sound ${cfg.sound}: ${it.encoderName} ${it.description}")
             }
@@ -140,7 +138,7 @@ class Transmitter(private val ctx: android.content.Context, private val usbManag
                 link.error?.let { throw it }
                 status.fill = link.fill; status.underruns = link.underruns
                 c.error?.let { throw java.io.IOException(it) }
-                camera?.error?.let { throw java.io.IOException(it) }
+                (painter as? LivePainter)?.error?.let { throw java.io.IOException(it) }
                 audio?.error?.let { throw java.io.IOException(it) }
                 val todo = target - (link.fill + link.sentSince)          // pairs of bytes
                 if (todo >= 32) {
@@ -166,6 +164,7 @@ class Transmitter(private val ctx: android.content.Context, private val usbManag
         } finally {
             video?.stop()
             camera?.stop()
+            file?.stop()
             audio?.stop()
             enc?.close()
             link?.close()
@@ -176,11 +175,14 @@ class Transmitter(private val ctx: android.content.Context, private val usbManag
         const val SOURCE_CARD = "test card"
         const val SOURCE_BACK = "camera (back)"
         const val SOURCE_FRONT = "camera (front)"
+        const val SOURCE_FILE = "picture / video file"
+        val SOURCES = listOf(SOURCE_CARD, SOURCE_BACK, SOURCE_FRONT, SOURCE_FILE)
         const val SOUND_OFF = "off"
         const val SOUND_MIC = "microphone"
         const val SOUND_CW = "CW ID"
         const val SOUND_MIC_CW = "mic + CW ID"
-        val SOUNDS = listOf(SOUND_OFF, SOUND_MIC, SOUND_CW, SOUND_MIC_CW)
+        const val SOUND_FILE = "from the video"
+        val SOUNDS = listOf(SOUND_OFF, SOUND_MIC, SOUND_CW, SOUND_MIC_CW, SOUND_FILE)
         const val CW_PERIOD_S = 30.0
         /** below this TS rate "auto" sends no sound: it would take a quarter of the picture's bits */
         const val AUDIO_AUTO_MIN_TS = 80_000
@@ -201,8 +203,25 @@ class Transmitter(private val ctx: android.content.Context, private val usbManag
             else -> "sound: %d kb/s = %.0f %% of the TS".format(audioBps / 1000, 100.0 * audioBps / tsRate)
         }
 
-        /** the microphone and / or the callsign in Morse every [cwPeriod] s */
-        fun pcmSource(cfg: Config, cwPeriod: Double): PcmSource {
+        /**
+         * The picture source of [cfg], started: the test card (with [title]), a camera or a file (both [LivePainter]: the
+         * caller stops them); [w] the video width, [fps] its frame rate, [mode] the transmission for the text lines.
+         */
+        fun picture(ctx: android.content.Context, cfg: Config, w: Int, fps: Int, title: String, mode: String): Painter {
+            val mhz = "%.3f MHz".format(java.util.Locale.ROOT, cfg.freqKhz / 1000.0)
+            return when (cfg.source) {
+                SOURCE_CARD -> TestCard(cfg.call, "$title  $mhz", mode)
+                SOURCE_FILE -> FileSource(ctx, android.net.Uri.parse(cfg.fileUri), if (w > 320) 640 else 320, fps, cfg.call,
+                    "$mhz  $mode", cfg.overlay).also { it.start() }
+                else -> CameraSource(ctx, cfg.source == SOURCE_BACK, if (w > 320) 640 else 320, cfg.call, "$mhz  $mode")
+                    .also { it.start() }
+            }
+        }
+
+        /** the microphone and / or the callsign in Morse every [cwPeriod] s, or the sound of the video [file] */
+        fun pcmSource(ctx: android.content.Context, cfg: Config, cwPeriod: Double, file: FileSource?): PcmSource {
+            if (cfg.sound == SOUND_FILE) return FilePcm(ctx, android.net.Uri.parse(cfg.fileUri),
+                file ?: throw java.io.IOException("sound from the video: the picture must be the video file"))
             val cw = if (cfg.sound == SOUND_CW || cfg.sound == SOUND_MIC_CW) CwId(cfg.call, cwPeriod) else null
             return if (cfg.sound == SOUND_CW) cwPcm(cw!!) else MicPcm(cw)
         }

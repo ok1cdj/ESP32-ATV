@@ -39,7 +39,8 @@ import android.widget.Spinner
 import android.widget.TextView
 
 /**
- * TX: a XIAO ESP32-C3 with the ESP32-DATV(-SA) firmware on USB-OTG sends the test card or the camera live as DVB-S2
+ * TX: a XIAO ESP32-C3 with the ESP32-DATV(-SA) firmware on USB-OTG sends the test card, the camera or a picture / video
+ * file live as DVB-S2
  * QPSK or 8PSK ([Transmitter], owned by [TxService] so that it goes on with the screen off). Licensed radio amateurs
  * only; the firmware accepts only 2300..2450 MHz.
  */
@@ -83,7 +84,13 @@ class TxActivity : Activity() {
     private lateinit var audioKbps: Spinner
     private val audioChoices = listOf(0, 8, 12, 16, 24, 32, 48, 64)    // 0 = auto
     private val kbpsChoices = listOf(0, 50, 75, 100, 150, 200, 300, 400)       // 0 = auto
-    private val loopChoices = listOf(10, 20, 30, 60)
+    private val loopChoices = listOf(10, 20, 30, 60, 0)                 // 0 = the length of the video file
+    private lateinit var overlay: CheckBox
+    private lateinit var fileLabel: TextView
+    private var fileUri: String = ""
+    /** the preview of the chosen file while TX is stopped (decoded off the UI thread) */
+    @Volatile private var filePreview: Painter? = null
+    private var filePreviewKey = ""
     private lateinit var loopSeconds: Spinner
     private lateinit var savePhase: TextView
     private lateinit var saveBar: ProgressBar
@@ -137,13 +144,18 @@ class TxActivity : Activity() {
         amp = edit(prefs.getInt("amp", 300).toString(), InputType.TYPE_CLASS_NUMBER)
         call = edit(prefs.getString("call", "")!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS).apply { hint = "callsign" }
         body.addView(row(label("call"), call, label("AMP"), amp))
-        source = spinner(listOf(Transmitter.SOURCE_CARD, Transmitter.SOURCE_BACK, Transmitter.SOURCE_FRONT),
-            prefs.getString("source", Transmitter.SOURCE_CARD)!!)
+        source = spinner(Transmitter.SOURCES, prefs.getString("source", Transmitter.SOURCE_CARD)!!)
         // auto (from the TS rate) or a fixed value, chosen from a list so that "auto" is always one tap away
         fun choice(v: Int) = if (v == 0) "auto" else v.toString()
         videoKbps = spinner(kbpsChoices.map(::choice), choice(prefs.getInt("videoKbps", 0)))
         fps = spinner(fpsChoices.map(::choice), choice(prefs.getInt("fps", 0)))
         body.addView(row(label("picture"), source, pilots))
+        // the file for the picture: the system's picker (no storage permission), kept across restarts
+        fileUri = prefs.getString("fileUri", "")!!
+        fileLabel = TextView(this).apply { textSize = 13f; isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.MIDDLE }
+        overlay = CheckBox(this).apply { text = "callsign"; isSingleLine = true; isChecked = prefs.getBoolean("overlay", true) }
+        body.addView(row(button("File…") { chooseFile() }, fileLabel, overlay))
+        showFile()
         body.addView(row(label("video kb/s"), videoKbps, label("fps"), fps))
         // sound: auto sends none below 80 kb/s of TS (the picture needs the bits), a value by hand always
         sound = spinner(Transmitter.SOUNDS, prefs.getString("sound", Transmitter.SOUND_OFF)!!)
@@ -152,7 +164,8 @@ class TxActivity : Activity() {
         startStop = button("Start TX") { if (tx == null) start() else stop() }
         body.addView(startStop, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = 8 })
         // a stand-alone beacon: the C3 keeps transmitting this loop by itself (QPSK, up to ~333 kS/s)
-        loopSeconds = spinner(loopChoices.map { "$it s" }, "${prefs.getInt("loopSeconds", 20)} s")
+        fun loopName(v: Int) = if (v == 0) "video" else "$v s"
+        loopSeconds = spinner(loopChoices.map(::loopName), loopName(prefs.getInt("loopSeconds", 20)))
         val save = button("Save as beacon in the C3") { saveBeacon() }.apply {
             background = GradientDrawable().apply { setColor(Color.rgb(0x5A, 0x3A, 0x8A)); cornerRadius = 16f }
         }
@@ -209,11 +222,17 @@ class TxActivity : Activity() {
             is UsbBoards.Pick.Missing -> return null.also { log(p.message) }
         }
         val src = source.selectedItem as String
-        if (src != Transmitter.SOURCE_CARD && checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+        if (isCamera(src) && checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(android.Manifest.permission.CAMERA), REQ_CAMERA)
             return null
         }
-        val snd = sound.selectedItem as String
+        var snd = sound.selectedItem as String
+        if (src == Transmitter.SOURCE_FILE) {
+            if (fileUri.isEmpty()) return null.also { log("choose the picture or video: File…") }
+            val i = try { FileSource.probe(this, android.net.Uri.parse(fileUri)) } catch (e: Exception) { return null.also { log("file: ${e.message}") } }
+            log("file ${i}")
+            if (snd == Transmitter.SOUND_FILE && !i.sound) { log("no sound in ${i.name}: sending none"); snd = Transmitter.SOUND_OFF }
+        } else if (snd == Transmitter.SOUND_FILE) return null.also { log("sound from the video: choose picture → ${Transmitter.SOURCE_FILE}") }
         if ((snd == Transmitter.SOUND_MIC || snd == Transmitter.SOUND_MIC_CW) &&
             checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), REQ_AUDIO)
@@ -242,9 +261,9 @@ class TxActivity : Activity() {
         prefs.edit().putString("freq", freq.text.toString()).putInt("sr", sr).putString("const", c).putString("fec", r)
             .putString("frame", frame.selectedItem as String).putBoolean("pilots", pilots.isChecked)
             .putInt("amp", a).putString("call", cs).putString("source", src).putInt("videoKbps", vk).putInt("fps", f)
-            .putString("sound", snd).putInt("audioKbps", ak).apply()
+            .putString("sound", sound.selectedItem as String).putInt("audioKbps", ak).putBoolean("overlay", overlay.isChecked).apply()
         val cfg = Transmitter.Config(Math.round(mhz * 1000), sr, r, shortFrame, pilots.isChecked, a, cs, cs, "$cs ESP32-ATV",
-            src, c, vk, f, snd, ak)
+            src, c, vk, f, snd, ak, fileUri, overlay.isChecked)
         Receiver.leandvbWarning(c, r, if (shortFrame) Receiver.FRAMES_SHORT else Receiver.FRAMES_NORMAL)
             ?.let { log(it.replace("leandvb does not decode", "leandvb-based receivers (this app, rx_dvbs2.py) do not decode")) }
         return cfg to dev
@@ -267,15 +286,23 @@ class TxActivity : Activity() {
         if (saving) return
         val (cfg, dev) = config(::saveBeacon) ?: return
         if (cfg.const != "QPSK") return log("the stand-alone loop is QPSK only")
-        val secs = loopChoices[loopSeconds.selectedItemPosition]
-        prefs.edit().putInt("loopSeconds", secs).apply()
+        val choice = loopChoices[loopSeconds.selectedItemPosition]
+        prefs.edit().putInt("loopSeconds", choice).apply()
+        // "video": as long as the video file (none of it cut)
+        val video = if (choice == 0) {
+            val i = if (cfg.source != Transmitter.SOURCE_FILE) null
+                else try { FileSource.probe(this, android.net.Uri.parse(cfg.fileUri)) } catch (e: Exception) { return log("file: ${e.message}") }
+            if (i == null || !i.video) return log("loop \"video\": the picture must be a video file")
+            i
+        } else null
+        val secs = video?.let { it.durationUs / 1e6 } ?: choice.toDouble()
         saving = true
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         savePhase.visibility = android.view.View.VISIBLE; saveBar.visibility = android.view.View.VISIBLE
         savePhase.text = "Starting…"; saveBar.progress = 0
-        val maker = LoopMaker(this, usbManager, dev, cfg, secs, { s -> runOnUiThread { log(s) } }) { text, f ->
+        val maker = LoopMaker(this, usbManager, dev, cfg, secs, { s -> runOnUiThread { log(s) } }, { text, f ->
             runOnUiThread { savePhase.text = text; saveBar.progress = (f * 1000).toInt().coerceIn(0, 1000) }
-        }
+        }, wholeVideo = video != null)
         loopMaker = maker
         Thread {
             try { maker.run() } catch (e: Exception) { runOnUiThread { log("beacon: ${e.message}"); savePhase.text = "Failed: ${e.message}" } }
@@ -296,6 +323,51 @@ class TxActivity : Activity() {
     }
 
     private fun stop() = service?.stopTx()
+
+    private fun isCamera(src: String) = src == Transmitter.SOURCE_BACK || src == Transmitter.SOURCE_FRONT
+
+    private fun chooseFile() {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+        }, REQ_FILE)
+    }
+
+    @Deprecated("the platform Activity has no Activity Result API")
+    override fun onActivityResult(code: Int, result: Int, data: Intent?) {
+        super.onActivityResult(code, result, data)
+        val uri = data?.data
+        if (code != REQ_FILE || result != RESULT_OK || uri == null) return
+        try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        catch (e: Exception) { log("file: cannot keep the permission (${e.message}); choose it again after a restart") }
+        fileUri = uri.toString()
+        prefs.edit().putString("fileUri", fileUri).apply()
+        source.setSelection(Transmitter.SOURCES.indexOf(Transmitter.SOURCE_FILE))
+        showFile()
+        try { log("file ${FileSource.probe(this, uri)}") } catch (e: Exception) { log("file: ${e.message}") }
+    }
+
+    /** the chosen file's name next to the button */
+    private fun showFile() {
+        fileLabel.text = if (fileUri.isEmpty()) "no file" else try { FileSource.probe(this, android.net.Uri.parse(fileUri)).name }
+            catch (_: Exception) { "file not readable" }
+    }
+
+    /** the preview of the file with the current callsign and switch, decoded once in the background per change */
+    private fun filePreview(): Painter? {
+        val cs = call.text.toString().trim().uppercase().ifEmpty { "CALLSIGN" }
+        val line = "${freq.text} MHz  DVB-S2 ${constel.selectedItem} ${fec.selectedItem}"
+        val key = "$fileUri|$cs|$line|${overlay.isChecked}"
+        if (key != filePreviewKey && fileUri.isNotEmpty()) {
+            filePreviewKey = key
+            val uri = android.net.Uri.parse(fileUri); val ov = overlay.isChecked
+            Thread {
+                filePreview = try { FileSource.still(this, uri, cs, line, ov) } catch (_: Exception) { null }
+            }.start()
+        }
+        return filePreview.takeIf { fileUri.isNotEmpty() }
+    }
 
     private var previewBitmap: Bitmap? = null
     private val tick = object : Runnable {
@@ -319,6 +391,7 @@ class TxActivity : Activity() {
                 t.video?.let { append("H.264 ${it.width}x${it.height} ${it.fps} fps  ${it.frames}${it.error?.let { e -> "  $e" } ?: ""}") }
                 t.audio?.let { append("\n${it.description}  ${it.frames}${it.error?.let { e -> "  $e" } ?: ""}") }
                 t.camera?.let { append("\ncamera ${it.size}  ${it.frames}${it.error?.let { e -> "  $e" } ?: ""}") }
+                t.file?.let { append("\nfile ${it.frames} frames  pass ${it.loops + 1}${it.error?.let { e -> "  $e" } ?: ""}") }
             }
             ui.postDelayed(this, 1000)
         }
@@ -327,8 +400,8 @@ class TxActivity : Activity() {
     /** preview: the picture source drawn again, 5 times a second */
     private val previewTick = object : Runnable {
         override fun run() {
-            // while TX runs the picture being sent; while stopped the test card with the current settings
-            val p = tx?.video?.painter ?: loopMaker?.painter ?: TestCard(call.text.toString().trim().uppercase().ifEmpty { "CALLSIGN" },
+            // while TX runs the picture being sent; while stopped the chosen file or the test card with the current settings
+            val p = tx?.video?.painter ?: loopMaker?.painter ?: (if (source.selectedItem == Transmitter.SOURCE_FILE) filePreview() else null) ?: TestCard(call.text.toString().trim().uppercase().ifEmpty { "CALLSIGN" },
                 "ESP32-ATV TX  ${freq.text} MHz", "DVB-S2 ${constel.selectedItem} ${fec.selectedItem}" +
                     "${if (frame.selectedItem == "short") " short" else ""}  ${rate.selectedItem}")
             val b = previewBitmap ?: Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888).also { previewBitmap = it }
@@ -374,5 +447,6 @@ class TxActivity : Activity() {
         private const val REQ_CAMERA = 2
         private const val REQ_NOTIFY = 3
         private const val REQ_AUDIO = 4
+        private const val REQ_FILE = 5
     }
 }

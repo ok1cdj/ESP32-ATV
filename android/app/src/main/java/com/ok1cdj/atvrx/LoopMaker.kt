@@ -8,15 +8,16 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * "Save as beacon": records [seconds] of the TX picture (test card or camera, the same chain as live TX: Canvas -> H.264
+ * "Save as beacon": records [seconds] of the TX picture (test card, camera or file, the same chain as live TX: Canvas -> H.264
  * -> TS) in real time, encodes it as a stand-alone loop - QPSK, whole TS packets per BBFRAME so that the loop joins up,
  * the first packet's CRC slot from the last one - and stores it in the C3's "video" partition (VIDW). The header
  * (DATVVID1 version 3, ESP32-ATV's fork) carries symbol rate, MODCOD, frame size, pilots, service, frequency and level:
- * the C3 then transmits it by itself after every power-up, without the phone.
+ * the C3 then transmits it by itself after every power-up, without the phone. With [wholeVideo] the loop lasts [seconds]
+ * rounded up to whole frames (a video's length: none of it cut), as much as the flash holds.
  */
 class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, private val device: UsbDevice,
-                private val cfg: Transmitter.Config, private val seconds: Int, private val log: (String) -> Unit,
-                private val progress: (String, Double) -> Unit = { _, _ -> }) {
+                private val cfg: Transmitter.Config, private val seconds: Double, private val log: (String) -> Unit,
+                private val progress: (String, Double) -> Unit = { _, _ -> }, private val wholeVideo: Boolean = false) {
     @Volatile var painter: Painter? = null; private set
 
     /** Runs on the caller's thread (minutes at most); throws with the reason on failure. */
@@ -30,8 +31,14 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
             val fs = enc.frameSymbols
             val ppf = enc.packetsPerFrame
             val tsRate = ppf * 1504.0 * baud / fs
-            val nframes = (seconds * baud / fs).toInt() / 2 * 2             // the firmware wants an even number of frames
+            val maxFrames = ((PARTITION - HEADER - TAIL) * 4L / fs).toInt() / 2 * 2
+            var nframes = if (wholeVideo) (Math.ceil(seconds * baud / fs).toInt() + 1) / 2 * 2
+                else (seconds * baud / fs).toInt() / 2 * 2                      // the firmware wants an even number of frames
             if (nframes < 2) throw IOException("too short")
+            if (wholeVideo && nframes > maxFrames) {
+                nframes = maxFrames
+                log("the video is longer than the C3's flash holds at this rate: only its first %.1f s".format(nframes * fs / baud))
+            }
             val npk = nframes * ppf
             val nsym = nframes * fs
             if (HEADER + nsym / 4 + TAIL > PARTITION) throw IOException("too long for the flash: fewer seconds")
@@ -49,16 +56,14 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
             val (w, h) = if (videoBps < 80_000) 320 to 180 else if (videoBps < 200_000) 480 to 270 else 640 to 360
             val fps = if (cfg.fps > 0) cfg.fps else if (videoBps < 80_000) 5 else if (videoBps < 200_000) 10 else 15
             val mode = "DVB-S2 QPSK ${cfg.rate}${if (cfg.shortFrame) " short" else ""}  %.1f kS/s".format(java.util.Locale.ROOT, baud / 1e3)
-            var camera: CameraSource? = null
-            val p: Painter = if (cfg.source == Transmitter.SOURCE_CARD)
-                TestCard(cfg.call, "ESP32-ATV beacon  %.3f MHz".format(java.util.Locale.ROOT, cfg.freqKhz / 1000.0), mode)
-            else CameraSource(ctx, cfg.source == Transmitter.SOURCE_BACK, if (w > 320) 640 else 320, cfg.call,
-                "%.3f MHz  %s".format(java.util.Locale.ROOT, cfg.freqKhz / 1000.0, mode)).also { camera = it; it.start() }
+            val p = Transmitter.picture(ctx, cfg, w, fps, "ESP32-ATV beacon", mode)
+            val live = p as? LivePainter
+            (p as? FileSource)?.let { log("file ${it.info}") }
             painter = p
             val video = CanvasEncoder(w, h, fps, videoBps, 2, p) { au, key, us -> m.addAu(au, key, us) }
             video.start()
             // the callsign in Morse once per loop
-            val audio = if (audioBps > 0) AacEncoder(audioBps, Transmitter.pcmSource(cfg, nsym / baud)) { f, us, dur -> m.addAudio(f, us, dur) }
+            val audio = if (audioBps > 0) AacEncoder(audioBps, Transmitter.pcmSource(ctx, cfg, nsym / baud, p as? FileSource)) { f, us, dur -> m.addAudio(f, us, dur) }
                 .also { it.start(); log("sound ${cfg.sound}: ${it.description}") } else null
             log("recording ${w}x$h $fps fps ${videoBps / 1000} kb/s for %.1f s…".format(npk * 1504.0 / tsRate))
             try {
@@ -70,13 +75,13 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
                     m.next(ts, 188 * i)
                     if (i % 64 == 0) progress("Recording the picture… %.0f / %.0f s".format(i * 1504.0 / tsRate, npk * 1504.0 / tsRate), 0.8 * i / npk)
                     video.error?.let { throw IOException(it) }
-                    camera?.error?.let { throw IOException(it) }
+                    live?.error?.let { throw IOException(it) }
                     audio?.error?.let { throw IOException(it) }
                 }
             } finally {
                 video.stop()
                 audio?.stop()
-                camera?.stop()
+                live?.stop()
                 painter = null
             }
             log("recorded: video %.0f kb/s, sound %.0f kb/s, %d frames dropped".format(m.videoBytes * 8 / m.time / 1e3,
