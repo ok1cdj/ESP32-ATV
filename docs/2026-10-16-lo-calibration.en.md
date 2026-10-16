@@ -73,4 +73,7 @@ transmitting). The app tells the two 303a:1001 boards apart by their USB serial 
 once and remembers it. The C3 warms up (60 s by default), the tone is found, the search runs (live level in dB), *Save*
 stores the result in the C3 (`BDC PUT`) and in the app (by MAC and frequency). A firmware upload from the app leaves the
 table in the C3 (it does not touch the NVS); if it is gone anyway, the app puts its copy back. The TX screen takes the
-C3's value for its frequency (`BDC GET f`).
+C3's value for its frequency (`BDC GET f`). Unlike Linux, Android does not reset the C3 when the app opens its port
+(checked: the ROM's boot lines do not come), so as long as the C3 stays powered on the hub, a calibration in the app
+holds for the transmissions after it in full; after a power cycle only the ~9 dB of a stored value remain.
+Tried on the phone (OnePlus 10 Pro, a hub, 2026-10-16): both boards identified, 12.8 dB in one run, stored in the C3.

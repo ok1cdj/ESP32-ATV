@@ -179,7 +179,8 @@ you set (no modulation, the PA off – still a transmission: licensed radio amat
 distance apart so that the S3 is not overloaded. After the warm-up (60 s: the C3's frequency drifts after it starts) the
 search takes about 20 s and typically takes 20 dB off; *Save* stores it in the C3 (for that frequency) and in the app.
 The leakage moves each time the C3 starts (by about 2 DAC codes), so a stored value is worth less, about 9 dB: for the
-best result calibrate just before transmitting and leave the C3 plugged in. A firmware upload from the app keeps the
+best result calibrate just before transmitting and leave the C3 plugged in (the app does not reset it, so the
+calibration holds until the C3 loses power). A firmware upload from the app keeps the
 stored values. Details and measurements: [LO calibration](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-10-16-lo-calibration.en.md).
 
 ## Troubleshooting

@@ -173,6 +173,7 @@ class CalibrationActivity : Activity() {
             Thread.sleep(1200)                                          // opening the port may reset the C3
             link.info() ?: throw IOException("no ESP32-DATV answer from the C3")
             link.fw?.let { log("C3 $it") }
+            log(if (link.booted) "the C3 was reset by opening its port" else "the C3 was not reset by opening its port")
             val st = link.dc(mhz) ?: (0.0 to 0.0)
             if (!bdc(link, "BDC TEST on %.3f".format(java.util.Locale.ROOT, mhz)).contains("TEST 1"))
                 throw IOException("the C3's firmware has no BDC TEST: write the current one (menu → Firmware)")

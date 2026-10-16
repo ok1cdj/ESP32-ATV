@@ -94,6 +94,8 @@ class C3Link(private val usb: UsbCdc) : AutoCloseable {
     /** after info(): the firmware's VIDW line ("VIDW 1 VIDEO ..."; null: no VIDW command) and FW line */
     @Volatile var vidw: String? = null; private set
     @Volatile var fw: String? = null; private set
+    /** after info(): the ROM's boot lines came before the answer, i.e. opening the port reset the C3 */
+    @Volatile var booted = false; private set
 
     /** lines not consumed by waitLine, for the log */
     val lines = java.util.Collections.synchronizedList(ArrayList<String>())
@@ -108,6 +110,7 @@ class C3Link(private val usb: UsbCdc) : AutoCloseable {
         val beacon = waitLine(300) { it.startsWith("BEACON ") }
         vidw = waitLine(300) { it.startsWith("VIDW ") }
         fw = lines.lastOrNull { it.startsWith("FW ") }
+        booted = lines.any { it.startsWith("ESP-ROM") || it.startsWith("rst:") }
         return id to beacon
     }
 

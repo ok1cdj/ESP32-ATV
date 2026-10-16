@@ -171,7 +171,7 @@ pamatuje si to). C3 vysílá jen svůj únik na nastaveném kmitočtu (bez modul
 s koncesí), antény měj kus od sebe, aby se S3 nepřebudil. Po zahřátí (60 s: kmitočet C3 po startu ujíždí) trvá hledání
 asi 20 s a typicky ubere 20 dB; *Save* ho uloží do C3 (pro ten kmitočet) i do aplikace. Únik se při každém startu C3
 posune (asi o 2 kódy DAC), takže uložená hodnota dá méně, asi 9 dB: nejlepší je kalibrovat těsně před vysíláním a C3
-mezitím neodpojovat. Nahrání firmwaru z aplikace uložené hodnoty zachová. Podrobnosti a měření:
+mezitím neodpojovat (aplikace ho neresetuje, kalibrace tedy platí, dokud C3 nepřijde o napájení). Nahrání firmwaru z aplikace uložené hodnoty zachová. Podrobnosti a měření:
 [kalibrace LO](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-10-16-lo-calibration.cs.md).
 
 ## Řešení problémů

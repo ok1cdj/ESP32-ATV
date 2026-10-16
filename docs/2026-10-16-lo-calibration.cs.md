@@ -69,4 +69,7 @@ Menu ⋮ → *Transmitter calibration (S3 + C3)*: obě desky na USB přes hub (n
 rozliší dvě desky 303a:1001 podle sériového čísla USB (MAC), jednou zjistí, která je která, a pamatuje si to. C3 se zahřeje
 (výchozí 60 s), najde se tón, proběhne hledání (živá úroveň v dB), *Save* uloží výsledek do C3 (`BDC PUT`) i do aplikace
 (podle MAC a kmitočtu). Nahrání firmwaru z aplikace tabulku v C3 nechá (NVS nemaže); kdyby přesto zmizela, aplikace ji
-vrátí ze své kopie. Obrazovka TX bere hodnotu C3 pro svůj kmitočet (`BDC GET f`).
+vrátí ze své kopie. Obrazovka TX bere hodnotu C3 pro svůj kmitočet (`BDC GET f`). Na rozdíl od Linuxu Android při
+otevření portu C3 neresetuje (ověřeno: bootovací hlášky ROM nepřijdou), takže dokud C3 zůstane napájený na hubu, platí
+kalibrace z aplikace pro následná vysílání naplno; po odpojení napájení zbude jen ~9 dB uložené hodnoty.
+Vyzkoušeno na telefonu (OnePlus 10 Pro, hub, 16. 10. 2026): obě desky rozpoznány, 12,8 dB v jednom běhu, uloženo do C3.
