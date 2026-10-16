@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="18 18 72 72" width="128" height="128">
+  <!-- the app's launcher icon (android/app/src/main/res/drawable/ic_launcher_foreground.xml) -->
+  <rect x="18" y="18" width="72" height="72" rx="16" fill="#16181D"/>
+  <path fill="#FFFFFF" d="M30,40h48a4,4 0,0 1,4 4v28a4,4 0,0 1,-4 4H30a4,4 0,0 1,-4 -4V44a4,4 0,0 1,4 -4z"/>
+  <path fill="#1E5AA8" d="M31,45h46v26H31z"/>
+  <path fill="#FFD60A" d="M31,45h9.2v18H31z"/>
+  <path fill="#30D158" d="M40.2,45h9.2v18h-9.2z"/>
+  <path fill="#5AC8FA" d="M49.4,45h9.2v18h-9.2z"/>
+  <path fill="#FF375F" d="M58.6,45h9.2v18h-9.2z"/>
+  <path fill="#BF5AF2" d="M67.8,45H77v18h-9.2z"/>
+  <path fill="#FFFFFF" d="M53,40l-9,-10 2.2,-2 8.8,9.8 8.8,-9.8 2.2,2 -9,10z"/>
+</svg>

@@ -1,6 +1,21 @@
+<img src="docs/img/icon.svg" alt="ATV RX/TX icon" width="96" align="right">
+
 # ESP32-ATV
 
 [![Android APK](https://github.com/ok1cdj/ESP32-ATV/actions/workflows/android.yml/badge.svg)](https://github.com/ok1cdj/ESP32-ATV/actions/workflows/android.yml)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Become%20a%20Supporter-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/ok1cdj)
+
+> [!WARNING]
+> **This equipment transmits on the 13 cm amateur radio band (2.3–2.45 GHz). Using it requires an amateur radio
+> licence.** Transmit only with your own callsign, on frequencies and at power levels your licence and national band
+> plan allow (2340 MHz lies in the ATV segment of the IARU Region 1 band plan). The 2.4 GHz part of the band is shared
+> with Wi-Fi and other services – without a licence, transmitting here is illegal and can disturb other users. The
+> receiver alone needs no licence.
+>
+> **Zařízení vysílá v radioamatérském pásmu 13 cm (2,3–2,45 GHz). K vysílání je nutné platné oprávnění
+> (koncese) radioamatéra.** Vysílejte jen se svou značkou, na kmitočtech a s výkonem, které vaše oprávnění a národní
+> kmitočtový plán dovolují. Bez koncese je vysílání nezákonné a může rušit ostatní uživatele pásma (Wi-Fi apod.).
+> Samotný příjem koncesi nevyžaduje.
 
 DATV on 13 cm with ESP32 boards: a stand-alone **ESP32-C3 DVB-S2 beacon** and **ATV RX/TX**, a receiver made of a
 **XIAO ESP32-S3** on USB-OTG and an **Android** phone or tablet (beta). The app also **transmits** through a XIAO
@@ -8,7 +23,9 @@ ESP32-C3 on USB-OTG: test card or camera, DVB-S2 QPSK / 8PSK encoded on the phon
 
 - **Guide / návod:** <https://ok1cdj.github.io/ESP32-ATV/> ([English](docs/rx-android.en.md), [česky](docs/rx-android.cs.md))
 - **APK:** [Releases](https://github.com/ok1cdj/ESP32-ATV/releases) ([changelog](CHANGELOG.md)) · **S3 firmware:** [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/)
-- Licensed radio amateurs only. GNU GPL v3 ([LICENSE](LICENSE)); third-party parts keep their licences (below).
+- **Transmitting: licensed radio amateurs only** (see above). GNU GPL v3 ([LICENSE](LICENSE)); third-party parts keep their licences (below).
+
+<p align="center"><img src="docs/img/atvrx-rx-tx.png" alt="ATV RX/TX on Android: receiving the ESP32-C3 beacon (RX) and transmitting a test card through the ESP32-C3 (TX)" width="640"></p>
 
 ```
 XIAO ESP32-C3 (ESP32-DATV-SA beacon, DVB-S2 QPSK 3/4, 40–500 kS/s, 2340.000 MHz)
@@ -22,6 +39,23 @@ XIAO ESP32-S3 (ESP32-DATV-RX firmware: radio dump 16 MS/s -> 500 ksps cs4 / 333 
 | TX firmware | [ok1cdj/ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA), fork of [barisdinc/ESP32-DATV-SA](https://github.com/barisdinc/ESP32-DATV-SA) (`third_party/`) | PolyForm Noncommercial |
 | RX firmware + PC receiver | [ok1cdj/ESP32-DATV-RX](https://github.com/ok1cdj/ESP32-DATV-RX), fork of [barisdinc/ESP32-DATV-RX](https://github.com/barisdinc/ESP32-DATV-RX) (`third_party/`) | BSD-3 / 0BSD, leansdr GPL-3 |
 | Android app, scripts | this repository (`android/`, `tx/`, `rx/`) | GPL-3 |
+
+## Credits
+
+This project stands on the work of others – thank you:
+
+- **SP8ESA** – [ESP32-DATV](https://github.com/SP8ESA/ESP32-DATV): the idea and the DVB-S / DVB-S2 modulator that
+  transmits with the ESP32-C3's own Wi-Fi RF hardware.
+- **Baris Dinc** – [ESP32-DATV-SA](https://github.com/barisdinc/ESP32-DATV-SA) (stand-alone beacon) and
+  [ESP32-DATV-RX](https://github.com/barisdinc/ESP32-DATV-RX) (the receive chain on the PC).
+- **h0m3us3r** – [eSpDR](https://github.com/h0m3us3r/eSpDR): the ESP32-S3 radio dump at 16 MS/s used as an SDR.
+- **Jochen Hammes** – [esp32-sdr-trx](https://github.com/jochenhammes/esp32-sdr-trx): the one-board receiver firmware.
+- **pabr** – [leansdr / leandvb](https://github.com/pabr/leansdr): the DVB-S2 demodulator.
+- **Ahmet Inan** – [LDPC](https://github.com/xdsopl/LDPC) and **Blockstream** – [its fork](https://github.com/Blockstream/LDPC):
+  `ldpc_tool` and the DVB-S2 LDPC tables used by our encoder.
+- **lieff** – [minimp3](https://github.com/lieff/minimp3): MP2 / MP3 sound decoding.
+
+If you like the project: [Buy Me a Coffee](https://buymeacoffee.com/ok1cdj) ☕
 
 ## Forks
 

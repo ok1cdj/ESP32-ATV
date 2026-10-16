@@ -8,8 +8,13 @@ with MER, constellation and stream information. Its counterpart is the stand-alo
 ([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)) – and the same app also **transmits**: with a XIAO
 ESP32-C3 on USB-OTG it sends a test card or the phone's camera live as DVB-S2 (switch **RX | TX** at the top).
 
-> **Beta.** Transmitting is for licensed radio amateurs only, on frequencies allowed by your licence and band plan.
-> The receiver is free software under the GNU GPL v3.
+> ⚠ **The transmitter works on the 13 cm amateur radio band (2.3–2.45 GHz). Transmitting requires an amateur radio
+> licence.** Transmit only with your own callsign, on frequencies and at power levels your licence and national band
+> plan allow (2340 MHz lies in the ATV segment of the IARU Region 1 band plan). The band around 2.4 GHz is shared with
+> Wi-Fi and other services – without a licence, transmitting is illegal and disturbs others. Receiving alone needs no
+> licence.
+
+> **Beta.** The app is free software under the GNU GPL v3.
 
 ![ATV RX/TX on a phone: the beacon picture, reception status, spectrum and constellation](img/atvrx-app.png)
 

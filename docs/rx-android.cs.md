@@ -8,8 +8,12 @@ spolu s MER, konstelací a údaji o streamu. Protějškem je samostatný maják 
 ([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)) – a stejná aplikace také **vysílá**: s XIAO ESP32-C3 na
 USB-OTG posílá živě testkartu nebo obraz z kamery telefonu jako DVB-S2 (přepínač **RX | TX** nahoře).
 
-> **Beta.** Vysílat smí jen radioamatéři s platným oprávněním, na kmitočtech podle národních podmínek a band plánu.
-> Přijímač je ke stažení zdarma pod GNU GPL v3.
+> ⚠ **Vysílá se v radioamatérském pásmu 13 cm (2,3–2,45 GHz). K vysílání je nutné platné oprávnění (koncese)
+> radioamatéra.** Vysílej jen se svou značkou, na kmitočtech a s výkonem, které tvé oprávnění a národní kmitočtový
+> plán dovolují (2340 MHz leží v ATV segmentu band plánu IARU 1. oblasti). Část pásma kolem 2,4 GHz sdílí Wi-Fi a další
+> služby – bez koncese je vysílání nezákonné a ruší ostatní. Samotný příjem koncesi nevyžaduje.
+
+> **Beta.** Aplikace je ke stažení zdarma pod GNU GPL v3.
 
 ![ATV RX/TX na telefonu: obraz majáku, stav příjmu, spektrum a konstelace](img/atvrx-app.png)
 
