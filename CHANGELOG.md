@@ -2,7 +2,7 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
-## Unreleased
+## 0.11-beta – 2026-10-16
 
 ### TX: your own picture or video (users' request)
 - **Picture → picture / video file** (live TX and *Save as beacon*): **File…** picks a picture or video from the phone

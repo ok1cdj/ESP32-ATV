@@ -19,7 +19,7 @@
 
 DATV on 13 cm with ESP32 boards: a stand-alone **ESP32-C3 DVB-S2 beacon** and **ATV RX/TX**, a receiver made of a
 **XIAO ESP32-S3** on USB-OTG and an **Android** phone or tablet (beta). The app also **transmits** through a XIAO
-ESP32-C3 on USB-OTG: test card or camera, DVB-S2 QPSK / 8PSK encoded on the phone (`android/native/dvbs2enc`).
+ESP32-C3 on USB-OTG: test card, camera or a picture / video file, DVB-S2 QPSK / 8PSK encoded on the phone (`android/native/dvbs2enc`).
 
 - **Guide / návod:** <https://ok1cdj.github.io/ESP32-ATV/> ([English](docs/rx-android.en.md), [česky](docs/rx-android.cs.md))
 - **APK:** [Releases](https://github.com/ok1cdj/ESP32-ATV/releases) ([changelog](CHANGELOG.md)) · **S3 firmware:** [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/)
@@ -88,8 +88,8 @@ on another frequency, keep the carrier a few hundred kHz away from them. 2340.00
 
 ## Transmitter – XIAO ESP32-C3
 **For everyone:** the firmware from the web (the app's menu ⋮ → Firmware, or the [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/))
-transmits nothing until a beacon is stored: the app's TX screen → *Save as beacon in the C3* (records the test card or
-the camera with your settings and stores the loop; the C3 then transmits it by itself), or from a PC:
+transmits nothing until a beacon is stored: the app's TX screen → *Save as beacon in the C3* (records the test card, the
+camera or your picture / video with your settings and stores the loop; the C3 then transmits it by itself), or from a PC:
 ```sh
 python3 tx/make_flash_loop.py video.mp4 --baud 40000 --frame short --call YOURCALL --freq 2345 --amp 300 -o loop.bin
 third_party/ESP32-DATV-RX/.venv/bin/python tx/c3_vidw.py loop.bin     # VIDW over USB (TX_PORT of boards.sh); --erase removes it
@@ -140,8 +140,8 @@ cd android && ./gradlew assembleDebug
 ```
 
 ## Transmitter – Android (TX)
-Switch **RX | TX** in the app, the C3 on OTG instead of the S3: test card or camera → H.264, microphone and / or the
-callsign in Morse → AAC (HE-AAC at low rates) → TS (time stamps from the capture clock) → our DVB-S2 encoder
+Switch **RX | TX** in the app, the C3 on OTG instead of the S3: test card, camera or a picture / video
+file → H.264, microphone and / or the callsign in Morse or the video's sound → AAC (HE-AAC at low rates) → TS (time stamps from the capture clock) → our DVB-S2 encoder
 (`android/native/dvbs2enc`, C, GPL) → the C3's PC streaming mode. See the [guide](docs/rx-android.en.md#5-transmitting-from-the-phone-tx-beta).
 On a PC: `tx/tx_s2enc.py TS_FILE` streams a TS through the C3 with the same encoder; `rx/test_dvbs2enc.py` checks the
 encoder bit for bit against ESP32-DATV's encoders and decodes it with leandvb. `tx/mux_selftest.sh` (debug build)
