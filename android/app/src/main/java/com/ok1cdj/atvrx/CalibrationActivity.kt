@@ -260,7 +260,14 @@ class CalibrationActivity : Activity() {
                 try {
                     Thread.sleep(1200)
                     link.info() ?: throw IOException("no answer from the C3")
-                    if (!link.dcPut(resultMhz, i, q)) throw IOException("the C3 did not store it (table full? firmware without BDC PUT?)")
+                    if (!link.dcPut(resultMhz, i, q)) {
+                        // firmware without BDC PUT: BDC SAVE stores for the frequency of BDC TEST (the leakage alone for a moment)
+                        log("no BDC PUT in the C3's firmware: storing it with BDC TEST + SAVE")
+                        bdc(link, "BDC TEST on %.3f".format(java.util.Locale.ROOT, resultMhz))
+                        bdc(link, "BDC %.3f %.3f".format(java.util.Locale.ROOT, i, q))
+                        bdc(link, "BDC SAVE")
+                        try { bdc(link, "BDC TEST off") } catch (_: IOException) {}
+                    }
                     link.dcTable()?.let { t -> log("C3 table: " + t.joinToString { "%.3f MHz %.3f %.3f".format(it.first, it.second, it.third) }) }
                     link.command("INFO")                                       // the beacon does not start
                 } finally { link.close() }
