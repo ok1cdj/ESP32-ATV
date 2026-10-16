@@ -2,6 +2,37 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## 0.10-beta – 2026-10-16
+
+### Transmitter calibration (the C3's carrier leakage)
+- **In the app:** menu ⋮ → *Transmitter calibration (S3 + C3)* with **both boards on a USB hub**: the C3 sends its
+  leakage alone, the S3 measures it, the search takes about 20 s after a warm-up and typically takes 20 dB off; *Save*
+  stores it in the C3 (for that frequency) and in the app. Android does not reset the C3 when the app opens it, so the
+  calibration holds until the C3 loses power; after a power cycle a stored value is worth about 9 dB (the leakage moves
+  by about 2 DAC codes from one start of the C3 to the next). Details: `docs/2026-10-16-lo-calibration.en.md`.
+- **Two boards on a hub:** the S3 and the C3 (both 303a:1001) are told apart by their USB serial number (MAC), found out
+  once and remembered; RX, TX, the firmware screen (asks which one) and the calibration pick theirs. One board alone
+  works as before.
+- A firmware upload from the app keeps the C3's correction table and restores it from the app if it is gone; TX takes
+  the C3's correction for its frequency.
+- **C3 firmware** (fork ESP32-DATV-SA, on the web for the app's and the web flasher): `BDC TEST on [f] | off` (the
+  leakage alone, PA off, never saved, off after 120 s without a command), a correction table by frequency in NVS
+  (`BDC SAVE`, `PUT`, `LIST`, `GET [f]`, interpolated), new corrections in TEST without restarting the transmitter.
+- **PC:** `rx/cal_dc.py --mode test` (20 s instead of 1.5–2 min; `--boots N` averages N starts, `--freqs`, `--eval`,
+  `--log`); the search in `rx/dccal/core.py` (a bowl fitted in dB) and in the app (`DcCalibrator.kt`), both tested on
+  the same vectors, also runs recorded on the board. The old method (`rx/cal_dc.py` without `--mode`) stays.
+
+### Frequency 2345.000 MHz
+- The XIAO ESP32-S3's PLL has a line of its own exactly on every multiple of 20 MHz (2320, 2340, 2360 MHz: 12–28 dB
+  above the noise), which at 2340.000 MHz lay inside the signal. `ATV_FREQ`, the app's default and presets and the loop
+  tools now use **2345.000 MHz** (ATV segment 2322–2355 MHz). The app keeps a frequency you saved: choose a preset.
+- Bench, 40 kS/s short, QPSK 3/4: decodes down to AMP 9 (−30.5 dB; 2 % bad frames), not at AMP 6 – there the leakage
+  is stronger than the signal.
+
+### Other
+- README and the guides: transmitting needs an amateur radio licence (in bold, EN / CZ), credits to the projects this
+  builds on, Buy Me a Coffee; About in the app: the same, with the licences of the C3 firmware.
+
 ## 0.9-beta – 2026-10-15
 
 ### Sound
