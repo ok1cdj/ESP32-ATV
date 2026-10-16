@@ -49,8 +49,8 @@ object DcStore {
  * Transmitter calibration: nulls the C3's carrier leakage with the S3, both on USB through a hub. The C3 transmits its
  * leakage alone (BDC TEST on f: no modulation, the PA off), the S3 measures the tone (ToneMeter) and DcCalibrator
  * searches the correction (rx/dccal/core.py's algorithm); Save stores it in the C3's table for f (BDC PUT) and in the app.
- * The leakage moves by about 1.5 codes from one start of the C3 to the next, so a stored value is typically worth about
- * 16 dB, a calibration in the same session about 20 dB.
+ * The leakage moves by about 2 codes from one start of the C3 to the next (docs/2026-10-16-lo-calibration.en.md), so a
+ * stored value is typically worth about 9 dB, a calibration in the same session about 20 dB.
  */
 class CalibrationActivity : Activity() {
     private val usbManager by lazy { getSystemService(USB_SERVICE) as UsbManager }
@@ -83,8 +83,8 @@ class CalibrationActivity : Activity() {
                 "• The C3 transmits only its leakage on the frequency below (no modulation, PA off) – licensed radio amateurs only.\n" +
                 "• Antennas some distance apart or an attenuator in between: the S3 must not be overloaded.\n" +
                 "• The C3 warms up first (its frequency drifts for about a minute after it starts).\n" +
-                "The leakage moves a little each time the C3 starts: a saved value typically takes off about 16 dB, " +
-                "a calibration just before transmitting about 20 dB."
+                "The leakage moves each time the C3 starts: a saved value typically takes off about 9 dB, " +
+                "a calibration just before transmitting (without unplugging the C3) about 20 dB."
             textSize = 13f
         })
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }

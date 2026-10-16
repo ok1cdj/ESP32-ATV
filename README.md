@@ -116,13 +116,19 @@ normal frames is usually lost), at the same threshold (QPSK 3/4: Es/N0 ≈ 4.5 d
 [short frames](docs/2026-10-15-short-frames.en.md).
 
 ### DC correction (carrier leakage)
-The C3 leaks its carrier (a tone in the middle of the signal) at a fixed level, which limits reception at low levels.
-Calibrate with the receiver (S3 on the PC), **once per frequency** – the leakage and its correction depend on it:
+The C3 leaks its carrier (a tone in the middle of the signal, about −34 dBc) at a fixed level, which limits reception at
+low levels. Calibrate it with the receiver (S3 on the PC, or both boards on a hub with the app: menu ⋮ → *Transmitter
+calibration*). The new method transmits the leakage alone (`BDC TEST`, firmware of 2026-10-16) and takes about 20 s:
 ```sh
-AMP=13 tx/make_beacons.sh 40000 && tx/flash_tx.sh tx/beacons/<call>-40k   # low level: the leakage stands out
-third_party/ESP32-DATV-RX/.venv/bin/python rx/cal_dc.py --save            # BDC i q -> measure -> fit; saved in the C3 (NVS) and tx/cal_c3.json
+PY=third_party/ESP32-DATV-RX/.venv/bin/python
+$PY rx/cal_dc.py --mode test                    # ATV_FREQ, about 20 dB off; the result only
+$PY rx/cal_dc.py --mode test --boots 5 --save   # the mean of 5 starts of the C3 into its table (NVS) and tx/cal_c3.json
 ```
-`tx/make_beacons.sh` then bakes `tx/cal_c3.json` into every beacon. By hand: `BDC [i q | SAVE | RESET]` on the C3's USB.
+The leakage moves by about 2 DAC codes each time the C3 starts, hardly with the frequency: a stored value takes off about
+9 dB, a calibration just before transmitting about 20 dB ([LO calibration](docs/2026-10-16-lo-calibration.en.md)).
+The old method, the beacon at a low level, is still there: `AMP=13 tx/make_beacons.sh 40000 && tx/flash_tx.sh
+tx/beacons/<call>-40k`, then `$PY rx/cal_dc.py --save`. `tx/make_beacons.sh` bakes `tx/cal_c3.json` into every beacon.
+By hand on the C3's USB: `BDC [GET [f] | i q | SAVE | PUT f i q | LIST | RESET | TEST on [f] | off]`.
 
 ## Receiver – Android (ATV RX/TX)
 See the [guide](docs/rx-android.en.md). Build it yourself:

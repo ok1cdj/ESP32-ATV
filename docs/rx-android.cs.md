@@ -162,6 +162,18 @@ s PC). C3 potřebuje firmware vysílače (kapitola 1); příkaz z USB zastaví b
   zvukem: 333 kS/s kamera + mikrofon (AAC 64 kb/s), 66,7 kS/s CW ID (HE-AAC 24 kb/s), 40 kS/s mikrofon + CW ID při
   12 kb/s, uložený maják s CW ID; PC (`rx/rx.sh`) přehrává zvuk taky.
 
+### Kalibrace vysílače (S3 + C3 na hubu)
+
+C3 propouští svou nosnou: tón uprostřed signálu (asi −34 dBc), který při nízké úrovni omezuje příjem. Aplikace ho
+vynuluje s S3 jako měřicím přijímačem: připoj **obě desky přes USB hub** (lépe napájený) a zvol menu ⋮ → *Transmitter
+calibration (S3 + C3)*. Poprvé se zeptá na přístup k oběma a zjistí, která je která (podle MAC v sériovém čísle USB;
+pamatuje si to). C3 vysílá jen svůj únik na nastaveném kmitočtu (bez modulace, bez PA – i tak je to vysílání: jen
+s koncesí), antény měj kus od sebe, aby se S3 nepřebudil. Po zahřátí (60 s: kmitočet C3 po startu ujíždí) trvá hledání
+asi 20 s a typicky ubere 20 dB; *Save* ho uloží do C3 (pro ten kmitočet) i do aplikace. Únik se při každém startu C3
+posune (asi o 2 kódy DAC), takže uložená hodnota dá méně, asi 9 dB: nejlepší je kalibrovat těsně před vysíláním a C3
+mezitím neodpojovat. Nahrání firmwaru z aplikace uložené hodnoty zachová. Podrobnosti a měření:
+[kalibrace LO](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-10-16-lo-calibration.cs.md).
+
 ## Řešení problémů
 
 | příznak | co zkusit |

@@ -169,6 +169,19 @@ beacon and starts the live mode.
   sound: 333 kS/s camera + microphone (AAC 64 kb/s), 66.7 kS/s CW ID (HE-AAC 24 kb/s), 40 kS/s mic + CW ID at 12 kb/s,
   a stored beacon with CW ID; the PC (`rx/rx.sh`) plays the sound too.
 
+### Transmitter calibration (S3 + C3 on a hub)
+
+The C3 leaks its carrier: a tone in the middle of the signal (about −34 dBc) that limits reception at low levels. The
+app nulls it with the S3 as the measuring receiver: connect **both boards through a USB hub** (a powered one is better)
+and choose menu ⋮ → *Transmitter calibration (S3 + C3)*. The first time it asks for access to both and finds out which
+is which (by the MAC in the USB serial number; it remembers it). The C3 transmits only its leakage on the frequency
+you set (no modulation, the PA off – still a transmission: licensed radio amateurs only), keep the antennas some
+distance apart so that the S3 is not overloaded. After the warm-up (60 s: the C3's frequency drifts after it starts) the
+search takes about 20 s and typically takes 20 dB off; *Save* stores it in the C3 (for that frequency) and in the app.
+The leakage moves each time the C3 starts (by about 2 DAC codes), so a stored value is worth less, about 9 dB: for the
+best result calibrate just before transmitting and leave the C3 plugged in. A firmware upload from the app keeps the
+stored values. Details and measurements: [LO calibration](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-10-16-lo-calibration.en.md).
+
 ## Troubleshooting
 
 | symptom | try |
