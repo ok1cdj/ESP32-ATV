@@ -1,9 +1,23 @@
 {
   "iq_gain": 1.0,
   "iq_phase_deg": 0.0,
-  "note": "Carrier leakage of our XIAO ESP32-C3, nulled with rx/cal_dc.py on 2026-10-14 (+23.1 -> +2.2 dB against the signal around it).",
+  "note": "Carrier leakage of our XIAO ESP32-C3 at 2340 MHz: the mean of 7 starts of the C3 calibrated with rx/cal_dc.py --mode test on 2026-10-16 (the null moves by 2.1 codes rms from start to start, so this takes off about 9 dB in a new start; a calibration in the same start about 22 dB). See docs/2026-10-16-lo-calibration.en.md.",
   "dc": [
-    0.576,
-    -3.829
+    -1.03,
+    -4.89
+  ],
+  "table": [
+    {
+      "freq_mhz": 2340.0,
+      "dc": [
+        -1.03,
+        -4.89
+      ],
+      "date": "2026-10-16",
+      "suppression_db": 9.0,
+      "boots": 7,
+      "spread_codes": 2.1,
+      "note": "expected in a new start (median); 22 dB within a start"
+    }
   ]
 }
