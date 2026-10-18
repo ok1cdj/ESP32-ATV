@@ -34,6 +34,8 @@ Firmware (S3 / C3)** a klepni na **Write firmware into the connected board**. Ap
 ten prozradí čip – **ESP32-S3 → přijímač**, **ESP32-C3 → vysílač**, splést se nedají –, stáhne aktuální firmware z webu
 (uloží si ho i pro práci bez sítě), zapíše ho s ukazatelem průběhu, ověří (MD5) a desku restartuje. Android se na
 přístup k USB zeptá dvakrát (deska se v zavaděči objeví znovu). Nový firmware na webu nepotřebuje novou aplikaci.
+**Check versions on the web** ukáže aktuální verze a které tvoje desky (ty, do kterých aplikace zapisovala nebo s nimi
+mluvila) mají starší firmware.
 
 **Z prohlížeče:** [webový flasher](flasher/) v Chrome nebo Edge na počítači – připoj XIAO datovým kabelem, drž **BOOT**,
 ťukni **RESET**, pusť BOOT, klikni na tlačítko přijímače (S3) nebo vysílače (C3), vyber port a potvrď. Po dokončení
@@ -52,7 +54,11 @@ Desky se hlásí jako `303a:1001` a po každém zapnutí spustí svůj firmware.
 3. Při prvním spuštění povol **oznámení** – příjem běží ve službě na pozadí a v oznámení je jeho stav a tlačítko Stop.
 4. Připoj S3 přes OTG. Android nabídne otevření ATV RX/TX a zeptá se na **přístup k USB zařízení** – povol.
 
-Aktualizace: nová verze z Releases se nainstaluje přes starou (stejný podpis).
+**Aktualizace:** jednou denně se aplikace podívá na GitHub po nové verzi a po novějším firmwaru pro desky, které zná,
+a ohlásí to dialogem (*Download* otevře vydání; *Skip this version* ji přeskočí). Menu ⋮ → *Check for updates*
+zkontroluje hned, *Daily update check: on/off* kontrolu vypne. Nové APK se nainstaluje přes staré (stejný podpis),
+nastavení zůstane. Automatické aktualizace bez dialogu: [Obtainium](https://github.com/ImranR98/Obtainium) s adresou
+`https://github.com/ok1cdj/ESP32-ATV` (zapnout *include pre-releases*).
 
 ## 3. Příjem
 
@@ -187,6 +193,7 @@ mezitím neodpojovat (aplikace ho neresetuje, kalibrace tedy platí, dokud C3 ne
 
 | příznak | co zkusit |
 |---|---|
+| S3 na USB hubu: MER skáče, mnoho zámků | hub ztrácí vzorky (hlavně sdílený se sluchátky): S3 přímo do telefonu / počítače |
 | *ESP32-S3 not connected* | kabel s daty (ne jen nabíjecí), OTG zapnuté v telefonu, firmware nahraný (deska = `303a:1001`) |
 | *searching: no signal* | zapnutý vysílač, správný kmitočet, anténa na obou deskách; vyšší gain |
 | zámek je, ale `bad` přibývá | málo signálu (MER nízké) – vyšší úroveň vysílače / gain, lepší antény; u 8PSK spíš QPSK |
@@ -200,6 +207,7 @@ mezitím neodpojovat (aplikace ho neresetuje, kalibrace tedy platí, dokud C3 ne
 | C3 sám nic nevysílá | ještě v něm není maják: TX → Save as beacon in the C3 |
 | *this C3 firmware cannot store a loop* | nahraj aktuální firmware: menu ⋮ → Firmware |
 | firmware: *no network and no saved firmware* | první zápis potřebuje jednou internet, pak funguje uložený i bez sítě |
+| TX log: *C3 firmware …, on the web …* | na webu je novější firmware vysílače: menu ⋮ → Firmware |
 | zámek i MER v pořádku, ale žádné rámce: **QPSK 3/5 nebo 5/6 normální rámce**, **8PSK krátké rámce** | tyto režimy leandvb nedekóduje (známá chyba, i z čistého signálu) – zvol jiný poměr nebo velikost rámců; aplikace na to upozorní |
 
 Hlášení chyb a nápady: [issues](https://github.com/ok1cdj/ESP32-ATV/issues).

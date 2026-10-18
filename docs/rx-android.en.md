@@ -35,7 +35,8 @@ Firmware (S3 / C3)** and tap **Write firmware into the connected board**. The ap
 which tells the chip – **ESP32-S3 → receiver**, **ESP32-C3 → transmitter**, they cannot be mixed up – downloads the
 current firmware from the web (kept for use without a network), writes it with a progress bar, checks it (MD5) and
 restarts the board. Android asks for USB access twice (the board appears again in its loader). A new firmware on the
-web needs no new app.
+web needs no new app. **Check versions on the web** shows the current versions and which of your boards
+(the ones the app has written or talked to) have an older firmware.
 
 **From the browser:** the [web flasher](flasher/) in Chrome or Edge on a computer – connect the XIAO with a data cable,
 hold **BOOT**, tap **RESET**, release BOOT, click the button for the receiver (S3) or the transmitter (C3), choose the
@@ -56,7 +57,11 @@ The boards enumerate as `303a:1001` and start their firmware at every power-up.
    status and a Stop button.
 4. Connect the S3 through OTG. Android offers to open ATV RX/TX and asks for **access to the USB device** – allow it.
 
-Updates: a new version from Releases installs over the old one (same signature).
+**Updates:** once a day the app looks for a new version on GitHub and for newer firmware for the boards it knows, and
+says so in a dialog (*Download* opens the release; *Skip this version*). Menu ⋮ → *Check for updates* checks now,
+*Daily update check: on/off* switches it off. A new APK installs over the old one (same signature), the settings stay.
+Automatic updates without the dialog: [Obtainium](https://github.com/ImranR98/Obtainium) with the address
+`https://github.com/ok1cdj/ESP32-ATV` (enable *include pre-releases*).
 
 ## 3. Receiving
 
@@ -197,6 +202,7 @@ stored values. Details and measurements: [LO calibration](https://github.com/ok1
 
 | symptom | try |
 |---|---|
+| the S3 on a USB hub: MER jumps, many locks | the hub drops samples (above all one shared with a headset): S3 straight into the phone / computer |
 | *ESP32-S3 not connected* | a data cable (not charge-only), OTG enabled on the phone, firmware written (board = `303a:1001`) |
 | *searching: no signal* | transmitter on, right frequency, antennas on both boards; more gain |
 | locked but `bad` grows | too little signal (low MER) – more TX level / gain, better antennas; QPSK rather than 8PSK |
@@ -210,6 +216,7 @@ stored values. Details and measurements: [LO calibration](https://github.com/ok1
 | the C3 transmits nothing on its own | no beacon stored yet: TX → Save as beacon in the C3 |
 | *this C3 firmware cannot store a loop* | write the current firmware: menu ⋮ → Firmware |
 | firmware: *no network and no saved firmware* | the first write needs the internet once; later the saved one works offline |
+| TX log: *C3 firmware …, on the web …* | a newer transmitter firmware: menu ⋮ → Firmware |
 | locked, good MER, but no frames: **QPSK 3/5 or 5/6 normal frames**, **8PSK short frames** | leandvb does not decode these modes (known issue, also from a clean signal) – choose another code rate or frame size; the app warns |
 
 Bugs and ideas: [issues](https://github.com/ok1cdj/ESP32-ATV/issues).

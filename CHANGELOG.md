@@ -2,6 +2,16 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## Unreleased
+
+### Updates (users' request)
+- **Update check:** once a day the app asks GitHub for a newer release (betas included) and the web for newer firmware
+  of the boards it knows (the C3 tells its version, the S3 the one the app last wrote into it), and shows a dialog:
+  *Download* / *Skip this version* / *Later*. Menu ⋮ → *Check for updates* (now) and *Daily update check: on/off*.
+  The firmware screen's *Check versions on the web* lists the boards with an older firmware; the TX log says so too.
+- Guide: Obtainium for automatic updates; the S3 belongs straight in the port, not on a hub. Web: both firmwares
+  (S3 + C3) and flashing from the app on the landing page and the flasher.
+
 ## 0.11-beta – 2026-10-16
 
 ### TX: your own picture or video (users' request)
