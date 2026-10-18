@@ -89,8 +89,25 @@ class FirmwareActivity : Activity() {
     private fun store() = FirmwareStore(this, base.text.toString().trim().trimEnd('/'))
 
     private fun check() = work {
-        for (chip in listOf("ESP32-S3", "ESP32-C3"))
-            log("$chip: ${store().onlineVersion(chip) ?: "– (no network?)"}")
+        val web = HashMap<String, String>()
+        for (chip in listOf("ESP32-S3", "ESP32-C3")) {
+            val v = store().onlineVersion(chip)
+            if (v != null) web[chip] = v
+            log("$chip on the web: ${v ?: "– (no network?)"}")
+        }
+        // the boards on USB: the C3 tells its firmware (INFO, nothing is transmitted; a running beacon stops), the S3 does not
+        for (dev in UsbBoards.all(usbManager)) {
+            val usb = open(dev)
+            val mac = UsbBoards.serial(usbManager, dev)
+            val link = C3Link(usb)
+            try {
+                Thread.sleep(1200)                     // opening the port may reset the C3; one busy with its beacon may miss an INFO
+                if ((link.info() ?: link.info()) != null) { log("C3 $mac: ${link.fw ?: "no FW line (old firmware)"}"); UpdateCheck.rememberC3(this, mac, link.fw) }
+            } finally { link.close() }
+        }
+        val old = UpdateCheck.outdated(this, web)
+        if (old.isEmpty()) log("the boards this app knows have the web's firmware")
+        old.forEach { log("${it.chip} ${it.mac}: ${it.has} → ${it.web} (write it: the button below)") }
     }
 
     /** With two boards on a hub: which one (by role, UsbBoards); one board: that one. */
@@ -127,7 +144,7 @@ class FirmwareActivity : Activity() {
             val until = System.currentTimeMillis() + 1200
             while (System.currentTimeMillis() < until) { val k = usb.read(r, 200); if (k > 0) got.write(r, 0, k) }
             val text = got.toString().lines()
-            text.firstOrNull { it.startsWith("FW ") }?.let { log("C3 now: ${it.trim()}") }
+            text.firstOrNull { it.startsWith("FW ") }?.let { log("C3 now: ${it.trim()}"); UpdateCheck.rememberC3(this, mac, it) }
             table = text.mapNotNull { l -> l.trim().split(' ').takeIf { it.size == 4 && it[0] == "BDCT" }?.let {
                 Triple(it[1].toDouble() / 1000, it[2].toDouble(), it[3].toDouble()) } }
             if (table.isNotEmpty()) log("C3 DC table: " + table.joinToString { "%.3f MHz %.3f %.3f".format(it.first, it.second, it.third) })
@@ -164,6 +181,7 @@ class FirmwareActivity : Activity() {
             log("verified (MD5); restarting into ${fw.name} ${fw.version}")
             EspRom.hardReset(usb)
             progress("Done: $chip ${fw.version} written and verified", 1.0)
+            UpdateCheck.rememberBoard(this, mac, chip, fw.version)
             if (chip == "ESP32-C3" && mac != null) restoreDc(mac, others)
             if (chip == "ESP32-C3") log("Now store a loop with your callsign: TX screen → Save as beacon (or tx/c3_vidw.py).")
         } finally {

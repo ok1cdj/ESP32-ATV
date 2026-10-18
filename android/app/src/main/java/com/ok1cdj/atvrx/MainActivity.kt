@@ -229,6 +229,43 @@ class MainActivity : Activity() {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
         bindService(Intent(this, ReceiverService::class.java), connection, BIND_AUTO_CREATE)
         refresh()
+        if (savedInstanceState == null) checkUpdates(force = false)
+    }
+
+    /** A newer app on GitHub or newer firmware for a known board (UpdateCheck): once a day, or now from the menu. */
+    private fun checkUpdates(force: Boolean) = Thread {
+        val r = UpdateCheck.run(this, BuildConfig.VERSION_NAME, force)
+        runOnUiThread {
+            if (isFinishing || isDestroyed) return@runOnUiThread
+            when {
+                r == null -> if (force) say("update check: no network?")
+                r.empty -> if (force) say("ATV RX/TX ${BuildConfig.VERSION_NAME} and the known boards' firmware are up to date")
+                else -> showUpdates(r)
+            }
+        }
+    }.start()
+
+    private fun showUpdates(r: UpdateCheck.Result) {
+        val text = buildString {
+            r.app?.let { append("ATV RX/TX ${it.version} is out (this is ${BuildConfig.VERSION_NAME}).\nInstall the APK over this one, the settings stay.") }
+            if (r.boards.isNotEmpty()) {
+                if (isNotEmpty()) append("\n\n")
+                append("Newer firmware on the web:\n")
+                r.boards.forEach { append("• ${if (it.chip == "ESP32-C3") "C3 transmitter" else "S3 receiver"} ${it.mac}: ${it.has} → ${it.web}\n") }
+                append("Connect the board and write it: menu ⋮ → Firmware.")
+            }
+        }
+        val d = android.app.AlertDialog.Builder(this).setTitle("Updates").setMessage(text)
+        val app = r.app
+        if (app != null) {
+            d.setPositiveButton("Download") { _, _ -> startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(app.url))) }
+            d.setNeutralButton("Skip this version") { _, _ -> UpdateCheck.skip(this, app.version) }
+            d.setNegativeButton("Later", null)
+        } else {
+            d.setPositiveButton("Firmware…") { _, _ -> stop(); startActivity(Intent(this, FirmwareActivity::class.java)) }
+            d.setNegativeButton("Later", null)
+        }
+        d.show()
     }
 
     override fun onDestroy() {
@@ -253,6 +290,11 @@ class MainActivity : Activity() {
             "USB test" to { stop(); startActivity(Intent(this, BenchActivity::class.java)) },
             "Firmware (S3 / C3)" to { stop(); startActivity(Intent(this, FirmwareActivity::class.java)) },
             "Transmitter calibration (S3 + C3)" to { stop(); startActivity(Intent(this, CalibrationActivity::class.java)) },
+            "Check for updates" to { checkUpdates(force = true) },
+            (if (UpdateCheck.enabled(this)) "Daily update check: on" else "Daily update check: off") to {
+                UpdateCheck.setEnabled(this, !UpdateCheck.enabled(this))
+                say("daily update check ${if (UpdateCheck.enabled(this)) "on" else "off"}")
+            },
             "About" to { startActivity(Intent(this, AboutActivity::class.java)) },
         )
         items.forEachIndexed { i, (t, _) -> m.menu.add(0, i, i, t) }

@@ -59,6 +59,10 @@ class Transmitter(private val ctx: android.content.Context, private val usbManag
             Thread.sleep(1200)                                  // opening the port may reset the C3
             val (id, beacon) = link.info() ?: throw java.io.IOException("no ESP32-DATV answer: is this the C3? (the S3 receiver is the same 303a:1001)")
             log("C3: $id${beacon?.let { " · $it" } ?: ""}${if (link.booted) " (reset by opening the port)" else ""}")
+            UpdateCheck.rememberC3(ctx, UsbBoards.serial(usbManager, device), link.fw)
+            val web = UpdateCheck.webVersion(ctx, "ESP32-C3")
+            link.fw?.split(' ')?.getOrNull(1)?.let { has -> if (web != null && has != web && link.fw!!.contains("no-builtin-beacon"))
+                log("C3 firmware $has, on the web $web: menu ⋮ → Firmware") }
             val dc = link.dc(cfg.freqKhz / 1000.0) ?: (0.0 to 0.0)        // the C3's table at our frequency
             log("C3 DC correction %.3f %.3f".format(dc.first, dc.second))
             link.pa(false)

@@ -83,7 +83,8 @@ object UsbBoards {
         val role = try {
             val conn = m.openDevice(dev) ?: return null
             val c3 = C3Link(UsbCdc(conn, dev))
-            val isC3 = try { Thread.sleep(1200); c3.info() != null } finally { c3.close() }      // opening may reset the C3
+            val isC3 = try { Thread.sleep(1200); (c3.info() != null).also { if (it) UpdateCheck.rememberC3(ctx, mac, c3.fw) } }
+                finally { c3.close() }                                                               // opening may reset the C3
             if (isC3) Role.C3 else {
                 val conn2 = m.openDevice(dev) ?: return null
                 val l = EspLink(UsbCdc(conn2, dev))
