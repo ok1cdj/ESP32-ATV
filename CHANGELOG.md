@@ -2,7 +2,7 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
-## Unreleased
+## 0.12-beta – 2026-10-18
 
 ### Updates (users' request)
 - **Update check:** once a day the app asks GitHub for a newer release (betas included) and the web for newer firmware
