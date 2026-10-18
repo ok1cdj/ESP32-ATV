@@ -18,7 +18,7 @@ class TsDemux(private val onVideo: (streamType: Int, es: ByteArray, pts: Long) -
     @Volatile var errorPackets = 0L; private set     // transport_error_indicator set by the demodulator
     @Volatile var ccErrors = 0L; private set
 
-    private var pmtPid = -1
+    @Volatile var pmtPid = -1; private set
     private val buf = ByteArray(188 * 64)
     private var fill = 0
     private var pes = java.io.ByteArrayOutputStream(64 * 1024)

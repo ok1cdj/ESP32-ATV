@@ -19,7 +19,7 @@ import android.view.Surface
 /**
  * Foreground service that owns the receiver, so that reception goes on with the screen off or the app in the
  * background. The activity binds to it, hands it the picture Surface while it is visible, and reads the status.
- * The notification shows lock / MER / service and has a Stop action.
+ * The notification shows lock / MER / service and has a Stop action. It also owns the recording ([TsRecorder]).
  */
 class ReceiverService : Service() {
     inner class LocalBinder : Binder() { val service get() = this@ReceiverService }
@@ -28,6 +28,7 @@ class ReceiverService : Service() {
     val video = VideoDecoder()
     val audio = AudioPlayer().also { a -> video.clock = { a.clock() } }   // with sound the picture follows its clock
     @Volatile var startedAt = 0L; private set
+    @Volatile var recorder: TsRecorder? = null; private set
     /** the last lines of the receiver log, and who shows new ones */
     val log = ArrayDeque<String>()
     @Volatile var onLog: ((String) -> Unit)? = null
@@ -44,6 +45,7 @@ class ReceiverService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) stopRx()
+        if (intent?.action == ACTION_STOP_REC) stopRec()
         return START_NOT_STICKY
     }
 
@@ -81,8 +83,50 @@ class ReceiverService : Service() {
         ui.postDelayed(tick, 2000)
     }
 
+    /** Records the received TS (and a .srt with the measurements) until [stopRec] or the end of reception. */
+    fun startRec() {
+        val r = receiver ?: return
+        if (recorder?.active == true) return
+        val t = java.text.SimpleDateFormat("yyyy-MM-dd_HHmmss", java.util.Locale.ROOT).format(java.util.Date())
+        val call = r.demux.service?.replace(Regex("[^A-Za-z0-9-]+"), "")?.take(16)?.takeIf { it.isNotEmpty() }
+        val where = if (r.cfg.replay != null) "replay" else "%.3fMHz".format(java.util.Locale.ROOT, r.cfg.freqHz / 1e6)
+        val base = "ATV_${t}_${where}_%dk".format(java.util.Locale.ROOT, r.cfg.sr / 1000) + (call?.let { "_$it" } ?: "")
+        var frames = -1L
+        val subtitle = {
+            val s = r.status
+            val done = s.framesOk + s.framesFixed
+            val got = if (frames < 0) 0 else done - frames
+            frames = done
+            val clock = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.ROOT).format(java.util.Date())
+            if (!r.alive()) "$clock  no signal (${s.state})"
+            else "$clock  MER %.1f dB  CNR %s dB\ncarrier %+.2f kHz  frames %d/s  bad %d".format(java.util.Locale.ROOT, s.mer,
+                if (s.cnr.isNaN()) "–" else "%.1f".format(java.util.Locale.ROOT, s.cnr), (s.offsetHz + (if (s.freq.isNaN()) 0.0 else s.freq)) / 1e3,
+                got, s.framesBad)
+        }
+        try {
+            val rec = TsRecorder(this, base, r.demux, subtitle, ::say)
+            recorder = rec
+            r.onTs = rec::feed
+            say("recording: ${rec.where}")
+            updateNotification()
+        } catch (e: Exception) { say("recording: ${e.message}") }
+    }
+
+    fun stopRec() {
+        val rec = recorder ?: return
+        recorder = null
+        receiver?.onTs = null
+        Thread {
+            rec.stop()
+            if (rec.bytes == 0L) say("recording: nothing decoded, only the .srt (MER log) kept: ${rec.where.removeSuffix(".ts")}.srt")
+            else say("recording saved: ${rec.where}, %.1f MB%s".format(rec.bytes / 1e6, if (rec.dropped > 0) ", %d bytes lost (storage too slow)".format(rec.dropped) else ""))
+        }.start()
+        ui.post { updateNotification() }
+    }
+
     fun stopRx() {
         val r = receiver ?: return
+        stopRec()
         receiver = null
         ui.removeCallbacks(tick)
         Thread { r.stop() }.start()
@@ -96,10 +140,12 @@ class ReceiverService : Service() {
 
     private fun updateNotification() {
         val r = receiver ?: return
+        if (recorder?.active == false) stopRec()                          // it stopped itself (storage full, error)
         val s = r.status
         val text = if (r.alive()) "MER %.1f dB · %s · %d frames".format(s.mer, r.demux.service ?: "–", s.framesOk + s.framesFixed)
                    else s.state
-        notifications.notify(NOTIFICATION_ID, notification(text))
+        notifications.notify(NOTIFICATION_ID, notification(recorder?.let { "● REC %.1f MB · ".format(it.bytes / 1e6) }.orEmpty() + text))
+        ui.removeCallbacks(tick)
         ui.postDelayed(tick, 2000)
     }
 
@@ -117,11 +163,17 @@ class ReceiverService : Service() {
             .setOngoing(true)
             .setContentIntent(open)
             .addAction(Notification.Action.Builder(null, "Stop", stop).build())
+            .apply {
+                if (recorder != null) addAction(Notification.Action.Builder(null, "Stop REC",
+                    PendingIntent.getService(this@ReceiverService, 2, Intent(this@ReceiverService, ReceiverService::class.java)
+                        .setAction(ACTION_STOP_REC), PendingIntent.FLAG_IMMUTABLE)).build())
+            }
             .build()
     }
 
     companion object {
         const val ACTION_STOP = "com.ok1cdj.atvrx.STOP"
+        const val ACTION_STOP_REC = "com.ok1cdj.atvrx.STOP_REC"
         private const val CHANNEL = "rx"
         private const val NOTIFICATION_ID = 1
     }

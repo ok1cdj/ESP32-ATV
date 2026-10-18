@@ -60,6 +60,8 @@ class Receiver(
     /** leandvb --fd-const lines ("CONST ...", "SYMBOLS ..."), for the constellation view */
     @Volatile var onConstellation: ((String) -> Unit)? = null
     val demux = TsDemux { type, au, pts -> video.feed(type, au, pts) }
+    /** the TS as it comes from leandvb, for the recording */
+    @Volatile var onTs: ((ByteArray, Int) -> Unit)? = null
     @Volatile var link: EspLink? = null; private set
 
     // a replay takes rate and format from its first packet header (word 1: format | decimation << 8)
@@ -434,6 +436,7 @@ class Receiver(
                     if (firstTs) { firstTs = false; log("first TS %.1f s after leandvb started".format(since())) }
                     status.tsBytes += n
                     demux.feed(b, n)
+                    onTs?.invoke(b, n)
                     if (firstPicture && video.frames > frames0) {
                         firstPicture = false; log("first picture %.1f s after leandvb started".format(since()))
                     }

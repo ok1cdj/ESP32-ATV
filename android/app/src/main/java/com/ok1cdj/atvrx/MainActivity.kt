@@ -70,6 +70,7 @@ class MainActivity : Activity() {
     private val consts = listOf("QPSK", "8PSK")
     private val frameChoices = listOf(Receiver.FRAMES_NORMAL, Receiver.FRAMES_SHORT, Receiver.FRAMES_BOTH)
     private lateinit var startStop: Button
+    private lateinit var rec: Button
     private lateinit var info: TextView
     private lateinit var constView: ConstellationView
     private lateinit var specView: SpectrumView
@@ -195,6 +196,9 @@ class MainActivity : Activity() {
         startStop = button("Start") { if (receiver == null) start() else stop() }
         track = android.widget.CheckBox(this).apply { text = "drift"; isChecked = prefs.getBoolean("track", true) }
         val more = button("⋮") { v -> showMenu(v) }.apply { minWidth = 0; minimumWidth = 0; setPadding(36, 0, 36, 0) }
+        // the received TS into a file as it is (+ .srt with MER / CNR), only while receiving
+        rec = button("● REC") { val s = service ?: return@button; if (s.recorder == null) s.startRec() else s.stopRec() }
+            .apply { minWidth = 0; minimumWidth = 0; setPadding(36, 0, 36, 0) }
         // gain and drift on one row, Start / Stop and the menu on the next: one row did not fit a phone's width
         body.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -207,6 +211,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
             addView(startStop, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(rec, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { leftMargin = 8 })
             addView(more, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { leftMargin = 8 })
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = 8 })
 
@@ -430,6 +435,13 @@ class MainActivity : Activity() {
     private fun refresh() {
         val r = receiver
         startStop.text = if (r == null) "Start" else "Stop"
+        // stopped: empty spectrum and constellation, not the last ones (a few times, leandvb may still send a late line)
+        if (r != null) clearViews = 6 else if (clearViews > 0) { clearViews--; constView.clear(); specView.clear() }
+        val recording = service?.recorder
+        rec.isEnabled = r != null
+        rec.alpha = if (r != null) 1f else 0.4f
+        rec.text = recording?.let { "■ %d:%02d".format((System.nanoTime() - it.since) / 60_000_000_000L, (System.nanoTime() - it.since) / 1_000_000_000L % 60) } ?: "● REC"
+        (rec.background as GradientDrawable).setColor(if (recording != null) Color.rgb(0xC6, 0x28, 0x28) else Color.rgb(0x1E, 0x5A, 0xA8))
         if (r == null) window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         info.text = if (r == null) "stopped" else {
             val s = r.status
@@ -462,10 +474,13 @@ class MainActivity : Activity() {
                     append("audio %s%s%s\n".format(a?.description ?: TsDemux.audioName(d.audioType), if (soundMuted) "  (off)" else "",
                         a?.error?.let { "  ERR $it" } ?: ""))
                 append("USB lost %d jumps %d ESP drop %d queue %d".format(usb?.lost ?: 0, usb?.jumps ?: 0, usb?.dropped ?: 0, s.queueDrops))
+                recording?.let { append("\nREC %.1f MB%s  %s".format(it.bytes / 1e6, if (it.started) "" else " (waiting for PAT)", it.name)) }
             }
         }
         ui.postDelayed(::refresh, 500)
     }
+
+    private var clearViews = 6                               // refreshes left that clear the views after a stop
 
     private fun yn(b: Boolean) = if (b) "✓" else "✗"
     private fun num(x: Double, f: String) = if (x.isNaN()) "–" else f.format(x)
