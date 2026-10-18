@@ -93,7 +93,7 @@ frames – the player shows them over the picture, handy for range tests. **■*
 the notification ends it; stopping reception ends it too, and it stops itself when the storage is nearly full.
 Where: **Download/ATV RX/** (Android 10+, e.g. `ATV_2026-10-18_153012_2345.000MHz_50k_SV0SYH.ts`); Android 9:
 `Android/data/com.ok1cdj.atvrx/files/Movies/ATV RX/`. Play it with **VLC** or mpv (phone or PC; VLC picks up the
-.srt by itself) – the phone's gallery usually cannot play `.ts`.
+.srt by itself; on Linux VLC needs `vlc-plugin-dvb` and `vlc-plugin-ffmpeg`, a black picture: *Hardware-accelerated decoding* off) – the phone's gallery usually cannot play `.ts`.
 
 ### What the figures mean
 

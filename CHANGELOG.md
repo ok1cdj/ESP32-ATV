@@ -2,14 +2,15 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
-## Unreleased
+## 0.13-beta – 2026-10-18
 
 ### RX: recording (users' request)
 - **● REC** while receiving: the received MPEG-TS into a file as it is, nothing transcoded (picture, sound, service
-  name), from the next key frame on (PAT and PMT before it), through a queue of its own so that slow storage never disturbs reception. Next to it a
-  **.srt** with the time, MER, CNR, carrier offset and frames every second (for range tests). Download/ATV RX/
+  name), from the next key frame on (PAT and PMT before it), through a queue of its own so that slow storage never
+  disturbs reception. Next to it a **.srt** with the time, MER, CNR, carrier offset and frames every second (for range tests). Download/ATV RX/
   (Android 10+, no permission); *Stop REC* in the notification; stops with reception or when the storage is nearly
-  full. Works with *Replay recording* too. An empty .ts (nothing decoded) is removed, the .srt kept.
+  full. Works with *Replay recording* too. Plays in VLC / mpv (Linux VLC: the packages vlc-plugin-dvb
+  and vlc-plugin-ffmpeg). An empty .ts (nothing decoded) is removed, the .srt kept.
 - The spectrum and constellation are cleared after Stop.
 
 ## 0.12-beta – 2026-10-18

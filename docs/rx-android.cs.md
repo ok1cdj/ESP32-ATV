@@ -88,7 +88,7 @@ je **.srt** (titulky) se stejným jménem: každou sekundu čas, MER, CNR, odchy
 obraz, hodí se na testy dosahu. Ukončí ho **■** (s časem nahrávání) nebo *Stop REC* v oznámení; skončí i se zastavením
 příjmu a sám, když dochází místo. Kam: **Download/ATV RX/** (Android 10+, např.
 `ATV_2026-10-18_153012_2345.000MHz_50k_SV0SYH.ts`); Android 9: `Android/data/com.ok1cdj.atvrx/files/Movies/ATV RX/`.
-Přehraješ ho ve **VLC** nebo mpv (telefon i PC; VLC si .srt najde sám) – galerie telefonu `.ts` většinou neumí.
+Přehraješ ho ve **VLC** nebo mpv (telefon i PC; VLC si .srt najde sám; VLC na Linuxu potřebuje `vlc-plugin-dvb` a `vlc-plugin-ffmpeg`, při černém obrazu vypni *Hardwarově akcelerované dekódování*) – galerie telefonu `.ts` většinou neumí.
 
 ### Co znamenají údaje
 

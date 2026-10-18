@@ -20,6 +20,7 @@
 DATV on 13 cm with ESP32 boards: a stand-alone **ESP32-C3 DVB-S2 beacon** and **ATV RX/TX**, a receiver made of a
 **XIAO ESP32-S3** on USB-OTG and an **Android** phone or tablet (beta). The app also **transmits** through a XIAO
 ESP32-C3 on USB-OTG: test card, camera or a picture / video file, DVB-S2 QPSK / 8PSK encoded on the phone (`android/native/dvbs2enc`).
+Reception can be **recorded** as it is received (`.ts`, with MER / CNR as `.srt` subtitles).
 
 - **Guide / návod:** <https://ok1cdj.github.io/ESP32-ATV/> ([English](docs/rx-android.en.md), [česky](docs/rx-android.cs.md))
 - **APK:** [Releases](https://github.com/ok1cdj/ESP32-ATV/releases) ([changelog](CHANGELOG.md)) · **Firmware S3 (RX) + C3 (TX):** from the app (menu ⋮ → Firmware) or the [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/)
