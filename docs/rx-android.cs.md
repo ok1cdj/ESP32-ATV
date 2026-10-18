@@ -81,6 +81,15 @@ napíše); bez zvuku se obraz ukazuje, jak přichází, jako dřív.
 Obrazovku můžeš zhasnout nebo přepnout do jiné aplikace – příjem běží dál ve službě (i zvuk). Zastavíš ho tlačítkem
 **Stop** v aplikaci nebo v oznámení.
 
+**Nahrávání:** **● REC** vedle Start (během příjmu) zapisuje přijatý transportní proud do souboru přesně tak, jak
+přišel, nic se nepřekódovává – obraz, zvuk i název služby jako při vysílání, podle rychlosti asi 20–300 MB za hodinu.
+Začne u nejbližšího klíčového snímku obrazu (s tabulkami proudu před ním), takže soubor hraje čistě od začátku; výpadek signálu je v souboru mezera. Vedle něj
+je **.srt** (titulky) se stejným jménem: každou sekundu čas, MER, CNR, odchylka nosné a rámce – přehrávač je ukáže přes
+obraz, hodí se na testy dosahu. Ukončí ho **■** (s časem nahrávání) nebo *Stop REC* v oznámení; skončí i se zastavením
+příjmu a sám, když dochází místo. Kam: **Download/ATV RX/** (Android 10+, např.
+`ATV_2026-10-18_153012_2345.000MHz_50k_SV0SYH.ts`); Android 9: `Android/data/com.ok1cdj.atvrx/files/Movies/ATV RX/`.
+Přehraješ ho ve **VLC** nebo mpv (telefon i PC; VLC si .srt najde sám) – galerie telefonu `.ts` většinou neumí.
+
 ### Co znamenají údaje
 
 | řádek | význam |

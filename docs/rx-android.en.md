@@ -84,6 +84,17 @@ not supported (the status says so); without sound the picture is shown as it com
 You can turn the screen off or switch to another app – reception goes on in the service (sound too). Stop it with
 **Stop** in the app or in the notification.
 
+**Recording:** **● REC** next to Start (while receiving) writes the received transport stream into a file exactly as
+it comes, nothing transcoded – picture, sound and service name as sent, about 20–300 MB an hour depending on the rate.
+It starts at the next key frame of the picture (with the stream's tables before it), so the file plays cleanly from
+its first byte; a gap in the signal is a gap in
+the file. Next to it a **.srt** subtitle file of the same name: every second the time, MER, CNR, carrier offset and
+frames – the player shows them over the picture, handy for range tests. **■** (with the running time) or *Stop REC* in
+the notification ends it; stopping reception ends it too, and it stops itself when the storage is nearly full.
+Where: **Download/ATV RX/** (Android 10+, e.g. `ATV_2026-10-18_153012_2345.000MHz_50k_SV0SYH.ts`); Android 9:
+`Android/data/com.ok1cdj.atvrx/files/Movies/ATV RX/`. Play it with **VLC** or mpv (phone or PC; VLC picks up the
+.srt by itself) – the phone's gallery usually cannot play `.ts`.
+
 ### What the figures mean
 
 | line | meaning |
