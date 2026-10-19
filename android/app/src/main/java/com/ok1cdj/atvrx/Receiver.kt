@@ -513,21 +513,6 @@ class Receiver(
         const val FRAMES_NORMAL = 1; const val FRAMES_SHORT = 2; const val FRAMES_BOTH = 3   // leandvb --framesizes
         fun frameSizeName(f: Int) = when (f) { FRAMES_NORMAL -> "normal"; FRAMES_SHORT -> "short"; else -> "normal+short" }
 
-        /**
-         * Modes leandvb (+ ldpc_tool) does not decode even from a clean signal, although our encoder and ESP32-DATV's
-         * agree on them bit for bit (rx/test_dvbs2enc.py, 2026-10-15): QPSK 3/5 and 5/6 with normal frames, 8PSK with
-         * short frames. A warning for the log, or null.
-         */
-        fun leandvbWarning(const: String, cr: String, frameSizes: Int): String? {
-            val normal = frameSizes and FRAMES_NORMAL != 0
-            val short = frameSizes and FRAMES_SHORT != 0
-            return when {
-                const == "QPSK" && (cr == "3/5" || cr == "5/6") && normal ->
-                    "note: leandvb does not decode QPSK $cr with normal frames (known issue) – use short frames or another code rate"
-                const == "8PSK" && short -> "note: leandvb does not decode 8PSK with short frames (known issue) – use normal frames"
-                else -> null
-            }
-        }
         private val CS4_MANT = floatArrayOf(256f, 279f, 304f, 332f, 362f, 395f, 431f, 470f)
         private val INFO = Regex("""\b(MER|SS|FREQ|LOCK|FRAMELOCK|CNR|VBER)\s+(-?[0-9.]+)""")
 

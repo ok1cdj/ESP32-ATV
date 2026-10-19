@@ -410,7 +410,6 @@ class MainActivity : Activity() {
             track = track.isChecked)
         val svc = service ?: return run { pendingStart = ::start }
         constView.clear(); specView.clear(); tsHistory.clear(); blank.visibility = View.VISIBLE
-        Receiver.leandvbWarning(c, cr, fr)?.let { say(it) }
         svc.startRx(cfg, dev)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }

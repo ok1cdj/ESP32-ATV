@@ -95,6 +95,9 @@ same desk. The C3 drifted +20 to +30 kHz from the receiver's LO while warming up
 
 ## The false first lock (simulation, 2026-10-15)
 
+**Update 2026-10-19:** the cause is in leandvb's PLHEADER search and is fixed – see
+[leandvb acquisition](2026-10-19-leandvb-acquisition.en.md). The explanation below was only part of it.
+
 `rx/sim_lock.py` feeds leandvb in real time with the receivers' options and logs FRAMELOCK, FREQ and MER, so a false
 lock shows up directly. At 40 kS/s, Es/N0 20 dB, 3 seeds per case:
 

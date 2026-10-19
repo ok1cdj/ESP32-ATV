@@ -116,7 +116,8 @@ FRAME=short tx/make_beacons.sh 40000     # -> tx/beacons/<call>-40k-short/, DVB-
 The receiver's LDPC decoder (ldpc_tool) works on batches of 32 frames. Short frames are 4× shorter, so a batch fills 4×
 sooner: in simulation at 40–66 kS/s the first picture came after 5–8 s instead of 40–60 s (the first, partial batch of
 normal frames is usually lost), at the same threshold (QPSK 3/4: Es/N0 ≈ 4.5 dB for both). Receive with the *… short* presets in the app or `rx/rx.sh 40000 --frame short`. Details:
-[short frames](docs/2026-10-15-short-frames.en.md).
+[short frames](docs/2026-10-15-short-frames.en.md). leandvb's false first lock with normal frames and its failure on QPSK
+3/5 and 5/6 are fixed by a patch: [leandvb acquisition](docs/2026-10-19-leandvb-acquisition.en.md).
 
 ### DC correction (carrier leakage)
 The C3 leaks its carrier (a tone in the middle of the signal, about −34 dBc) at a fixed level, which limits reception at

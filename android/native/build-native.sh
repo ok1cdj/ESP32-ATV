@@ -1,7 +1,8 @@
 #!/bin/sh
 # Cross-compiles leandvb (leansdr) and ldpc_tool (Blockstream/LDPC) for Android arm64 with the NDK.
 # Sources: fetched here at fixed commits (the same as ESP32-DATV-RX tools/install.sh) into android/native/build/src,
-# with ESP32-DATV-RX's leandvb-ldpc-helper.patch and our leansdr-android.patch. Output:
+# with ESP32-DATV-RX's leandvb-ldpc-helper.patch, our leansdr-android.patch and ESP32-DATV-RX's
+# leandvb-acquisition.patch. Output:
 # android/app/src/main/jniLibs/arm64-v8a/lib*.so – executables named lib*.so so that Android installs them into
 # nativeLibraryDir, where an app may exec them; libdvbs2enc.so, our DVB-S2 encoder (android/native/dvbs2enc) as a
 # JNI library for the TX tab; libmpadec.so, minimp3 (CC0) for MP2 sound in RX (Android has no MP2 decoder).
@@ -15,6 +16,7 @@ LDPC_COMMIT=25799d96f5bee9635c534cee710e7b8cfff94de1
 MINIMP3_URL=https://github.com/lieff/minimp3.git
 MINIMP3_COMMIT=ea99364f61c14656440e8d77e9c233ccf3124633
 HELPER_PATCH="$ROOT/third_party/ESP32-DATV-RX/tools/leandvb-ldpc-helper.patch"   # partial pipe reads/writes
+ACQ_PATCH="$ROOT/third_party/ESP32-DATV-RX/tools/leandvb-acquisition.patch"    # true first lock, QPSK 3/5 and 5/6
 NDK=${ANDROID_NDK_HOME:-${ANDROID_NDK:-$(ls -d "$HOME"/Android/Sdk/ndk/* 2>/dev/null | sort -V | tail -1)}}
 API=28                       # aligned_alloc (ldpc_tool) is in bionic from API 28
 CXX="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android$API-clang++"
@@ -22,7 +24,9 @@ OUT="$ROOT/android/app/src/main/jniLibs/arm64-v8a"
 OBJ="$ROOT/android/native/build"
 SRC="$OBJ/src"
 [ -x "$CXX" ] || { echo "no NDK clang at $CXX (set ANDROID_NDK_HOME)"; exit 1; }
-[ -f "$HELPER_PATCH" ] || { echo "missing $HELPER_PATCH: git submodule update --init third_party/ESP32-DATV-RX"; exit 1; }
+for f in "$HELPER_PATCH" "$ACQ_PATCH"; do
+  [ -f "$f" ] || { echo "missing $f: git submodule update --init third_party/ESP32-DATV-RX"; exit 1; }
+done
 mkdir -p "$OUT" "$SRC"
 
 # fetch(dir, url, commit): a clean checkout of exactly that commit
@@ -41,6 +45,7 @@ git -C "$SRC/leansdr" apply "$HELPER_PATCH"
 # clang rejects GCC's initialised VLAs; apps cannot read pipe-max-size, so the helper pipes stayed at 64 kB and the
 # scheduler stopped at 333 kS/s: the patch halves the size until the kernel takes it (1 MiB)
 patch -s -d "$SRC/leansdr" -p1 < "$ROOT/android/native/leansdr-android.patch"
+patch -s -d "$SRC/leansdr" -p1 < "$ACQ_PATCH"
 fetch "$SRC/LDPC" "$LDPC_URL" "$LDPC_COMMIT"
 fetch "$SRC/minimp3" "$MINIMP3_URL" "$MINIMP3_COMMIT"
 

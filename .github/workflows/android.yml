@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          submodules: true          # ESP32-DATV-RX: leandvb-ldpc-helper.patch
+          submodules: true          # ESP32-DATV-RX: leandvb-ldpc-helper.patch, leandvb-acquisition.patch
           fetch-depth: 0            # git describe for the version
 
       - uses: actions/setup-java@v5

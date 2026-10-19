@@ -95,6 +95,9 @@ stole. C3 se zahříváním odjel o +20 až +30 kHz od LO přijímače. Časy od
 
 ## Falešný první zámek (simulace, 15. 10. 2026)
 
+**Doplněno 19. 10. 2026:** příčina je v hledání PLHEADER v leandvb a je opravená – viz
+[zachycení v leandvb](2026-10-19-leandvb-acquisition.cs.md). Vysvětlení níže byla jen část pravdy.
+
 `rx/sim_lock.py` krmí leandvb v reálném čase se stejnými volbami jako přijímače a zapisuje FRAMELOCK, FREQ a MER, takže
 falešný zámek je vidět přímo. 40 kS/s, Es/N0 20 dB, 3 semínka na případ:
 

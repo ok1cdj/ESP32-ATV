@@ -2,6 +2,18 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## Unreleased
+
+### Receiver: leandvb acquisition fixed
+- **No more false first lock with normal frames:** leandvb searched for the PLHEADER in a window of 39 % of a normal
+  QPSK frame and often locked on the data (MER −11 to −15 dB, picture after 30–50 s or never). In simulation at
+  40 kS/s: 24 of 24 right locks at 2.5 s (before 10 of 12 false), also at Es/N0 4.5 dB (before 6 of 6 false).
+- **QPSK 3/5 and 5/6 with normal frames now decode:** the first PLSCODE was misread (3/5 as 1/2, 5/6 as 4/5) and the
+  carrier kept off by whole cycles. The app's warning about these modes is gone; 8PSK with short frames was never
+  broken (a test artifact).
+- A patch to leansdr (`tools/leandvb-acquisition.patch` in ESP32-DATV-RX), used by the app and by `rx_dvbs2.py`
+  (rerun `third_party/ESP32-DATV-RX/tools/install.sh`). Details: docs/2026-10-19-leandvb-acquisition.en.md.
+
 ## 0.14-beta – 2026-10-19
 
 ### Problem reports (users with both boards on a hub)

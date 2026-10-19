@@ -7,7 +7,7 @@ C. continuous framing (packets across frames, as live transmission) bit-exact ag
    PC streaming encoder, also only an oracle): QPSK and 8PSK, every code rate, normal and short frames, pilots on/off;
 B. independent decoder: our symbols -> RRC 0.35 -> leandvb + ldpc_tool (as in the receivers, no noise) for QPSK and
    8PSK at every code rate, normal and short frames; the decoded TS must be a run of the input TS, at least one whole
-   ldpc_tool batch of 32 frames (40 frames are sent: the lock and the partial last batch cost some).
+   ldpc_tool batch of 32 frames (40 normal / 56 short frames are sent: the lock and the partial last batch cost some).
 
     third_party/ESP32-DATV-RX/.venv/bin/python rx/test_dvbs2enc.py [--only A|B|C] [-v]
 """
@@ -37,9 +37,6 @@ def oracle_python():
     sys.exit("no python3 with numpy and Pillow for make_beacon.py (set PYTHON=...)")
 
 
-# leandvb (+ ldpc_tool) does not decode these even without noise, while our output is bit-exact with ESP32-DATV-SA's encoder
-# (part C): a receiver limitation, not an encoder error. Seen 2026-10-15; short 8PSK decodes with --ldpc-bf.
-LEANDVB_KNOWN = {("QPSK", "3/5", "normal"), ("QPSK", "5/6", "normal")} | {("8PSK", r, "short") for r in ("3/5", "2/3", "3/4", "5/6", "8/9")}
 
 QPSK_RATES = ["1/4", "1/3", "2/5", "1/2", "3/5", "2/3", "3/4", "4/5", "5/6", "8/9", "9/10"]
 PSK8_RATES = ["3/5", "2/3", "3/4", "5/6", "8/9", "9/10"]
@@ -145,9 +142,11 @@ def part_b(verbose):
         d = os.path.join(OUT, "b")
         os.makedirs(d, exist_ok=True)
         tag = f"{const}-{rate.replace('/', '')}-{frame}-{'p' if pilots else 'np'}"
-        frames = 40
-        # leandvb's acquisition sometimes locks on a wrong carrier frequency even without noise (see rx/sim_lock.py),
-        # depending on the data under the first PLHEADERs: up to 3 tries with other TS data; an encoder error fails all
+        # leandvb leaves the last two longest frames' worth of input (2 x 33282 symbols) unprocessed: 40 short 8PSK
+        # frames would not fill a 32-frame ldpc_tool batch
+        frames = 40 if frame == "normal" else 56
+        # up to 3 tries with other TS data in case the acquisition goes wrong (see rx/sim_lock.py); an encoder error
+        # fails all
         tries = []
         for seed in (1, 2, 3):
             ts_in = os.path.join(d, f"test{seed}.ts")
@@ -163,12 +162,10 @@ def part_b(verbose):
             good = ok and npk >= 32 * ppf - 1          # one whole ldpc_tool batch; leandvb drops the very first packet
             if good:
                 break
-        known = (const, rate, frame) in LEANDVB_KNOWN
-        runs += not (known and not good)
-        fails += not good and not known
+        runs += 1
+        fails += not good
         print(f"B {frame:6s} {const} {rate:4s} pilots {int(pilots)}: {npk:4d} of {frames * ppf} packets back "
-              f"({clean} clean frames{', tries ' + str(tries) if len(tries) > 1 else ''}) "
-              + ("OK" if good else "known leandvb limitation (not counted)" if known else "FAIL"))
+              f"({clean} clean frames{', tries ' + str(tries) if len(tries) > 1 else ''}) " + ("OK" if good else "FAIL"))
     return runs, fails
 
 

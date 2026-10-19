@@ -264,8 +264,6 @@ class TxActivity : Activity() {
             .putString("sound", sound.selectedItem as String).putInt("audioKbps", ak).putBoolean("overlay", overlay.isChecked).apply()
         val cfg = Transmitter.Config(Math.round(mhz * 1000), sr, r, shortFrame, pilots.isChecked, a, cs, cs, "$cs ESP32-ATV",
             src, c, vk, f, snd, ak, fileUri, overlay.isChecked)
-        Receiver.leandvbWarning(c, r, if (shortFrame) Receiver.FRAMES_SHORT else Receiver.FRAMES_NORMAL)
-            ?.let { log(it.replace("leandvb does not decode", "leandvb-based receivers (this app, rx_dvbs2.py) do not decode")) }
         return cfg to dev
     }
 
