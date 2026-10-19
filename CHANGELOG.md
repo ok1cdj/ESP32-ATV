@@ -2,6 +2,17 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## 0.14-beta – 2026-10-19
+
+### Problem reports (users with both boards on a hub)
+- **Report a problem…** (menu ⋮, and in About): a zip with the app's log, the phone, the USB devices (VID:PID, MAC,
+  role, how many: a hub), the boards' firmware, the settings, battery and storage, and the app's own logcat; sent by
+  **e-mail** (any app of the share sheet) or attached to a new **GitHub issue** (the zip is saved in Download/ATV RX/,
+  the issue is pre-filled). With both boards on a hub the phone's port is taken, so adb is out of reach.
+- The app's log is kept in a file (1 MB, rotated) across restarts and crashes: every screen's lines, USB devices coming
+  and going, crashes, and every 10 s the receiver's counters (lock, MER, frames, USB lost / jumps / ESP drop, queue) or
+  the transmitter's (C3 buffer, underruns), with the battery.
+
 ## 0.13-beta – 2026-10-18
 
 ### RX: recording (users' request)

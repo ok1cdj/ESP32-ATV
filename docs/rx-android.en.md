@@ -230,7 +230,11 @@ stored values. Details and measurements: [LO calibration](https://github.com/ok1
 | TX log: *C3 firmware …, on the web …* | a newer transmitter firmware: menu ⋮ → Firmware |
 | locked, good MER, but no frames: **QPSK 3/5 or 5/6 normal frames**, **8PSK short frames** | leandvb does not decode these modes (known issue, also from a clean signal) – choose another code rate or frame size; the app warns |
 
-Bugs and ideas: [issues](https://github.com/ok1cdj/ESP32-ATV/issues).
+Bugs and ideas: [issues](https://github.com/ok1cdj/ESP32-ATV/issues). When something does not work, send **menu ⋮ →
+Report a problem…** (also in *About*): say briefly what happened (RX / TX, hub or direct) and choose *E-mail…* or
+*GitHub issue*. The app attaches its log, the phone model, the USB devices (the boards' MAC addresses) and its
+settings – nothing else. Leave the boards connected as they were when it happened. With *GitHub issue* the zip is in
+**Download/ATV RX/**: attach it to the issue.
 
 ## Licences
 

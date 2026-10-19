@@ -219,7 +219,10 @@ mezitím neodpojovat (aplikace ho neresetuje, kalibrace tedy platí, dokud C3 ne
 | TX log: *C3 firmware …, on the web …* | na webu je novější firmware vysílače: menu ⋮ → Firmware |
 | zámek i MER v pořádku, ale žádné rámce: **QPSK 3/5 nebo 5/6 normální rámce**, **8PSK krátké rámce** | tyto režimy leandvb nedekóduje (známá chyba, i z čistého signálu) – zvol jiný poměr nebo velikost rámců; aplikace na to upozorní |
 
-Hlášení chyb a nápady: [issues](https://github.com/ok1cdj/ESP32-ATV/issues).
+Hlášení chyb a nápady: [issues](https://github.com/ok1cdj/ESP32-ATV/issues). Když něco nejde, pošli **menu ⋮ → Report
+a problem…** (i v *About*): krátce napiš, co se stalo (RX / TX, hub nebo přímo), a zvol *E-mail…* nebo *GitHub issue*.
+Aplikace přiloží svůj log, model telefonu, připojená USB zařízení (MAC desek) a nastavení – nic dalšího. Desky nech
+zapojené tak, jak byly, když se to stalo. U *GitHub issue* je zip v **Download/ATV RX/**, přilož ho k issue.
 
 ## Licence
 
