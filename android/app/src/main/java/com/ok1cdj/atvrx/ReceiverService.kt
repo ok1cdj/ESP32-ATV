@@ -56,7 +56,7 @@ class ReceiverService : Service() {
     }
 
     fun say(s: String) {
-        android.util.Log.i("atvrx", s)
+        AppLog.i("RX", s)
         synchronized(log) { log.addLast(s); while (log.size > 300) log.removeFirst() }
         ui.post { onLog?.invoke(s) }
     }
@@ -79,6 +79,11 @@ class ReceiverService : Service() {
         r.onConstellation = onConstellation
         receiver = r
         startedAt = System.nanoTime()
+        statsTicks = 0
+        AppLog.i("RX", "start %s, %.3f MHz %.1f kS/s %s %s %s gain %.0f dB drift %s · %s · %s".format(java.util.Locale.ROOT,
+            device?.let(AtvApp::device) ?: "replay ${cfg.replay?.name}", cfg.freqHz / 1e6, cfg.sr / 1e3, cfg.const, cfg.cr,
+            Receiver.frameSizeName(cfg.frameSizes), cfg.gainDb, cfg.track,
+            UsbBoards.describe(this, getSystemService(USB_SERVICE) as UsbManager), Diagnostics.power(this)))
         r.start()
         ui.postDelayed(tick, 2000)
     }
@@ -129,6 +134,7 @@ class ReceiverService : Service() {
         stopRec()
         receiver = null
         ui.removeCallbacks(tick)
+        logStats(r)
         Thread { r.stop() }.start()
         audio.reset()
         wake?.let { if (it.isHeld) it.release() }
@@ -141,12 +147,26 @@ class ReceiverService : Service() {
     private fun updateNotification() {
         val r = receiver ?: return
         if (recorder?.active == false) stopRec()                          // it stopped itself (storage full, error)
+        if (++statsTicks % STATS_TICKS == 0) logStats(r)
         val s = r.status
         val text = if (r.alive()) "MER %.1f dB · %s · %d frames".format(s.mer, r.demux.service ?: "–", s.framesOk + s.framesFixed)
                    else s.state
         notifications.notify(NOTIFICATION_ID, notification(recorder?.let { "● REC %.1f MB · ".format(it.bytes / 1e6) }.orEmpty() + text))
         ui.removeCallbacks(tick)
         ui.postDelayed(tick, 2000)
+    }
+
+    private var statsTicks = 0
+
+    /** The counters into the app's log only (not the screen): what a problem report needs to tell a lossy hub from no signal. */
+    private fun logStats(r: Receiver) {
+        val s = r.status; val u = r.link?.stats; val d = r.demux
+        AppLog.i("RX", ("stats %.0f s %s lock %s MER %.1f CNR %.1f frames ok %d fixed %d bad %d locks %d · USB packets %d lost %d " +
+            "jumps %d ESP drop %d skipped %d bad %d queue %d · TS %d pkts TEI %d CC %d · video %d frames%s · %s").format(
+            java.util.Locale.ROOT, (System.nanoTime() - startedAt) / 1e9, s.state, s.lock, s.mer, s.cnr, s.framesOk, s.framesFixed,
+            s.framesBad, s.locks, u?.packets ?: 0, u?.lost ?: 0, u?.jumps ?: 0, u?.dropped ?: 0, u?.skipped ?: 0, u?.bad ?: 0,
+            s.queueDrops, d.packets, d.errorPackets, d.ccErrors, video.frames, video.error?.let { " ERR $it" } ?: "",
+            Diagnostics.power(this)))
     }
 
     private fun notification(text: String): Notification {
@@ -176,5 +196,6 @@ class ReceiverService : Service() {
         const val ACTION_STOP_REC = "com.ok1cdj.atvrx.STOP_REC"
         private const val CHANNEL = "rx"
         private const val NOTIFICATION_ID = 1
+        private const val STATS_TICKS = 5                                 // of the notification's 2 s: every 10 s
     }
 }

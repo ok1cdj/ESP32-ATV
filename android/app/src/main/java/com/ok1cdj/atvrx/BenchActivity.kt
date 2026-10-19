@@ -109,9 +109,12 @@ class BenchActivity : Activity() {
         super.onDestroy()
     }
 
-    private fun say(s: String) = runOnUiThread {
-        log.append(s + "\n")
-        scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
+    private fun say(s: String) {
+        AppLog.i("BENCH", s)
+        runOnUiThread {
+            log.append(s + "\n")
+            scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
+        }
     }
 
     private fun findDevice(): UsbDevice? =

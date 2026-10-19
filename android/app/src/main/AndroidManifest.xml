@@ -17,6 +17,7 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
     <application
+        android:name=".AtvApp"
         android:label="ATV RX/TX"
         android:icon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
@@ -64,5 +65,11 @@
             android:name=".ReceiverService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+        <!-- the problem report's zip for the app it is shared with (Diagnostics) -->
+        <provider
+            android:name=".DiagProvider"
+            android:authorities="com.ok1cdj.atvrx.diag"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

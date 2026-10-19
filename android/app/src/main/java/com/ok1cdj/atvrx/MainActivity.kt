@@ -228,7 +228,7 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(permissionReceiver, filter, RECEIVER_NOT_EXPORTED)
         else registerReceiver(permissionReceiver, filter)
         appendLog("ATV RX/TX ${BuildConfig.VERSION_NAME} · ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
-        appendLog(UsbBoards.describe(this, usbManager))
+        UsbBoards.describe(this, usbManager).let { appendLog(it); AppLog.i("RX", it) }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
             android.content.pm.PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
@@ -300,6 +300,7 @@ class MainActivity : Activity() {
                 UpdateCheck.setEnabled(this, !UpdateCheck.enabled(this))
                 say("daily update check ${if (UpdateCheck.enabled(this)) "on" else "off"}")
             },
+            "Report a problem…" to { Diagnostics.dialog(this) },
             "About" to { startActivity(Intent(this, AboutActivity::class.java)) },
         )
         items.forEachIndexed { i, (t, _) -> m.menu.add(0, i, i, t) }
@@ -378,7 +379,7 @@ class MainActivity : Activity() {
         setOnClickListener(onClick)
     }
 
-    private fun say(s: String) = service?.say(s) ?: runOnUiThread { appendLog(s) }
+    private fun say(s: String) = service?.say(s) ?: run { AppLog.i("RX", s); runOnUiThread { appendLog(s) } }
 
     /** The log at the bottom of the page: the last LOG_LINES lines (the page does not jump to it). */
     private fun appendLog(s: String) {

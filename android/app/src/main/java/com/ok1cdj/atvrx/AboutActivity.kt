@@ -51,7 +51,18 @@ class AboutActivity : Activity() {
                 redistribute it under the conditions of the GPL v3: <a href="https://www.gnu.org/licenses/gpl-3.0.html">gnu.org/licenses/gpl-3.0</a>.</p>
             """.trimIndent(), android.text.Html.FROM_HTML_MODE_COMPACT)
         }
-        val scroll = ScrollView(this).apply { addView(text) }
+        // the app's log and the USB devices to the author: with both boards on a hub there is no port left for adb
+        val report = android.widget.Button(this).apply {
+            this.text = "Report a problem…"; isAllCaps = false; setTextColor(android.graphics.Color.WHITE)
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(android.graphics.Color.rgb(0x1E, 0x5A, 0xA8)); cornerRadius = 16f }
+            setOnClickListener { Diagnostics.dialog(this@AboutActivity) }
+        }
+        val body = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            addView(text)
+            addView(report)
+        }
+        val scroll = ScrollView(this).apply { addView(body) }
         setContentView(scroll)
         scroll.setOnApplyWindowInsetsListener { v, insets ->
             val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())

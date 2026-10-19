@@ -47,7 +47,7 @@ class TxService : Service() {
     }
 
     fun say(s: String) {
-        android.util.Log.i("atvrx-tx", s)
+        AppLog.i("TX", s)
         synchronized(log) { log.addLast(s); while (log.size > 300) log.removeFirst() }
         ui.post { onLog?.invoke(s) }
     }
@@ -64,6 +64,9 @@ class TxService : Service() {
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "atvrx:transmitter").apply { acquire() }
         val t = Transmitter(this, getSystemService(USB_SERVICE) as UsbManager, device, cfg, ::say)
         tx = t
+        statsTicks = 0
+        AppLog.i("TX", "start ${AtvApp.device(device)}, $cfg · ${UsbBoards.describe(this, getSystemService(USB_SERVICE) as UsbManager)} · " +
+            Diagnostics.power(this))
         t.start()
         ui.postDelayed(tick, 2000)
     }
@@ -72,6 +75,7 @@ class TxService : Service() {
         val t = tx ?: return
         tx = null
         ui.removeCallbacks(tick)
+        logStats(t)
         Thread { t.stop() }.start()
         wake?.let { if (it.isHeld) it.release() }
         wake = null
@@ -82,11 +86,23 @@ class TxService : Service() {
 
     private fun updateNotification() {
         val t = tx ?: return
+        if (++statsTicks % STATS_TICKS == 0) logStats(t)
         val s = t.status
         if (s.state.startsWith("error") || s.state == "stopped") { stopTx(); return }
         val secs = if (s.since > 0) (System.nanoTime() - s.since) / 1_000_000_000 else 0
         notifications.notify(NOTIFICATION_ID, notification("${s.state} · ${secs} s · C3 buffer ${s.fill}", t.cfg))
         ui.postDelayed(tick, 2000)
+    }
+
+    private var statsTicks = 0
+
+    /** The counters into the app's log only: buffer fill and underruns show a USB link (hub) that cannot keep up. */
+    private fun logStats(t: Transmitter) {
+        val s = t.status
+        val secs = if (s.since > 0) (System.nanoTime() - s.since) / 1e9 else 0.0
+        AppLog.i("TX", "stats %.0f s %s · C3 buffer %d underruns %d · PL frames %d sent %d B · TS %.1f kb/s video %d audio %d kb/s · %s"
+            .format(java.util.Locale.ROOT, secs, s.state, s.fill, s.underruns, s.plframes, s.bytes, s.tsRate / 1e3, s.videoKbps,
+                s.audioKbps, Diagnostics.power(this)))
     }
 
     private fun notification(text: String, cfg: Transmitter.Config): Notification {
@@ -109,5 +125,6 @@ class TxService : Service() {
         const val ACTION_STOP = "com.ok1cdj.atvrx.TX_STOP"
         private const val CHANNEL = "tx"
         private const val NOTIFICATION_ID = 2
+        private const val STATS_TICKS = 5                                 // of the notification's 2 s: every 10 s
     }
 }

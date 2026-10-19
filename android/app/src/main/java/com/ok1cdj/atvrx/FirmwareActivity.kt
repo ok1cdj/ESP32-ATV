@@ -250,7 +250,7 @@ class FirmwareActivity : Activity() {
         }.start()
     }
 
-    private fun log(s: String) = runOnUiThread { logView.append(s + "\n") }
+    private fun log(s: String) { AppLog.i("FW", s); runOnUiThread { logView.append(s + "\n") } }
 
     private fun progress(text: String, fraction: Double) = runOnUiThread {
         phase.text = text

@@ -287,7 +287,7 @@ class CalibrationActivity : Activity() {
         big?.let { level.text = it }
     }
 
-    private fun log(s: String) = runOnUiThread { logView.append(s + "\n") }
+    private fun log(s: String) { AppLog.i("CAL", s); runOnUiThread { logView.append(s + "\n") } }
 
     private fun button(t: String, onClick: () -> Unit) = Button(this).apply {
         text = t; isAllCaps = false; setTextColor(Color.WHITE)

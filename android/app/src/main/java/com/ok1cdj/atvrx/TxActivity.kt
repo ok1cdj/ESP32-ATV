@@ -55,8 +55,8 @@ class TxActivity : Activity() {
         override fun onServiceConnected(n: ComponentName, b: IBinder) {
             val s = (b as TxService.LocalBinder).service
             service = s
-            synchronized(s.log) { s.log.toList() }.forEach { log(it) }
-            s.onLog = { log(it) }
+            synchronized(s.log) { s.log.toList() }.forEach { show(it) }
+            s.onLog = { show(it) }
         }
         override fun onServiceDisconnected(n: ComponentName) { service = null }
     }
@@ -412,8 +412,14 @@ class TxActivity : Activity() {
         }
     }
 
-    /** The log at the bottom of the page: the last 60 lines. */
+    /** A line of this screen: into the app's log and on the page. */
     private fun log(s: String) {
+        AppLog.i("TX", s)
+        show(s)
+    }
+
+    /** The log at the bottom of the page: the last 60 lines. */
+    private fun show(s: String) {
         logLines.addLast(s)
         while (logLines.size > 60) logLines.removeFirst()
         logView.text = logLines.joinToString("\n")
