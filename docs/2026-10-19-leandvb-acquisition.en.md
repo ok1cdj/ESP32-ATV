@@ -42,6 +42,17 @@ Our encoder was right all along: its codewords pass every LDPC and BCH check, an
 5/6 normal included. With normal frames the first picture still takes about 28 s at 40 kS/s: ldpc_tool's batch of 32
 frames, not the acquisition. Short frames remain the better choice at low rates.
 
+On the bench (2026-10-20, C3 → S3 on the PC, 0 dB, `rx/rx.sh`, the C3 just started and drifting 20–300 Hz/s):
+
+| Case | Before (2026-10-15, with `--fastlock`) | After |
+|---|---|---|
+| 40 kS/s normal beacon, 5 runs | first TS 28–52 s, once none; false first lock in 3 of 5, once 15 in a row | first TS 31.8, 32.4, 32.0, 31.8, 32.4 s; one lock per run, right from 8.7 s; MER 12–19 dB |
+| QPSK 3/5 normal, 125 kS/s (`tx/tx_s2enc.py`) | no frame | first TS 12.9 s, 193 frames in 60 s, one lock, MER ~14 dB |
+| QPSK 5/6 normal, 125 kS/s | no frame | first TS 13.1 s, 192 frames, one lock, MER ~13.5 dB |
+
+Without any signal leandvb still locks on noise now and then (every 15–20 s, MER −13 to −16 dB): harmless, but the
+app shows a lock.
+
 Left over: once in the test (QPSK 4/5 short, one data pattern, clean signal) the carrier after the PLHEADER was about
 335 ppm of Rs off. That is half a cycle between pilots, and the lock went wrong. Unpatched leandvb does the same; other
 data decodes. It has not been seen with noise (72 simulated short-frame runs).

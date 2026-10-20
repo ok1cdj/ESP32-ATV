@@ -42,6 +42,16 @@ Náš kodér byl celou dobu v pořádku: jeho kódová slova projdou všemi kont
 3/5 a 5/6 normálních. S normálními rámci trvá první obraz při 40 kS/s dál asi 28 s, ale to je dávka 32 rámců
 ldpc_tool, ne zachycení. Krátké rámce zůstávají lepší volbou pro nízké rychlosti.
 
+Na stole (20. 10. 2026, C3 → S3 v PC, 0 dB, `rx/rx.sh`, C3 čerstvě zapnutá, drift 20–300 Hz/s):
+
+| Případ | Předtím (15. 10., s `--fastlock`) | Teď |
+|---|---|---|
+| maják 40 kS/s normální, 5 běhů | první TS 28–52 s, jednou nic; falešný první zámek 3 z 5, jednou 15× za sebou | první TS 31,8 / 32,4 / 32,0 / 31,8 / 32,4 s; jeden zámek na běh, správný už v 8,7 s; MER 12–19 dB |
+| QPSK 3/5 normální, 125 kS/s (`tx/tx_s2enc.py`) | žádný rámec | první TS 12,9 s, 193 rámců za 60 s, jeden zámek, MER ~14 dB |
+| QPSK 5/6 normální, 125 kS/s | žádný rámec | první TS 13,1 s, 192 rámců, jeden zámek, MER ~13,5 dB |
+
+Bez signálu se leandvb občas zamkne na šum (každých 15–20 s, MER −13 až −16 dB): neškodí, ale aplikace ukáže zámek.
+
 Zbývá: jednou v testu (QPSK 4/5 krátké, jeden vzor dat, čistý signál) byla nosná po PLHEADER mimo asi o 335 ppm Rs.
 To je půl otáčky mezi piloty a zámek se pokazil. Neopravený leandvb dělá totéž, jiná data dekódují. Se šumem se to
 neukázalo (72 simulovaných běhů s krátkými rámci).

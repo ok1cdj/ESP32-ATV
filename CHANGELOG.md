@@ -2,7 +2,7 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
-## Unreleased
+## 0.15-beta – 2026-10-20
 
 ### Receiver: leandvb acquisition fixed
 - **No more false first lock with normal frames:** leandvb searched for the PLHEADER in a window of 39 % of a normal
@@ -13,6 +13,9 @@ ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the
   broken (a test artifact).
 - A patch to leansdr (`tools/leandvb-acquisition.patch` in ESP32-DATV-RX), used by the app and by `rx_dvbs2.py`
   (rerun `third_party/ESP32-DATV-RX/tools/install.sh`). Details: docs/2026-10-19-leandvb-acquisition.en.md.
+- On the bench (PC, 0 dB): the 40 kS/s normal-frame beacon gave its first TS after 31.8–32.4 s in 5 of 5 runs with
+  one right lock each (before 28–52 s, once none, false first lock in 3 of 5); QPSK 3/5 and 5/6 normal at 125 kS/s
+  decoded at once (first TS 13 s).
 
 ## 0.14-beta – 2026-10-19
 
