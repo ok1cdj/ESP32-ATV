@@ -2,7 +2,7 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
-## Unreleased
+## 0.16-beta – 2026-10-21
 
 ### Receiver: 400 kS/s, retune to the signal
 - **400 kS/s is the receiver's top rate** (OK1PHU received it from a PlutoSDR with the Perseverance 0303 firmware).
@@ -16,6 +16,8 @@ ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the
   after the first retune and left ~20 kHz to the drift tracking (half a minute at 600 Hz/s).
 - On the bench (PC, C3 at 400 kS/s 60 kHz off): +48 → +64 → +69 kHz, leandvb's residual some 50 Hz, MER 12–13 dB
   from the first frame (before: 18 kHz residual, MER 10.9 dB, 35 s until the drift tracking caught up).
+- On the phone (same setup, app tuned to 2345.000 MHz): +51.9 → +69.7 → +76.6 kHz, first picture 5.6 s after the
+  demodulator started; 141 s with 1600 good frames, none bad, one lock, no USB loss, MER 9–11 dB.
 
 ## 0.15-beta – 2026-10-20
 
