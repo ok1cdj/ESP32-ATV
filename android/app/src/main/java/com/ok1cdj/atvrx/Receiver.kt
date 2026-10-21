@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.log10
+import kotlin.math.pow
 import kotlin.math.sin
 
 /**
@@ -18,7 +19,9 @@ import kotlin.math.sin
  *   ESP32-S3 (cs8 333 ksps below 200 kS/s, else cs4 500 ksps) -> samples, conjugated -> search for the signal in the
  *   first second (averaged FFT, as rx_dvbs2.py search) -> NCO moves it to 0 Hz -> leandvb (+ ldpc_tool) -> TS ->
  *   TsDemux -> VideoDecoder.
- * The receiver's LO stays where it is; the offset is taken out in software, which is where drift tracking goes later.
+ * In the 500 ksps mode the window is barely wider than the signal (400 kS/s: ~540 kHz), so a signal found off centre is
+ * not left to the NCO: the run stops, the LO moves to the signal's centre and the search runs again (at most 3 times,
+ * until the step is below 5 kHz; as rx_dvbs2.py). What is left over, and the drift, the NCO takes out.
  */
 class Receiver(
     private val conn: UsbDeviceConnection?,
@@ -36,7 +39,8 @@ class Receiver(
     /** What the screen shows; written by the worker threads. */
     class Status {
         @Volatile var state = "starting"
-        @Volatile var offsetHz = 0.0
+        @Volatile var offsetHz = 0.0         // NCO, from the LO
+        @Volatile var loShiftHz = 0L         // LO retuned by the search, from the frequency entered
         @Volatile var searchDb = 0.0
         @Volatile var lock = false
         @Volatile var frameLock = false
@@ -74,6 +78,11 @@ class Receiver(
     @Volatile private var running = true
     @Volatile private var searching = true
     @Volatile private var searchBusy = false
+    // retune by the search (wide mode): the LO asked for, a new LO for the control thread, steps in this search
+    private var tuneHz = cfg.freqHz
+    @Volatile private var retuneTo = 0L
+    @Volatile private var retuning = false
+    private var retunes = 0
     private val search = FloatArray(2 * fs.toInt())
     private var searchFill = 0
     // NCO as a rotating phasor (no trig per sample); offset changes come from the search and the drift tracking
@@ -112,10 +121,21 @@ class Receiver(
                 l.onJump = { e, f -> log("USB: packet index %d, expected %d (%+d)".format(f, e, f - e)) }
                 l.resetStats()
                 l.send(EspLink.ESP_RUN, 0)
-                // the run's answer comes when it ends: after stop(), or when the ESP fails
+                // the run's answer comes when it ends: after stop(), after a retune's ESP_STOP, or when the ESP fails
                 while (running) {
                     val r = try { l.await(EspLink.ESP_RUN, 1000) } catch (e: IOException) {
                         if (l.error != null) throw e
+                        continue
+                    }
+                    val to = retuneTo
+                    if (running && to != 0L) {
+                        retuneTo = 0L
+                        tuneHz = to
+                        val lo2 = l.configure(to, decim, format, EspLink.gainSelector(cfg.gainDb))
+                        status.loShiftHz = lo2 - cfg.freqHz
+                        log("retuned: LO %.6f MHz (%+.1f kHz from the frequency entered)".format(lo2 / 1e6, (lo2 - cfg.freqHz) / 1e3))
+                        retuning = false
+                        l.send(EspLink.ESP_RUN, 0)
                         continue
                     }
                     if (running) { status.state = "ESP run ended (code ${r.value})"; log(status.state) }
@@ -217,6 +237,7 @@ class Receiver(
 
     private fun onPacket(p: EspLink.Packet) {
         val iq = samples(p)
+        if (retuning) return                         // the last packets of a run that is being retuned
         specFeed(iq)
         if (searching) {
             if (searchBusy) return                   // the last second is still being analysed
@@ -230,8 +251,15 @@ class Receiver(
                 thread("rx-search") {
                     try {
                         if (findSignal()) {
-                            if (proc == null) startDemod() else { status.state = "demodulating"; lastFrameLock = System.nanoTime() }
-                            searching = false
+                            val step = ncoOffset
+                            if (wide && link != null && kotlin.math.abs(step) >= 5e3 && retunes < 3) {
+                                retunes++
+                                retune(step)
+                            } else {
+                                retunes = 0
+                                if (proc == null) startDemod() else { status.state = "demodulating"; lastFrameLock = System.nanoTime() }
+                                searching = false
+                            }
                         }
                     } catch (t: Throwable) { status.state = "error: ${t.message}"; log(status.state) }
                     searchBusy = false
@@ -309,6 +337,18 @@ class Receiver(
         while (i < iq.size) { iq[i] -= dcI; iq[i + 1] -= dcQ; i += 2 }
     }
 
+    /** Asks the control thread to move the LO by stepHz: it stops the run, retunes and starts a new one; the search goes on. */
+    private fun retune(stepHz: Double) {
+        status.state = "searching: retuning %+.1f kHz".format(stepHz / 1e3)
+        log(status.state)
+        ncoOffset = 0.0
+        status.offsetHz = 0.0
+        retuning = true
+        searchFill = 0
+        retuneTo = tuneHz + Math.round(stepHz)
+        link?.send(EspLink.ESP_STOP)
+    }
+
     /** rx_dvbs2.py search: averaged 1024-point spectrum, 9-bin smoothing, 95th vs 10th percentile, centre of the -3 dB band. */
     private fun findSignal(): Boolean {
         val n = 1024
@@ -327,6 +367,16 @@ class Receiver(
         val sorted = usable.map { sm[it] }.sorted()
         val floor = sorted[(0.10 * (sorted.size - 1)).toInt()]
         val peak = sorted[(0.95 * (sorted.size - 1)).toInt()]
+        if (peak - floor < 6 && retunes > 0) {
+            // retuned onto a signal wider than the window (400 kS/s in 500 ksps): it fills the window and leaves no floor.
+            // Centre of the power above the weakest bin instead (a cut-off signal pulls it towards 0, the next step fixes that).
+            val lin = usable.map { 10.0.pow((sm[it] - sorted.first()) / 10) - 1 }
+            val centre = usable.indices.sumOf { (usable[it] - n / 2) * fs / n * lin[it] } / lin.sum()
+            status.offsetHz = centre
+            ncoOffset = centre
+            log("signal fills the window: power centre %+.1f kHz".format(centre / 1e3))
+            return true
+        }
         status.searchDb = peak - floor
         if (peak - floor < 6) {
             status.state = "searching: no signal (%.1f dB above the floor)".format(peak - floor)

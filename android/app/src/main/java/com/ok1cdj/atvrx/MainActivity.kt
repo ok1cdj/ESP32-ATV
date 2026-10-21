@@ -41,7 +41,8 @@ import android.widget.TextView
  * The receiver itself lives in [ReceiverService] (foreground), so it keeps going with the screen off.
  */
 class MainActivity : Activity() {
-    private val rates = listOf(40_000, 50_000, 66_666, 100_000, 125_000, 250_000, 333_000, 400_000, 500_000)
+    // the ESP32-S3 receives up to 400 kS/s (500 ksps cs4); 500 kS/s (~675 kHz wide) does not fit
+    private val rates = listOf(40_000, 50_000, 66_666, 100_000, 125_000, 250_000, 333_000, 400_000)
 
     /** Receiver settings by name; the gain stays as it is (it depends on the distance, not on the transmission). */
     data class Preset(val name: String, val freq: String, val sr: Int, val const: String, val cr: String, val frames: Int) {
@@ -456,10 +457,11 @@ class MainActivity : Activity() {
             val usb = r.link?.stats
             // leandvb's FREQ means something only while frames come through (it reports noise as well)
             val live = r.alive() && s.mer > 3.0
-            val carrier = s.offsetHz + (if (s.freq.isNaN() || !live) 0.0 else s.freq)
+            val carrier = s.loShiftHz + s.offsetHz + (if (s.freq.isNaN() || !live) 0.0 else s.freq)
             buildString {
                 append("%s   %.0f s\n".format(s.state, (now - (service?.startedAt ?: now)) / 1e9))
-                append("carrier %+.2f kHz NCO %+.2f res %s Hz\n".format(carrier / 1e3, s.offsetHz / 1e3, if (live) num(s.freq, "%.0f") else "–"))
+                append("carrier %+.2f kHz %sNCO %+.2f res %s Hz\n".format(carrier / 1e3,
+                    if (s.loShiftHz != 0L) "LO %+.1f ".format(s.loShiftHz / 1e3) else "", s.offsetHz / 1e3, if (live) num(s.freq, "%.0f") else "–"))
                 append("drift %s  re-search %d  search %.0f dB\n".format(if (r.cfg.track) "%+.0f Hz/s".format(s.driftRate) else "off",
                     s.researches, s.searchDb))
                 append("LOCK %s FRAME %s  MER %s  CNR %s dB\n".format(yn(s.lock), yn(s.frameLock), num(s.mer, "%.1f"), num(s.cnr, "%.1f")))

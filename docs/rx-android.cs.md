@@ -68,6 +68,9 @@ nastavení zůstane. Automatické aktualizace bez dialogu: [Obtainium](https://g
 2. **Gain**: na stole 10 dB, na vzdálenost 30 dB a víc. Při silném signálu a velkém zisku se přijímač zahltí (MER klesá,
    ztrácí zámek).
 3. **Start.** Aplikace nejdřív sekundu hledá signál (FFT), naladí se na jeho střed a spustí demodulátor.
+   **Symbolová rychlost** 40–400 kS/s (S3 přijímá nejvýš 500 kHz; 500 kS/s je široký ~675 kHz a nevejde se). 400 kS/s
+   vyzkoušel OK1PHU s PlutoSDR (firmware Perseverance 0303). Nad 200 kS/s je okno jen o málo širší než signál, takže
+   aplikace S3 **přeladí na střed** nalezeného signálu (až třikrát, stav „retuning“; řádek *carrier* pak ukazuje i posun LO).
 4. **První obraz** přijde, až ldpc_tool dekóduje první dávku 32 rámců: při 333 kS/s asi za 3 s, při 50 kS/s asi
    za 20 s, při 40 kS/s asi za 27 s (první neúplná dávka se často ztratí, takže v praxi i dvojnásobek). Pak už obraz
    běží plynule (zpožděný o tu dávku). Maják s **krátkými rámci** (`FRAME=short`) a předvolba *Beacon … short* zkrátí

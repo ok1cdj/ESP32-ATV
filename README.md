@@ -31,7 +31,7 @@ Reception can be **recorded** as it is received (`.ts`, with MER / CNR as `.srt`
 ```
 XIAO ESP32-C3 (ESP32-DATV-SA beacon, DVB-S2 QPSK 3/4, 40–500 kS/s, 2345.000 MHz)
    ~ 13 cm ~>
-XIAO ESP32-S3 (ESP32-DATV-RX firmware: radio dump 16 MS/s -> 500 ksps cs4 / 333 ksps cs8 over native USB)
+XIAO ESP32-S3 (ESP32-DATV-RX firmware: radio dump 16 MS/s -> 500 ksps cs4 / 333 ksps cs8 over native USB; receives 40–400 kS/s)
    -> Android: ATV RX/TX (leandvb + ldpc_tool, MediaCodec)      or      PC: rx/rx.sh (rx_dvbs2.py, leandvb, ffplay)
 ```
 

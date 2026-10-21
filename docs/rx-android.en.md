@@ -71,6 +71,10 @@ Automatic updates without the dialog: [Obtainium](https://github.com/ImranR98/Ob
 2. **Gain**: 10 dB on a desk, 30 dB and more over a distance. A strong signal with a high gain overloads the receiver
    (MER drops, lock comes and goes).
 3. **Start.** The app looks for the signal for a second (FFT), tunes to its centre and starts the demodulator.
+   **Symbol rate** 40–400 kS/s (the S3 receives at most 500 kHz; 500 kS/s is ~675 kHz wide and does not fit). OK1PHU
+   received 400 kS/s from a PlutoSDR (Perseverance 0303 firmware). Above 200 kS/s the window is only a little wider than
+   the signal, so the app **retunes** the S3 to the centre of the signal it found (up to three times, state "retuning";
+   the *carrier* line then shows the LO shift as well).
 4. The **first picture** comes when ldpc_tool has decoded the first batch of 32 frames: about 3 s at 333 kS/s, 20 s at
    50 kS/s, 27 s at 40 kS/s (the first, partial batch is often lost, so up to twice that in practice). After that the
    picture runs smoothly (delayed by that batch). A beacon with **short frames** (`FRAME=short`) and a *Beacon … short*

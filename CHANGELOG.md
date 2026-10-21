@@ -2,6 +2,21 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## Unreleased
+
+### Receiver: 400 kS/s, retune to the signal
+- **400 kS/s is the receiver's top rate** (OK1PHU received it from a PlutoSDR with the Perseverance 0303 firmware).
+  500 kS/s (~675 kHz wide) does not fit the S3's 500 ksps and is gone from the receiver's rate list (the TX tab and
+  the C3 beacon still go to 500 kS/s, for other receivers).
+- **The app retunes the S3 to the signal** in the 500 ksps mode (above 200 kS/s): the LO used to stay put and the NCO
+  took the offset out, so a signal 66 kHz off (a Pluto and an S3 differ by some 27 ppm) lost its lower edge (MER
+  10.7 dB, 57 locks in 84 s). Now the run stops, the LO moves to the centre and the search runs again, as
+  `rx_dvbs2.py` did. A signal wider than the search window, which then fills it, is centred on its power (the
+  -3 dB band of the first search is pulled towards 0); also in `rx_dvbs2.py`, where it never found the signal again
+  after the first retune and left ~20 kHz to the drift tracking (half a minute at 600 Hz/s).
+- On the bench (PC, C3 at 400 kS/s 60 kHz off): +48 → +64 → +69 kHz, leandvb's residual some 50 Hz, MER 12–13 dB
+  from the first frame (before: 18 kHz residual, MER 10.9 dB, 35 s until the drift tracking caught up).
+
 ## 0.15-beta – 2026-10-20
 
 ### Receiver: leandvb acquisition fixed
