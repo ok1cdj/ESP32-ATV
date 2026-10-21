@@ -69,7 +69,10 @@ Automatic updates without the dialog: [Obtainium](https://github.com/ImranR98/Ob
    rate, modulation, code rate and frame size; **Save** stores your own settings. Avoid frequencies on a multiple of
    20 MHz (2320, 2340, 2360 …): the S3 has a spur of its own exactly there, inside the signal.
 2. **Gain**: 10 dB on a desk, 30 dB and more over a distance. A strong signal with a high gain overloads the receiver
-   (MER drops, lock comes and goes).
+   (MER drops, lock comes and goes). **−** / **+** change it by 1 dB (hold for more); **while receiving the gain and
+   drift change at once** (the gain goes to the S3 a second after the last step and costs it some 13 ms without samples: one frame at
+   400 kS/s, but at 40 kS/s leandvb may lose and regain the lock for a minute or two). Frequency, symbol
+   rate, modulation and frames are greyed out while receiving: Stop, change, Start.
 3. **Start.** The app looks for the signal for a second (FFT), tunes to its centre and starts the demodulator.
    **Symbol rate** 40–400 kS/s (the S3 receives at most 500 kHz; 500 kS/s is ~675 kHz wide and does not fit). OK1PHU
    received 400 kS/s from a PlutoSDR (Perseverance 0303 firmware). Above 200 kS/s the window is only a little wider than

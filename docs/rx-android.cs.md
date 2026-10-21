@@ -66,7 +66,10 @@ nastavení zůstane. Automatické aktualizace bez dialogu: [Obtainium](https://g
    symbolovou rychlost, modulaci, kódový poměr a velikost rámců; vlastní nastavení ulož tlačítkem **Save**. Vyhni se kmitočtům na
    násobcích 20 MHz (2320, 2340, 2360 …): S3 má přesně tam vlastní parazitní čáru, uvnitř signálu.
 2. **Gain**: na stole 10 dB, na vzdálenost 30 dB a víc. Při silném signálu a velkém zisku se přijímač zahltí (MER klesá,
-   ztrácí zámek).
+   ztrácí zámek). **−** / **+** mění gain po 1 dB (podržením rychleji); **za příjmu se gain a drift projeví hned**
+   (do S3 jde gain sekundu po posledním kroku a stojí ji asi 13 ms bez vzorků: při 400 kS/s jeden rámec, při
+   40 kS/s ale leandvb může minutu dvě ztrácet a znovu chytat zámek). Kmitočet, symbolová rychlost, modulace a rámce jsou
+   za příjmu zašedlé: Stop, změnit, Start.
 3. **Start.** Aplikace nejdřív sekundu hledá signál (FFT), naladí se na jeho střed a spustí demodulátor.
    **Symbolová rychlost** 40–400 kS/s (S3 přijímá nejvýš 500 kHz; 500 kS/s je široký ~675 kHz a nevejde se). 400 kS/s
    vyzkoušel OK1PHU s PlutoSDR (firmware Perseverance 0303). Nad 200 kS/s je okno jen o málo širší než signál, takže

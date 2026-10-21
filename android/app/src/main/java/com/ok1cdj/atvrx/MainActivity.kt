@@ -159,6 +159,10 @@ class MainActivity : Activity() {
         gain = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
             setText(prefs.getInt("gain", 30).toString()); hint = "dB"
+            gravity = android.view.Gravity.CENTER
+            // a typed gain takes effect when it is done (Done / leaving the field), not digit by digit ("2" of "20")
+            setOnEditorActionListener { _, _, _ -> applyGain(); false }
+            setOnFocusChangeListener { _, has -> if (!has) applyGain() }
         }
         presetSpinner = Spinner(this)
         refreshPresets()
@@ -195,7 +199,10 @@ class MainActivity : Activity() {
             addView(frames, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.6f))
         })
         startStop = button("Start") { if (receiver == null) start() else stop() }
-        track = android.widget.CheckBox(this).apply { text = "drift"; isChecked = prefs.getBoolean("track", true) }
+        track = android.widget.CheckBox(this).apply {
+            text = "drift"; isChecked = prefs.getBoolean("track", true)
+            setOnCheckedChangeListener { _, on -> receiver?.track = on; prefs.edit().putBoolean("track", on).apply() }
+        }
         val more = button("⋮") { v -> showMenu(v) }.apply { minWidth = 0; minimumWidth = 0; setPadding(36, 0, 36, 0) }
         // the received TS into a file as it is (+ .srt with MER / CNR), only while receiving
         rec = button("● REC") { val s = service ?: return@button; if (s.recorder == null) s.startRec() else s.stopRec() }
@@ -205,7 +212,9 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
             addView(label("gain dB"))
+            addView(gainButton("−", -1), LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
             addView(gain, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(gainButton("+", +1), LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
             addView(track, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { leftMargin = 16 })
         })
         body.addView(LinearLayout(this).apply {
@@ -365,6 +374,37 @@ class MainActivity : Activity() {
         adapter = adapter(items); setSelection(items.indexOf(sel).coerceAtLeast(0))
     }
 
+    /** - / + by 1 dB, repeating while held; while receiving each step goes to the S3 at once (gain and drift change live). */
+    private fun gainButton(t: String, step: Int): Button {
+        val b = button(t) { stepGain(step) }.apply { minWidth = 0; minimumWidth = 0; setPadding(40, 0, 40, 0) }
+        val h = Handler(Looper.getMainLooper())
+        val repeat = object : Runnable { override fun run() { stepGain(step); h.postDelayed(this, 120) } }
+        b.setOnLongClickListener { h.post(repeat); true }
+        b.setOnTouchListener { _, e ->
+            if (e.action == android.view.MotionEvent.ACTION_UP || e.action == android.view.MotionEvent.ACTION_CANCEL) h.removeCallbacks(repeat)
+            false
+        }
+        return b
+    }
+
+    private fun stepGain(step: Int) {
+        val g = ((gain.text.toString().toIntOrNull() ?: prefs.getInt("gain", 30)) + step).coerceIn(GAIN_MIN, GAIN_MAX)
+        gain.setText(g.toString())
+        applyGain()
+    }
+
+    // each gain change costs the S3 a gap of ~13 ms, and at 40 kS/s five steps 8 s apart kept leandvb re-locking for two
+    // minutes (false locks): the gain goes to the receiver once, GAIN_SETTLE_MS after the last step
+    private val gainHandler = Handler(Looper.getMainLooper())
+    private val sendGain = Runnable { prefs.getInt("gain", 30).let { receiver?.setGain(it.toDouble()) } }
+
+    private fun applyGain() {
+        val g = gain.text.toString().toIntOrNull()?.coerceIn(GAIN_MIN, GAIN_MAX) ?: return
+        prefs.edit().putInt("gain", g).apply()
+        gainHandler.removeCallbacks(sendGain)
+        gainHandler.postDelayed(sendGain, GAIN_SETTLE_MS)
+    }
+
     private fun label(t: String) = TextView(this).apply { text = t; setPadding(8, 0, 8, 0) }
 
     private fun row(vararg v: android.view.View) = LinearLayout(this).apply {
@@ -438,6 +478,9 @@ class MainActivity : Activity() {
         startStop.text = if (r == null) "Start" else "Stop"
         // stopped: empty spectrum and constellation, not the last ones (a few times, leandvb may still send a late line)
         if (r != null) clearViews = 6 else if (clearViews > 0) { clearViews--; constView.clear(); specView.clear() }
+        // only gain and drift change while receiving; the rest needs Stop / Start (greyed out until then)
+        val idle = r == null
+        for (v in listOf(freq, rate, constel, codeRate, frames, presetSpinner)) if (v.isEnabled != idle) { v.isEnabled = idle; v.alpha = if (idle) 1f else 0.4f }
         val recording = service?.recorder
         rec.isEnabled = r != null
         rec.alpha = if (r != null) 1f else 0.4f
@@ -462,7 +505,7 @@ class MainActivity : Activity() {
                 append("%s   %.0f s\n".format(s.state, (now - (service?.startedAt ?: now)) / 1e9))
                 append("carrier %+.2f kHz %sNCO %+.2f res %s Hz\n".format(carrier / 1e3,
                     if (s.loShiftHz != 0L) "LO %+.1f ".format(s.loShiftHz / 1e3) else "", s.offsetHz / 1e3, if (live) num(s.freq, "%.0f") else "–"))
-                append("drift %s  re-search %d  search %.0f dB\n".format(if (r.cfg.track) "%+.0f Hz/s".format(s.driftRate) else "off",
+                append("drift %s  re-search %d  search %.0f dB\n".format(if (r.track) "%+.0f Hz/s".format(s.driftRate) else "off",
                     s.researches, s.searchDb))
                 append("LOCK %s FRAME %s  MER %s%s\n".format(yn(s.lock), yn(s.frameLock), num(s.mer, "%.1f"),
                     if (r.cnrMeasured) "  CNR %s dB".format(num(s.cnr, "%.1f")) else ""))
@@ -492,5 +535,8 @@ class MainActivity : Activity() {
         /** IARU R1 13 cm ATV segment 2322-2355 MHz; ATV_FREQ of boards.sh on the PC side */
         const val DEFAULT_FREQ = "2345.000"         // not on n x 20 MHz: the S3 has a spur there
         private const val LOG_LINES = 60
+        // what the S3's gain selector 0..127 covers (EspLink.gainSelector)
+        private const val GAIN_MIN = -29; private const val GAIN_MAX = 96
+        private const val GAIN_SETTLE_MS = 1000L
     }
 }

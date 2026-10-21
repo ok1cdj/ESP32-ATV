@@ -2,6 +2,18 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## Unreleased
+
+### Receiver: gain and drift while receiving
+- **Gain − / +** (1 dB, repeating while held) next to the gain field; **while receiving the gain and the drift
+  tracking change at once**: the S3 ends a run on any input, so the app stops the run, sets the gain and starts a new
+  one, a second after the last step (a series of steps costs one gap). A typed gain applies on Done.
+- On the phone: at 400 kS/s each change cost exactly one bad frame and one re-lock, the picture went on; at 40 kS/s
+  (normal frames) a change leaves leandvb losing and regaining the lock, with false locks, for a minute or two.
+  The S3 has some 13 ms without samples per change (bench); filling that gap is an idea for later.
+- Frequency, symbol rate, modulation, code rate, frames and the preset are **greyed out while receiving**: they used to
+  stay editable and only took effect after Stop / Start.
+
 ## 0.16.1-beta – 2026-10-21
 
 ### Receiver: finds the signal again after a loss (400 kS/s)

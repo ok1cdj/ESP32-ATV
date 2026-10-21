@@ -84,6 +84,10 @@ class Receiver(
     private var tuneHz = cfg.freqHz
     @Volatile private var retuneTo = 0L
     @Volatile private var retuning = false
+    // changed while receiving (the screen's - / + and drift): the gain goes to the S3 between two runs, as a retune
+    @Volatile var gainDb = cfg.gainDb; private set
+    @Volatile private var gainChange = false
+    @Volatile var track = cfg.track
     private var retunes = 0
     private val search = FloatArray(2 * fs.toInt())
     private var searchFill = 0
@@ -116,27 +120,40 @@ class Receiver(
                 l.send(EspLink.ESP_STOP)
                 try { l.await(EspLink.ESP_RUN, 1500) } catch (_: IOException) {}
                 l.checkFirmware()
-                val lo = l.configure(cfg.freqHz, decim, format, EspLink.gainSelector(cfg.gainDb))
-                log("LO %.6f MHz, %.0f ksps %s, SR %d, gain %.0f dB".format(lo / 1e6, fs / 1e3, if (wide) "cs4" else "cs8", cfg.sr, cfg.gainDb))
+                val lo = l.configure(cfg.freqHz, decim, format, EspLink.gainSelector(gainDb))
+                log("LO %.6f MHz, %.0f ksps %s, SR %d, gain %.0f dB".format(lo / 1e6, fs / 1e3, if (wide) "cs4" else "cs8", cfg.sr, gainDb))
                 status.state = "searching"
                 l.onPacket = ::onPacket
                 l.onJump = { e, f -> log("USB: packet index %d, expected %d (%+d)".format(f, e, f - e)) }
                 l.resetStats()
                 l.send(EspLink.ESP_RUN, 0)
-                // the run's answer comes when it ends: after stop(), after a retune's ESP_STOP, or when the ESP fails
+                // the run's answer comes when it ends: after stop(), after the ESP_STOP of a retune or a gain change, or
+                // when the ESP fails. Any input ends a run on the S3, so only this thread sends that ESP_STOP: a second
+                // one arriving after the next ESP_RUN would end the new run.
+                var stopSent = false
                 while (running) {
-                    val r = try { l.await(EspLink.ESP_RUN, 1000) } catch (e: IOException) {
+                    if (!stopSent && (retuneTo != 0L || gainChange)) { l.send(EspLink.ESP_STOP); stopSent = true }
+                    val r = try { l.await(EspLink.ESP_RUN, 100) } catch (e: IOException) {
                         if (l.error != null) throw e
                         continue
                     }
+                    stopSent = false
                     val to = retuneTo
-                    if (running && to != 0L) {
-                        retuneTo = 0L
-                        tuneHz = to
-                        val lo2 = l.configure(to, decim, format, EspLink.gainSelector(cfg.gainDb))
-                        status.loShiftHz = lo2 - cfg.freqHz
-                        log("retuned: LO %.6f MHz (%+.1f kHz from the frequency entered)".format(lo2 / 1e6, (lo2 - cfg.freqHz) / 1e3))
-                        retuning = false
+                    val newGain = gainChange
+                    if (running && (to != 0L || newGain)) {
+                        gainChange = false
+                        if (to != 0L) {
+                            retuneTo = 0L
+                            tuneHz = to
+                            val lo2 = l.configure(to, decim, format, EspLink.gainSelector(gainDb))
+                            status.loShiftHz = lo2 - cfg.freqHz
+                            log("retuned: LO %.6f MHz (%+.1f kHz from the frequency entered)".format(lo2 / 1e6, (lo2 - cfg.freqHz) / 1e3))
+                            retuning = false
+                        } else {
+                            // the gain alone: about 13 ms without samples (bench, 500 ksps), less than a normal frame at 400 kS/s
+                            l.command(EspLink.ESP_SET_GAIN, EspLink.gainSelector(gainDb).toLong())
+                            log("gain %.0f dB".format(gainDb))
+                        }
                         l.send(EspLink.ESP_RUN, 0)
                         continue
                     }
@@ -352,8 +369,14 @@ class Receiver(
         status.offsetHz = 0.0
         retuning = true
         searchFill = 0
-        retuneTo = tuneHz + Math.round(stepHz)
-        link?.send(EspLink.ESP_STOP)
+        retuneTo = tuneHz + Math.round(stepHz)       // the control thread stops the run
+    }
+
+    /** A new gain while receiving: the control thread stops the run, sets it and starts a new one. */
+    fun setGain(db: Double) {
+        if (db == gainDb) return
+        gainDb = db
+        if (link != null) gainChange = true
     }
 
     /**
@@ -572,7 +595,7 @@ class Receiver(
      */
     private fun track(freq: Double) {
         // only on a live signal: a stale FRAMELOCK on noise would walk the NCO away (MER -13 dB seen when the TX stopped)
-        val rate = if (!cfg.track || searching || !alive() || !(status.mer > 3.0)) 0.0
+        val rate = if (!track || searching || !alive() || !(status.mer > 3.0)) 0.0
                    else (0.5 * freq).coerceIn(-600.0, 600.0)
         ncoRate = rate
         status.driftRate = rate
