@@ -464,7 +464,8 @@ class MainActivity : Activity() {
                     if (s.loShiftHz != 0L) "LO %+.1f ".format(s.loShiftHz / 1e3) else "", s.offsetHz / 1e3, if (live) num(s.freq, "%.0f") else "–"))
                 append("drift %s  re-search %d  search %.0f dB\n".format(if (r.cfg.track) "%+.0f Hz/s".format(s.driftRate) else "off",
                     s.researches, s.searchDb))
-                append("LOCK %s FRAME %s  MER %s  CNR %s dB\n".format(yn(s.lock), yn(s.frameLock), num(s.mer, "%.1f"), num(s.cnr, "%.1f")))
+                append("LOCK %s FRAME %s  MER %s%s\n".format(yn(s.lock), yn(s.frameLock), num(s.mer, "%.1f"),
+                    if (r.cnrMeasured) "  CNR %s dB".format(num(s.cnr, "%.1f")) else ""))
                 append("frames ok %d fixed %d bad %d locks %d\n".format(s.framesOk, s.framesFixed, s.framesBad, s.locks))
                 append("TS %.0f kb/s  %d pkts  TEI %d  CC %d\n".format(tsRate, d.packets, d.errorPackets, d.ccErrors))
                 append("service %s / %s\n".format(d.service ?: "–", d.provider ?: "–"))

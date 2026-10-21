@@ -104,8 +104,8 @@ class ReceiverService : Service() {
             frames = done
             val clock = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.ROOT).format(java.util.Date())
             if (!r.alive()) "$clock  no signal (${s.state})"
-            else "$clock  MER %.1f dB  CNR %s dB\ncarrier %+.2f kHz  frames %d/s  bad %d".format(java.util.Locale.ROOT, s.mer,
-                if (s.cnr.isNaN()) "–" else "%.1f".format(java.util.Locale.ROOT, s.cnr), (s.loShiftHz + s.offsetHz + (if (s.freq.isNaN()) 0.0 else s.freq)) / 1e3,
+            else "$clock  MER %.1f dB%s\ncarrier %+.2f kHz  frames %d/s  bad %d".format(java.util.Locale.ROOT, s.mer,
+                if (!r.cnrMeasured) "" else "  CNR %s dB".format(if (s.cnr.isNaN()) "–" else "%.1f".format(java.util.Locale.ROOT, s.cnr)), (s.loShiftHz + s.offsetHz + (if (s.freq.isNaN()) 0.0 else s.freq)) / 1e3,
                 got, s.framesBad)
         }
         try {

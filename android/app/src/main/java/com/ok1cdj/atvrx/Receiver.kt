@@ -74,6 +74,8 @@ class Receiver(
     private val format = replayHead?.let { it[2].toInt() and 0xFF } ?: if (cfg.sr > 200_000) EspLink.FMT_CS4 else EspLink.FMT_CS8
     private val wide = format == EspLink.FMT_CS4
     val fs = 1e6 / decim
+    // leandvb's CNR needs noise on both sides of the signal: a window at least 3 x SR wide (none at 400 kS/s in 500 ksps)
+    val cnrMeasured = fs > 3 * cfg.sr
 
     @Volatile private var running = true
     @Volatile private var searching = true
@@ -252,7 +254,12 @@ class Receiver(
                     try {
                         if (findSignal()) {
                             val step = ncoOffset
-                            if (wide && link != null && kotlin.math.abs(step) >= 5e3 && retunes < 3) {
+                            if (wide && link != null && kotlin.math.abs(tuneHz + step - cfg.freqHz) > MAX_SHIFT_HZ) {
+                                // a window filled with noise has a power centre too: steps after it walked the LO
+                                // 241 kHz away (OK1PHU); back to the frequency entered, where noise shows as no signal
+                                backToEntered("LO %+.0f kHz from the frequency entered: back to it".format(
+                                    (tuneHz + step - cfg.freqHz) / 1e3))
+                            } else if (wide && link != null && kotlin.math.abs(step) >= 5e3 && retunes < 3) {
                                 retunes++
                                 retune(step)
                             } else {
@@ -349,6 +356,18 @@ class Receiver(
         link?.send(EspLink.ESP_STOP)
     }
 
+    /**
+     * The LO back to the frequency entered and a new search from there. After a retune the signal fills the window and
+     * leaves no floor, so a search on the same LO cannot tell it from noise: when the signal came back after a loss it
+     * stayed "no signal" until Stop / Start (OK1PHU, 400 kS/s).
+     */
+    private fun backToEntered(why: String) {
+        retunes = 0
+        if (tuneHz == cfg.freqHz) return
+        log(why)
+        retune((cfg.freqHz - tuneHz).toDouble())
+    }
+
     /** rx_dvbs2.py search: averaged 1024-point spectrum, 9-bin smoothing, 95th vs 10th percentile, centre of the -3 dB band. */
     private fun findSignal(): Boolean {
         val n = 1024
@@ -422,7 +441,7 @@ class Receiver(
         // --fastlock: no ~5 normal frames of data thrown away before each new search (4 s at 40 kS/s); the first lock on
         // normal frames is often a false one (MER < 0), and this gets out of it sooner (rx/sim_lock.py)
         if (cfg.sr < 100_000) cmd += listOf("--sampler", "rrc", "--rrc-rej", "50", "--fastlock")
-        if (fs > 3 * cfg.sr) cmd += "--cnr"
+        if (cnrMeasured) cmd += "--cnr"
         // 2000 ppm instead of leandvb's 100: a C3 loop from the flash runs at 160 MHz / whole cycles (333 333 Bd for 333 k)
         cmd += listOf("--sr-tol", "0.002")
         val pb = ProcessBuilder(cmd)
@@ -433,7 +452,7 @@ class Receiver(
         status.state = "demodulating"
         status.demodSince = System.nanoTime()
         lastFrameLock = status.demodSince
-        log("leandvb started: ${cfg.const} ${cfg.cr}, frames ${frameSizeName(cfg.frameSizes)}${if (fs > 3 * cfg.sr) ", CNR" else ""}; " +
+        log("leandvb started: ${cfg.const} ${cfg.cr}, frames ${frameSizeName(cfg.frameSizes)}${if (cnrMeasured) ", CNR" else ""}; " +
             "first picture after about %.0f s (ldpc_tool decodes 32 frames at a time)".format(batchNs / 1e9))
         thread("rx-fdinfo") {
             try {
@@ -457,6 +476,7 @@ class Receiver(
                         status.state = "lost: searching again"
                         log("no good frame for %.0f s: searching again".format(aliveNs / 1e9))
                         searchFill = 0
+                        if (wide && link != null) backToEntered("LO back to the frequency entered")
                         searching = true
                     }
                 }
@@ -560,6 +580,8 @@ class Receiver(
 
     companion object {
         const val SPEC_N = 1024; const val SPEC_SEGS = 8
+        // retunes by the search stay this close to the frequency entered (crystals: ±60 kHz seen at 2.4 GHz)
+        const val MAX_SHIFT_HZ = 150e3
         const val FRAMES_NORMAL = 1; const val FRAMES_SHORT = 2; const val FRAMES_BOTH = 3   // leandvb --framesizes
         fun frameSizeName(f: Int) = when (f) { FRAMES_NORMAL -> "normal"; FRAMES_SHORT -> "short"; else -> "normal+short" }
 

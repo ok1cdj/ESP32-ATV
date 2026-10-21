@@ -102,7 +102,7 @@ Přehraješ ho ve **VLC** nebo mpv (telefon i PC; VLC si .srt najde sám; VLC na
 | `re-search` | kolikrát se signál ztratil a hledal znovu (10 s – u nízkých rychlostí 2,5 dávky LDPC – bez dobrého rámce) |
 | `LOCK`, `FRAME` | zámek demodulátoru a rámcové synchronizace DVB-S2 (✓ / ✗) |
 | `MER` | modulation error ratio v dB – hlavní míra kvality; QPSK 3/4 potřebuje zhruba > 5 dB, 8PSK 3/5 > 10 dB |
-| `CNR` | poměr nosná/šum (jen když vzorkování > 3× symbolová rychlost, tj. do 100 kS/s) |
+| `CNR` | poměr nosná/šum (jen když vzorkování > 3× symbolová rychlost, tj. do 100 kS/s; nad tím se nezobrazuje) |
 | `frames ok / fixed / bad` | rámce bez chyb / opravené kódem BCH / nedekódované |
 | `TS`, `TEI`, `CC` | tok transport streamu (průměr 10 s), pakety s chybou, nespojitosti čítače |
 | `service`, `video` | název služby a poskytovatele z SDT, kodek a rozlišení; `A/V sync` = obraz se řídí zvukem, `late … ms` = obraz přichází později než jeho zvuk |

@@ -108,7 +108,7 @@ Where: **Download/ATV RX/** (Android 10+, e.g. `ATV_2026-10-18_153012_2345.000MH
 | `re-search` | how often the signal was lost and searched again (10 s – at low rates 2.5 LDPC batches – without a good frame) |
 | `LOCK`, `FRAME` | demodulator lock and DVB-S2 frame sync (✓ / ✗) |
 | `MER` | modulation error ratio in dB – the main quality figure; QPSK 3/4 needs about > 5 dB, 8PSK 3/5 > 10 dB |
-| `CNR` | carrier-to-noise ratio (only when the sample rate is > 3× the symbol rate, i.e. up to 100 kS/s) |
+| `CNR` | carrier-to-noise ratio (only when the sample rate is > 3× the symbol rate, i.e. up to 100 kS/s; not shown above that) |
 | `frames ok / fixed / bad` | frames without errors / corrected by BCH / not decoded |
 | `TS`, `TEI`, `CC` | transport stream rate (10 s average), packets with errors, continuity counter breaks |
 | `service`, `video` | service and provider name from the SDT, codec and resolution; `A/V sync` = the picture follows the sound, `late … ms` = it comes later than its sound |

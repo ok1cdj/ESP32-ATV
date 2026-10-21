@@ -2,6 +2,20 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## 0.16.1-beta – 2026-10-21
+
+### Receiver: finds the signal again after a loss (400 kS/s)
+- **The signal is found again when it comes back:** after a retune the S3's LO sits on the signal, which then fills
+  the window and leaves no noise floor, so once the signal had gone (the transmitter off for a while) the search
+  could no longer tell it from noise and stayed "no signal" until Stop / Start (OK1PHU's log: three times in
+  five minutes). After a loss the LO now goes back to the frequency entered and the search starts over, as at Start.
+- **The LO stays within ±150 kHz of the frequency entered:** a window full of noise has a power centre too, and the
+  search walked the LO 241 kHz away after a loss (OK1PHU); beyond 150 kHz it goes back to the frequency entered.
+- On the bench (phone, C3 at 400 kS/s 60 kHz off, transmitter off for 25, 25 and 70 s): the LO went back each time,
+  stayed put on the noise and found the signal again (+51 → +69 → +74 kHz), MER 11–14 dB, no USB loss.
+- **CNR is no longer shown when it is not measured** (the window must be at least 3× the symbol rate; at 400 kS/s
+  the line said "CNR – dB"): the status line and the recording's .srt.
+
 ## 0.16-beta – 2026-10-21
 
 ### Receiver: 400 kS/s, retune to the signal
