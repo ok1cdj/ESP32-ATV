@@ -23,7 +23,7 @@ USB-OTG posílá živě testkartu, obraz z kamery nebo obrázek či video z tele
 |---|---|
 | **Seeed XIAO ESP32-S3** nebo **S3 Plus** | s externí anténou na U.FL (na 2.3 GHz – anténa z Wi-Fi sady stačí na stůl) |
 | **USB-C OTG** kabel nebo redukce | telefon musí umět USB host (OTG); S3 se napájí z telefonu |
-| **Android 9+**, procesor **arm64** | testováno: OnePlus 10 Pro (Android 16) |
+| **Android 9+**, procesor **ARM** | testováno: OnePlus 10 Pro (Android 16, arm64); 32bitový (armeabi-v7a) netestován, vyšší symbolové rychlosti nemusí stíhat |
 | pro TX: **Seeed XIAO ESP32-C3** | s anténou na U.FL; firmware nahraje aplikace nebo webový flasher |
 | počítač s **Chrome / Edge** | volitelně: firmware do obou desek umí nahrát i aplikace sama |
 

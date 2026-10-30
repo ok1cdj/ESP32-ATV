@@ -12,7 +12,7 @@ android {
         // CI: -PappVersion=0.4-beta (from the tag) and -PappCode=<run number>
         versionName = (findProperty("appVersion") as String?) ?: "0.4-dev"
         versionCode = (findProperty("appCode") as String?)?.toInt() ?: 4
-        ndk { abiFilters += "arm64-v8a" }
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
     buildFeatures { buildConfig = true }
     // release signing from the environment (CI secrets); without it the release build stays unsigned
@@ -54,8 +54,8 @@ dependencies {
 // the native receiver tools are built outside Gradle (they come from third_party/ESP32-DATV-RX/build)
 tasks.named("preBuild") {
     doFirst {
-        val dir = file("src/main/jniLibs/arm64-v8a")
-        if (listOf("libleandvb.so", "libldpc_tool.so", "libdvbs2enc.so").any { !File(dir, it).exists() })
+        val dirs = listOf("arm64-v8a", "armeabi-v7a").map { file("src/main/jniLibs/$it") }
+        if (dirs.any { dir -> listOf("libleandvb.so", "libldpc_tool.so", "libdvbs2enc.so").any { !File(dir, it).exists() } })
             throw GradleException("missing leandvb / ldpc_tool / dvbs2enc: run android/native/build-native.sh")
     }
 }

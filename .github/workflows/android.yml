@@ -36,7 +36,7 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
-      - name: leandvb + ldpc_tool (arm64)
+      - name: leandvb + ldpc_tool (arm64, armv7)
         run: android/native/build-native.sh
 
       - name: Version
@@ -77,4 +77,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* --prerelease --title "ATV RX/TX $APP_VERSION" --notes \
-            "Beta of the ATV RX/TX app (DVB-S2 receiver with an ESP32-S3, transmitter with an ESP32-C3; Android 9+, arm64). Install: see the guide https://ok1cdj.github.io/ESP32-ATV/ – licensed radio amateurs only. SHA-256 in SHA256SUMS."
+            "Beta of the ATV RX/TX app (DVB-S2 receiver with an ESP32-S3, transmitter with an ESP32-C3; Android 9+, 64- or 32-bit ARM). Install: see the guide https://ok1cdj.github.io/ESP32-ATV/ – licensed radio amateurs only. SHA-256 in SHA256SUMS."

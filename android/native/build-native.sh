@@ -1,9 +1,9 @@
 #!/bin/sh
-# Cross-compiles leandvb (leansdr) and ldpc_tool (Blockstream/LDPC) for Android arm64 with the NDK.
+# Cross-compiles leandvb (leansdr) and ldpc_tool (Blockstream/LDPC) for Android arm64 and 32-bit ARM with the NDK.
 # Sources: fetched here at fixed commits (the same as ESP32-DATV-RX tools/install.sh) into android/native/build/src,
 # with ESP32-DATV-RX's leandvb-ldpc-helper.patch, our leansdr-android.patch and ESP32-DATV-RX's
 # leandvb-acquisition.patch. Output:
-# android/app/src/main/jniLibs/arm64-v8a/lib*.so – executables named lib*.so so that Android installs them into
+# android/app/src/main/jniLibs/<abi>/lib*.so – executables named lib*.so so that Android installs them into
 # nativeLibraryDir, where an app may exec them; libdvbs2enc.so, our DVB-S2 encoder (android/native/dvbs2enc) as a
 # JNI library for the TX tab; libmpadec.so, minimp3 (CC0) for MP2 sound in RX (Android has no MP2 decoder).
 #   android/native/build-native.sh       (NDK from ANDROID_NDK_HOME, ANDROID_NDK or the newest in ~/Android/Sdk/ndk)
@@ -19,15 +19,14 @@ HELPER_PATCH="$ROOT/third_party/ESP32-DATV-RX/tools/leandvb-ldpc-helper.patch"  
 ACQ_PATCH="$ROOT/third_party/ESP32-DATV-RX/tools/leandvb-acquisition.patch"    # true first lock, QPSK 3/5 and 5/6
 NDK=${ANDROID_NDK_HOME:-${ANDROID_NDK:-$(ls -d "$HOME"/Android/Sdk/ndk/* 2>/dev/null | sort -V | tail -1)}}
 API=28                       # aligned_alloc (ldpc_tool) is in bionic from API 28
-CXX="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android$API-clang++"
-OUT="$ROOT/android/app/src/main/jniLibs/arm64-v8a"
-OBJ="$ROOT/android/native/build"
-SRC="$OBJ/src"
-[ -x "$CXX" ] || { echo "no NDK clang at $CXX (set ANDROID_NDK_HOME)"; exit 1; }
+BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+BUILD="$ROOT/android/native/build"
+SRC="$BUILD/src"
+[ -x "$BIN/aarch64-linux-android$API-clang++" ] || { echo "no NDK clang in $BIN (set ANDROID_NDK_HOME)"; exit 1; }
 for f in "$HELPER_PATCH" "$ACQ_PATCH"; do
   [ -f "$f" ] || { echo "missing $f: git submodule update --init third_party/ESP32-DATV-RX"; exit 1; }
 done
-mkdir -p "$OUT" "$SRC"
+mkdir -p "$SRC"
 
 # fetch(dir, url, commit): a clean checkout of exactly that commit
 fetch() {
@@ -49,25 +48,36 @@ patch -s -d "$SRC/leansdr" -p1 < "$ACQ_PATCH"
 fetch "$SRC/LDPC" "$LDPC_URL" "$LDPC_COMMIT"
 fetch "$SRC/minimp3" "$MINIMP3_URL" "$MINIMP3_COMMIT"
 
-echo "== leandvb ($NDK)"
-"$CXX" -O3 -I"$SRC/leansdr/src" -DVERSION='"leansdr-work-android"' -DLEANSDR_EXTENSIONS -D'exp10f(x)=powf(10.0f,(x))' \
-  -Wno-sign-compare -Wno-array-bounds -Wno-unused-variable -Wno-deprecated -static-libstdc++ \
-  "$SRC/leansdr/src/apps/leandvb.cc" -o "$OUT/libleandvb.so"
+# the same tools for each ABI: arm64, and 32-bit ARM for older phones and tablets (armeabi-v7a has NEON from the NDK's
+# defaults, so LDPC's NEON code is used without the -D__ARM_NEON__ below)
+for ABI in arm64-v8a armeabi-v7a; do
+  case $ABI in
+    arm64-v8a) CXX="$BIN/aarch64-linux-android$API-clang++"; NEON=-D__ARM_NEON__ ;;
+    armeabi-v7a) CXX="$BIN/armv7a-linux-androideabi$API-clang++"; NEON= ;;
+  esac
+  OUT="$ROOT/android/app/src/main/jniLibs/$ABI"
+  OBJ="$BUILD/$ABI"
+  mkdir -p "$OUT" "$OBJ"
+  echo "== $ABI: leandvb ($NDK)"
+  "$CXX" -O3 -I"$SRC/leansdr/src" -DVERSION='"leansdr-work-android"' -DLEANSDR_EXTENSIONS -D'exp10f(x)=powf(10.0f,(x))' \
+    -Wno-sign-compare -Wno-array-bounds -Wno-unused-variable -Wno-deprecated -static-libstdc++ \
+    "$SRC/leansdr/src/apps/leandvb.cc" -o "$OUT/libleandvb.so"
 
-echo "== ldpc_tool (NEON)"
-F="-std=c++11 -Ofast -fno-exceptions -fno-rtti -static-libstdc++"
-for o in tables_handler itls_handler mods_handler; do
-  "$CXX" $F -c "$SRC/LDPC/$o.cc" -o "$OBJ/$o.o"
+  echo "== $ABI: ldpc_tool (NEON)"
+  F="-std=c++11 -Ofast -fno-exceptions -fno-rtti -static-libstdc++"
+  for o in tables_handler itls_handler mods_handler; do
+    "$CXX" $F -c "$SRC/LDPC/$o.cc" -o "$OBJ/$o.o"
+  done
+  # NEON: LDPC's simd.hh tests __ARM_NEON__, which aarch64 compilers do not define; the NEON build is bit-exact with
+  # the generic one and twice as fast on a Snapdragon 8 Gen 1. The generic one stays in build/<abi>/ for comparison.
+  "$CXX" $F $NEON "$SRC/LDPC/ldpc_tool.cc" "$OBJ"/tables_handler.o "$OBJ"/itls_handler.o "$OBJ"/mods_handler.o \
+    -o "$OUT/libldpc_tool.so"
+  "$CXX" $F -U__ARM_NEON__ "$SRC/LDPC/ldpc_tool.cc" "$OBJ"/tables_handler.o "$OBJ"/itls_handler.o "$OBJ"/mods_handler.o -o "$OBJ/ldpc_tool_generic"
+  echo "== $ABI: dvbs2enc (JNI)"
+  "${CXX%++}" -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC -I"$ROOT/android/native/dvbs2enc" \
+    "$ROOT/android/native/dvbs2enc/dvbs2enc.c" "$ROOT/android/native/dvbs2enc/dvbs2enc_jni.c" -o "$OUT/libdvbs2enc.so"
+  echo "== $ABI: mpadec (JNI, minimp3)"
+  "${CXX%++}" -std=c11 -O2 -Wall -Wextra -shared -fPIC -I"$SRC/minimp3" \
+    "$ROOT/android/native/mpadec/mpadec_jni.c" -o "$OUT/libmpadec.so"
+  ls -la "$OUT"
 done
-# NEON: LDPC's simd.hh tests __ARM_NEON__, which aarch64 compilers do not define; the NEON build is bit-exact with
-# the generic one and twice as fast on a Snapdragon 8 Gen 1. The generic one stays in build/ for comparison.
-"$CXX" $F -D__ARM_NEON__ "$SRC/LDPC/ldpc_tool.cc" "$OBJ"/tables_handler.o "$OBJ"/itls_handler.o "$OBJ"/mods_handler.o \
-  -o "$OUT/libldpc_tool.so"
-"$CXX" $F "$SRC/LDPC/ldpc_tool.cc" "$OBJ"/tables_handler.o "$OBJ"/itls_handler.o "$OBJ"/mods_handler.o -o "$OBJ/ldpc_tool_generic"
-echo "== dvbs2enc (JNI)"
-"${CXX%++}" -std=c11 -O2 -Wall -Wextra -Werror -shared -fPIC -I"$ROOT/android/native/dvbs2enc" \
-  "$ROOT/android/native/dvbs2enc/dvbs2enc.c" "$ROOT/android/native/dvbs2enc/dvbs2enc_jni.c" -o "$OUT/libdvbs2enc.so"
-echo "== mpadec (JNI, minimp3)"
-"${CXX%++}" -std=c11 -O2 -Wall -Wextra -shared -fPIC -I"$SRC/minimp3" \
-  "$ROOT/android/native/mpadec/mpadec_jni.c" -o "$OUT/libmpadec.so"
-ls -la "$OUT"

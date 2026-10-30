@@ -6,7 +6,7 @@ set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 REC=$1; FS=$2; SR=$3
 A="adb${4:+ -s $4}"
-B="$ROOT/android/native/build"
+B="$ROOT/android/native/build/arm64-v8a"
 T=/data/local/tmp
 $A push "$ROOT/android/app/src/main/jniLibs/arm64-v8a/libleandvb.so" $T/leandvb >/dev/null
 $A push "$ROOT/android/app/src/main/jniLibs/arm64-v8a/libldpc_tool.so" $T/ldpc_tool >/dev/null

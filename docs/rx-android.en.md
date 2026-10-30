@@ -24,7 +24,7 @@ ESP32-C3 on USB-OTG it sends a test card, the phone's camera or a picture / vide
 |---|---|
 | **Seeed XIAO ESP32-S3** or **S3 Plus** | with an external antenna on U.FL (2.3 GHz – the Wi-Fi kit antenna is fine on a desk) |
 | **USB-C OTG** cable or adapter | the phone must support USB host (OTG); the S3 is powered by the phone |
-| **Android 9+**, **arm64** CPU | tested: OnePlus 10 Pro (Android 16) |
+| **Android 9+**, **ARM** CPU | tested: OnePlus 10 Pro (Android 16, arm64); 32-bit (armeabi-v7a) untested, may not keep up with the higher symbol rates |
 | for TX: **Seeed XIAO ESP32-C3** | with an antenna on U.FL; the firmware comes from the app or the web flasher |
 | a computer with **Chrome / Edge** | optional: the app writes the firmware into both boards itself |
 

@@ -137,7 +137,7 @@ By hand on the C3's USB: `BDC [GET [f] | i q | SAVE | PUT f i q | LIST | RESET |
 ## Receiver – Android (ATV RX/TX)
 See the [guide](docs/rx-android.en.md). Build it yourself:
 ```sh
-android/native/build-native.sh        # leandvb, ldpc_tool, the DVB-S2 encoder and minimp3 for arm64 with the NDK (fetches the sources itself)
+android/native/build-native.sh        # leandvb, ldpc_tool, the DVB-S2 encoder and minimp3 for arm64 and armv7 with the NDK (fetches the sources itself)
 cd android && ./gradlew assembleDebug
 ```
 
