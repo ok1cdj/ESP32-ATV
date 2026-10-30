@@ -4,6 +4,18 @@ ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the
 
 ## Unreleased
 
+Test build v0.17-beta-test (2026-10-30) for G3YKI's 32-bit tablet (issue #1).
+
+### 32-bit Android (armeabi-v7a)
+- **The APK installs on 32-bit ARM phones and tablets** too (it was arm64 only, issue #1): the native tools are built
+  for both. On the phone (which runs both) the 32-bit decoder gave the same frames as the 64-bit one and took
+  1.5× as long; how an older device keeps up is not known yet.
+
+### TX: the locator
+- An optional **Maidenhead locator** (4, 6 or 8 characters) next to the callsign: in the test card (bottom left of
+  the bars), in the callsign strip over a camera or file picture, in the SDT provider ("CALL LOCATOR ESP32-ATV") and
+  in the Morse identification when it fits (live TX; a beacon loop of 20 s or more).
+
 ### Receiver: gain and drift while receiving
 - **Gain − / +** (1 dB, repeating while held) next to the gain field; **while receiving the gain and the drift
   tracking change at once**: the S3 ends a run on any input, so the app stops the run, sets the gain and starts a new
