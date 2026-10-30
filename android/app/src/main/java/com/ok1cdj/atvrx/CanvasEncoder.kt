@@ -35,14 +35,17 @@ class CanvasEncoder(val width: Int, val height: Int, val fps: Int, val bitrate: 
     @Volatile var encoderName = ""; private set
 
     fun start() {
-        val f = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
+        // plain = without CBR, baseline and level 3.1 (built anew: MediaFormat.removeKey is API 29+)
+        fun format(plain: Boolean) = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
             setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
             setInteger(MediaFormat.KEY_FRAME_RATE, fps)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, keyInterval)
-            setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
-            setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline)
-            setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel31)
+            if (!plain) {
+                setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
+                setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline)
+                setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel31)
+            }
             // the clock repaints only a corner; repeat the last frame if nothing new comes (some encoders stall) - after two
             // periods: after one, a frame drawn a little late came right behind its repeat
             setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 2_000_000L / fps)
@@ -50,11 +53,10 @@ class CanvasEncoder(val width: Int, val height: Int, val fps: Int, val bitrate: 
         val c = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
         encoderName = c.name
         try {
-            c.configure(f, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            c.configure(format(false), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         } catch (e: Exception) {
             // not every encoder takes CBR, baseline or level 3.1: plain settings
-            f.removeKey(MediaFormat.KEY_BITRATE_MODE); f.removeKey(MediaFormat.KEY_PROFILE); f.removeKey(MediaFormat.KEY_LEVEL)
-            c.configure(f, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            c.configure(format(true), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         }
         surface = c.createInputSurface()
         c.start()

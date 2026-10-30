@@ -4,7 +4,12 @@ ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the
 
 ## Unreleased
 
-Test build v0.17-beta-test (2026-10-30) for G3YKI's 32-bit tablet (issue #1).
+Test builds v0.17-beta-test and v0.17.1-beta-test (2026-10-30) for G3YKI's 32-bit tablet (issue #1).
+
+### Android 9
+- **Start RX and Start TX no longer crash on Android 9** (v0.17.1-beta-test; issue #1): the services started with a
+  call that exists only from Android 10. The screens' edge-to-edge padding and the TX encoder's fallback settings
+  used Android 10/11 calls too; lint now finds none below the minimum (Android 9).
 
 ### 32-bit Android (armeabi-v7a)
 - **The APK installs on 32-bit ARM phones and tablets** too (it was arm64 only, issue #1): the native tools are built

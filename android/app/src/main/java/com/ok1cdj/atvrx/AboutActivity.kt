@@ -1,6 +1,7 @@
 package com.ok1cdj.atvrx
 
 import android.app.Activity
+import android.os.Build
 import android.os.Bundle
 import android.text.method.LinkMovementMethod
 import android.view.WindowInsets
@@ -64,11 +65,14 @@ class AboutActivity : Activity() {
         }
         val scroll = ScrollView(this).apply { addView(body) }
         setContentView(scroll)
-        scroll.setOnApplyWindowInsetsListener { v, insets ->
-            val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-            v.setPadding(32 + bars.left, 32 + bars.top, 32 + bars.right, 32 + bars.bottom)
-            insets
-        }
+        // getInsets(Type) is API 30+; before Android 15 nothing is drawn edge to edge, the system keeps the bars clear
+        if (Build.VERSION.SDK_INT >= 30) {
+            scroll.setOnApplyWindowInsetsListener { v, insets ->
+                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                v.setPadding(32 + bars.left, 32 + bars.top, 32 + bars.right, 32 + bars.bottom)
+                insets
+            }
+        } else scroll.setPadding(32, 32, 32, 32)
     }
 
     companion object {

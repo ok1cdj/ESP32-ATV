@@ -10,6 +10,7 @@ import android.content.pm.ServiceInfo
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Binder
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -59,7 +60,9 @@ class TxService : Service() {
         val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
             (if (cfg.source == Transmitter.SOURCE_BACK || cfg.source == Transmitter.SOURCE_FRONT) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0) or
             (if (cfg.sound == Transmitter.SOUND_MIC || cfg.sound == Transmitter.SOUND_MIC_CW) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0)
-        startForeground(NOTIFICATION_ID, notification("starting", cfg), type)
+        // the type argument is API 29+; Android 9 (API 28) takes the type from the manifest
+        if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION_ID, notification("starting", cfg), type)
+        else startForeground(NOTIFICATION_ID, notification("starting", cfg))
         wake = (getSystemService(POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "atvrx:transmitter").apply { acquire() }
         val t = Transmitter(this, getSystemService(USB_SERVICE) as UsbManager, device, cfg, ::say)

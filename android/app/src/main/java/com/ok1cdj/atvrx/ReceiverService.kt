@@ -10,6 +10,7 @@ import android.content.pm.ServiceInfo
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Binder
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -69,7 +70,10 @@ class ReceiverService : Service() {
         val conn = device?.let { (getSystemService(USB_SERVICE) as UsbManager).openDevice(it) ?: return say("openDevice failed") }
         // started (not only bound), so that it lives on when the activity goes; foreground at once
         startForegroundService(Intent(this, ReceiverService::class.java))
-        startForeground(NOTIFICATION_ID, notification("starting"), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+        // the type argument is API 29+; Android 9 (API 28) takes the type from the manifest
+        if (Build.VERSION.SDK_INT >= 29)
+            startForeground(NOTIFICATION_ID, notification("starting"), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+        else startForeground(NOTIFICATION_ID, notification("starting"))
         wake = (getSystemService(POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "atvrx:receiver").apply { acquire() }
         video.reset()
