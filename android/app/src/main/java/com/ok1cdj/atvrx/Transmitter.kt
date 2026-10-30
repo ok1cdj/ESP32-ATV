@@ -12,11 +12,12 @@ import java.util.concurrent.locks.LockSupport
 class Transmitter(private val ctx: android.content.Context, private val usbManager: UsbManager, private val device: UsbDevice,
                   val cfg: Config, private val log: (String) -> Unit) {
     /** const: QPSK or 8PSK; source: SOURCE_CARD, SOURCE_BACK or SOURCE_FRONT (camera), SOURCE_FILE ([fileUri]); sound:
-     *  SOUND_*; videoKbps, fps, audioKbps: 0 = automatic; overlay: the callsign strip over a file's picture */
+     *  SOUND_*; videoKbps, fps, audioKbps: 0 = automatic; overlay: the callsign strip over a file's picture; locator:
+     *  Maidenhead, "" = none (in the picture and, if it fits, in the Morse identification; the caller puts it in [provider]) */
     data class Config(val freqKhz: Long, val baud: Int, val rate: String, val shortFrame: Boolean, val pilots: Boolean,
                       val amp: Int, val call: String, val service: String, val provider: String, val source: String = SOURCE_CARD,
                       val const: String = "QPSK", val videoKbps: Int = 0, val fps: Int = 0, val sound: String = SOUND_OFF,
-                      val audioKbps: Int = 0, val fileUri: String = "", val overlay: Boolean = true)
+                      val audioKbps: Int = 0, val fileUri: String = "", val overlay: Boolean = true, val locator: String = "")
 
     class Status {
         @Volatile var state = "starting"
@@ -214,19 +215,24 @@ class Transmitter(private val ctx: android.content.Context, private val usbManag
         fun picture(ctx: android.content.Context, cfg: Config, w: Int, fps: Int, title: String, mode: String): Painter {
             val mhz = "%.3f MHz".format(java.util.Locale.ROOT, cfg.freqKhz / 1000.0)
             return when (cfg.source) {
-                SOURCE_CARD -> TestCard(cfg.call, "$title  $mhz", mode)
+                SOURCE_CARD -> TestCard(cfg.call, "$title  $mhz", mode, cfg.locator)
                 SOURCE_FILE -> FileSource(ctx, android.net.Uri.parse(cfg.fileUri), if (w > 320) 640 else 320, fps, cfg.call,
-                    "$mhz  $mode", cfg.overlay).also { it.start() }
-                else -> CameraSource(ctx, cfg.source == SOURCE_BACK, if (w > 320) 640 else 320, cfg.call, "$mhz  $mode")
+                    "$mhz  $mode", cfg.overlay, cfg.locator).also { it.start() }
+                else -> CameraSource(ctx, cfg.source == SOURCE_BACK, if (w > 320) 640 else 320, cfg.call, "$mhz  $mode", cfg.locator)
                     .also { it.start() }
             }
         }
 
-        /** the microphone and / or the callsign in Morse every [cwPeriod] s, or the sound of the video [file] */
+        /**
+         * the microphone and / or the callsign in Morse every [cwPeriod] s (with the locator if a third of the period
+         * stays silent: ~10 s at 20 wpm, so a short beacon loop keeps the callsign alone), or the sound of the video [file]
+         */
         fun pcmSource(ctx: android.content.Context, cfg: Config, cwPeriod: Double, file: FileSource?): PcmSource {
             if (cfg.sound == SOUND_FILE) return FilePcm(ctx, android.net.Uri.parse(cfg.fileUri),
                 file ?: throw java.io.IOException("sound from the video: the picture must be the video file"))
-            val cw = if (cfg.sound == SOUND_CW || cfg.sound == SOUND_MIC_CW) CwId(cfg.call, cwPeriod) else null
+            val cw = if (cfg.sound == SOUND_CW || cfg.sound == SOUND_MIC_CW)
+                CwId("${cfg.call} ${cfg.locator}".trim(), cwPeriod).takeIf { cfg.locator.isEmpty() || 1.0 + it.seconds <= cwPeriod * 2 / 3 }
+                    ?: CwId(cfg.call, cwPeriod) else null
             return if (cfg.sound == SOUND_CW) cwPcm(cw!!) else MicPcm(cw)
         }
 

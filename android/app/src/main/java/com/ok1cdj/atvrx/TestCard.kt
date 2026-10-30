@@ -8,8 +8,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** The TX test card: colour bars, callsign, two text lines and a clock (so that the picture visibly runs). */
-class TestCard(@Volatile var call: String, @Volatile var line2: String, @Volatile var line3: String) : Painter {
+/** The TX test card: colour bars, callsign, two text lines, the locator (if any) and a clock (so that the picture visibly runs). */
+class TestCard(@Volatile var call: String, @Volatile var line2: String, @Volatile var line3: String,
+               @Volatile var locator: String = "") : Painter {
     private val bars = intArrayOf(Color.rgb(192, 192, 192), Color.rgb(192, 192, 0), Color.rgb(0, 192, 192),
         Color.rgb(0, 192, 0), Color.rgb(192, 0, 192), Color.rgb(192, 0, 0), Color.rgb(0, 0, 192))
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -42,6 +43,15 @@ class TestCard(@Volatile var call: String, @Volatile var line2: String, @Volatil
         cv.drawRect(w - tw - h * 0.07f, top - h * 0.13f, w.toFloat(), top, paint)
         paint.color = Color.WHITE
         cv.drawText(t, w - h * 0.035f, top - h * 0.035f, paint)
+        // the locator the same way in the bottom left corner
+        if (locator.isNotEmpty()) {
+            paint.textAlign = Paint.Align.LEFT
+            val lw = paint.measureText(locator)
+            paint.color = Color.BLACK
+            cv.drawRect(0f, top - h * 0.13f, lw + h * 0.07f, top, paint)
+            paint.color = Color.WHITE
+            cv.drawText(locator, h * 0.035f, top - h * 0.035f, paint)
+        }
     }
 
 }

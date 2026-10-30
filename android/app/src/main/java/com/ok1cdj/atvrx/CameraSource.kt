@@ -26,7 +26,7 @@ import java.util.concurrent.Executor
  * landscape fills the frame, portrait shows a band of it.
  */
 class CameraSource(private val ctx: Context, private val back: Boolean, private val maxWidth: Int,
-                   @Volatile var call: String, @Volatile var line: String) : LivePainter {
+                   @Volatile var call: String, @Volatile var line: String, @Volatile var locator: String = "") : LivePainter {
     private val thread = HandlerThread("tx-camera").apply { start() }
     private val handler = Handler(thread.looper)
     private var device: CameraDevice? = null
@@ -110,6 +110,6 @@ class CameraSource(private val ctx: Context, private val back: Boolean, private 
             cv.drawColor(Color.BLACK)
             cv.drawBitmap(bm, matrix, paint)
         }
-        IdStrip.draw(cv, w, h, call, line, paint)
+        IdStrip.draw(cv, w, h, call, line, paint, locator)
     }
 }

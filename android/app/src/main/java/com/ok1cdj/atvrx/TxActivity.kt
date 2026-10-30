@@ -78,6 +78,7 @@ class TxActivity : Activity() {
     private lateinit var source: Spinner
     private lateinit var amp: EditText
     private lateinit var call: EditText
+    private lateinit var locator: EditText
     private lateinit var videoKbps: Spinner
     private lateinit var fps: Spinner
     private lateinit var sound: Spinner
@@ -143,7 +144,9 @@ class TxActivity : Activity() {
         body.addView(row(constel, fec, frame))
         amp = edit(prefs.getInt("amp", 300).toString(), InputType.TYPE_CLASS_NUMBER)
         call = edit(prefs.getString("call", "")!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS).apply { hint = "callsign" }
-        body.addView(row(label("call"), call, label("AMP"), amp))
+        // the locator is optional: in the picture, the SDT's provider and the Morse identification when there is room
+        locator = edit(prefs.getString("locator", "")!!, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS).apply { hint = "locator" }
+        body.addView(row(label("call"), call, label("loc"), locator, label("AMP"), amp))
         source = spinner(Transmitter.SOURCES, prefs.getString("source", Transmitter.SOURCE_CARD)!!)
         // auto (from the TS rate) or a fixed value, chosen from a list so that "auto" is always one tap away
         fun choice(v: Int) = if (v == 0) "auto" else v.toString()
@@ -249,6 +252,8 @@ class TxActivity : Activity() {
         val a = amp.text.toString().toIntOrNull()?.takeIf { it in 1..480 } ?: return null.also { log("AMP 1..480") }
         val cs = call.text.toString().trim().uppercase()
         if (cs.isEmpty()) return null.also { log("callsign?") }
+        val loc = locator.text.toString().trim().uppercase()
+        if (loc.isNotEmpty() && !LOCATOR.matches(loc)) return null.also { log("locator: Maidenhead, 4, 6 or 8 characters (JN79, JN79FX), or empty") }
         val sr = rates[rate.selectedItemPosition]
         val c = constel.selectedItem as String
         val shortFrame = frame.selectedItem == "short"
@@ -260,10 +265,11 @@ class TxActivity : Activity() {
         val ak = audioChoices[audioKbps.selectedItemPosition]
         prefs.edit().putString("freq", freq.text.toString()).putInt("sr", sr).putString("const", c).putString("fec", r)
             .putString("frame", frame.selectedItem as String).putBoolean("pilots", pilots.isChecked)
-            .putInt("amp", a).putString("call", cs).putString("source", src).putInt("videoKbps", vk).putInt("fps", f)
+            .putInt("amp", a).putString("call", cs).putString("locator", loc).putString("source", src).putInt("videoKbps", vk).putInt("fps", f)
             .putString("sound", sound.selectedItem as String).putInt("audioKbps", ak).putBoolean("overlay", overlay.isChecked).apply()
-        val cfg = Transmitter.Config(Math.round(mhz * 1000), sr, r, shortFrame, pilots.isChecked, a, cs, cs, "$cs ESP32-ATV",
-            src, c, vk, f, snd, ak, fileUri, overlay.isChecked)
+        val cfg = Transmitter.Config(Math.round(mhz * 1000), sr, r, shortFrame, pilots.isChecked, a, cs, cs,
+            listOf(cs, loc, "ESP32-ATV").filter { it.isNotEmpty() }.joinToString(" "), src, c, vk, f, snd, ak, fileUri,
+            overlay.isChecked, loc)
         return cfg to dev
     }
 
@@ -355,13 +361,14 @@ class TxActivity : Activity() {
     /** the preview of the file with the current callsign and switch, decoded once in the background per change */
     private fun filePreview(): Painter? {
         val cs = call.text.toString().trim().uppercase().ifEmpty { "CALLSIGN" }
+        val loc = locator.text.toString().trim().uppercase()
         val line = "${freq.text} MHz  DVB-S2 ${constel.selectedItem} ${fec.selectedItem}"
-        val key = "$fileUri|$cs|$line|${overlay.isChecked}"
+        val key = "$fileUri|$cs|$loc|$line|${overlay.isChecked}"
         if (key != filePreviewKey && fileUri.isNotEmpty()) {
             filePreviewKey = key
             val uri = android.net.Uri.parse(fileUri); val ov = overlay.isChecked
             Thread {
-                filePreview = try { FileSource.still(this, uri, cs, line, ov) } catch (_: Exception) { null }
+                filePreview = try { FileSource.still(this, uri, cs, line, ov, loc) } catch (_: Exception) { null }
             }.start()
         }
         return filePreview.takeIf { fileUri.isNotEmpty() }
@@ -401,7 +408,7 @@ class TxActivity : Activity() {
             // while TX runs the picture being sent; while stopped the chosen file or the test card with the current settings
             val p = tx?.video?.painter ?: loopMaker?.painter ?: (if (source.selectedItem == Transmitter.SOURCE_FILE) filePreview() else null) ?: TestCard(call.text.toString().trim().uppercase().ifEmpty { "CALLSIGN" },
                 "ESP32-ATV TX  ${freq.text} MHz", "DVB-S2 ${constel.selectedItem} ${fec.selectedItem}" +
-                    "${if (frame.selectedItem == "short") " short" else ""}  ${rate.selectedItem}")
+                    "${if (frame.selectedItem == "short") " short" else ""}  ${rate.selectedItem}", locator.text.toString().trim().uppercase())
             val b = previewBitmap ?: Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888).also { previewBitmap = it }
             p.draw(Canvas(b), 640, 360)
             preview.setImageBitmap(b)
@@ -452,5 +459,7 @@ class TxActivity : Activity() {
         private const val REQ_NOTIFY = 3
         private const val REQ_AUDIO = 4
         private const val REQ_FILE = 5
+        /** Maidenhead: field, square, optionally subsquare and extended square */
+        val LOCATOR = Regex("[A-R]{2}[0-9]{2}([A-X]{2}([0-9]{2})?)?")
     }
 }

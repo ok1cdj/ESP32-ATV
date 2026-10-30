@@ -55,9 +55,12 @@ class YuvToBitmap(private val step: Int = 1) {
     fun <T> draw(f: (Bitmap?) -> T): T = synchronized(this) { f(bitmap) }
 }
 
-/** The station's identification over a picture (camera, file): a dark strip at the bottom, callsign left, [line] right. */
+/**
+ * The station's identification over a picture (camera, file): a dark strip at the bottom, callsign left, [line] right;
+ * with a [locator] the right side has two lines, the locator above [line] (there is no room for it beside the callsign).
+ */
 object IdStrip {
-    fun draw(cv: Canvas, w: Int, h: Int, call: String, line: String, paint: Paint) {
+    fun draw(cv: Canvas, w: Int, h: Int, call: String, line: String, paint: Paint, locator: String = "") {
         val sh = h * 0.13f
         paint.color = Color.argb(170, 0, 0, 0)
         cv.drawRect(0f, h - sh, w.toFloat(), h.toFloat(), paint)
@@ -67,8 +70,14 @@ object IdStrip {
         paint.textAlign = Paint.Align.LEFT
         cv.drawText(call, h * 0.03f, h - sh * 0.24f, paint)
         paint.typeface = Typeface.DEFAULT
-        paint.textSize = sh * 0.45f
         paint.textAlign = Paint.Align.RIGHT
-        cv.drawText(line, w - h * 0.03f, h - sh * 0.3f, paint)
+        if (locator.isEmpty()) {
+            paint.textSize = sh * 0.45f
+            cv.drawText(line, w - h * 0.03f, h - sh * 0.3f, paint)
+        } else {
+            paint.textSize = sh * 0.38f
+            cv.drawText(locator, w - h * 0.03f, h - sh * 0.56f, paint)
+            cv.drawText(line, w - h * 0.03f, h - sh * 0.12f, paint)
+        }
     }
 }

@@ -31,7 +31,8 @@ import java.nio.ByteOrder
  * same clock.
  */
 class FileSource(private val ctx: Context, private val uri: Uri, private val maxWidth: Int, private val fps: Int,
-                 @Volatile var call: String, @Volatile var line: String, private val overlay: Boolean) : LivePainter {
+                 @Volatile var call: String, @Volatile var line: String, private val overlay: Boolean,
+                 @Volatile var locator: String = "") : LivePainter {
     @Volatile override var error: String? = null; private set
     @Volatile var frames = 0L; private set
     @Volatile var loops = 0; private set
@@ -161,7 +162,7 @@ class FileSource(private val ctx: Context, private val uri: Uri, private val max
             }
             drawFit(cv, w, h, current, rotation)
         }
-        if (overlay) IdStrip.draw(cv, w, h, call, line, paint)
+        if (overlay) IdStrip.draw(cv, w, h, call, line, paint, locator)
     }
 
     /** the whole picture, upright, as large as fits, black bars around */
@@ -231,12 +232,12 @@ class FileSource(private val ctx: Context, private val uri: Uri, private val max
             } catch (e: Exception) { throw IOException("picture: ${e.message}") }
 
         /** The preview while TX is stopped: the picture, or the first frame of the video (upright already). */
-        fun still(ctx: Context, uri: Uri, call: String, line: String, overlay: Boolean): Painter {
+        fun still(ctx: Context, uri: Uri, call: String, line: String, overlay: Boolean, locator: String = ""): Painter {
             val i = probe(ctx, uri)
             val bm = if (i.video) MediaMetadataRetriever().run {
                 try { setDataSource(ctx, uri); getFrameAtTime(0) } finally { release() }
             } else decodePicture(ctx, uri, 1280)
-            val f = FileSource(ctx, uri, 640, 1, call, line, overlay)
+            val f = FileSource(ctx, uri, 640, 1, call, line, overlay, locator)
             f.still = bm
             return f
         }
