@@ -2,9 +2,10 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
-## Unreleased
+## 0.18-beta – 2026-11-02
 
-Test builds v0.17-beta-test and v0.17.1-beta-test (2026-10-30) for G3YKI's 32-bit tablet (issue #1).
+Everything of the test builds v0.17-beta-test and v0.17.1-beta-test (2026-10-30, for G3YKI's 32-bit tablet,
+issue #1) and the LO beside a slow signal.
 
 ### Receiver: the LO beside a slow signal
 - **Below 100 kS/s the LO goes 80 kHz above the signal** (app and `rx_dvbs2.py`); the NCO brings it back. The S3
