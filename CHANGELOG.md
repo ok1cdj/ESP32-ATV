@@ -6,6 +6,14 @@ ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the
 
 Test builds v0.17-beta-test and v0.17.1-beta-test (2026-10-30) for G3YKI's 32-bit tablet (issue #1).
 
+### Receiver: the LO beside a slow signal
+- **Below 100 kS/s the LO goes 80 kHz above the signal** (app and `rx_dvbs2.py`); the NCO brings it back. The S3
+  has a hump of ±25 kHz around its LO (XIAO and S3 Zero alike) that buries a weak signal of 40 kS/s (54 kHz wide)
+  tuned onto it. Bench, 40 kS/s with the gain turned down: on the LO nothing decoded from gain selector 16 down,
+  80 kHz off it MER 9–12 dB; a strong signal decodes the same either way. The app retunes once when the search
+  finds the signal near the LO and goes back to the frequency entered after a loss; `rx_dvbs2.py --lo-offset 0`
+  turns it off.
+
 ### Android 9
 - **Start RX and Start TX no longer crash on Android 9** (v0.17.1-beta-test; issue #1): the services started with a
   call that exists only from Android 10. The screens' edge-to-edge padding and the TX encoder's fallback settings

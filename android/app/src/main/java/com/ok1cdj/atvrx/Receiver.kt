@@ -22,6 +22,8 @@ import kotlin.math.sin
  * In the 500 ksps mode the window is barely wider than the signal (400 kS/s: ~540 kHz), so a signal found off centre is
  * not left to the NCO: the run stops, the LO moves to the signal's centre and the search runs again (at most 3 times,
  * until the step is below 5 kHz; as rx_dvbs2.py). What is left over, and the drift, the NCO takes out.
+ * Below 100 kS/s (333 ksps) a signal found near the LO is moved off it once: the LO goes LO_OFFSET_HZ above the
+ * signal, out of the S3's own hump around the LO, and the NCO takes it from there (as rx_dvbs2.py LO_OFFSET).
  */
 class Receiver(
     private val conn: UsbDeviceConnection?,
@@ -76,6 +78,8 @@ class Receiver(
     val fs = 1e6 / decim
     // leandvb's CNR needs noise on both sides of the signal: a window at least 3 x SR wide (none at 400 kS/s in 500 ksps)
     val cnrMeasured = fs > 3 * cfg.sr
+    // below 100 kS/s the signal is kept LO_OFFSET_HZ below the LO (a narrow signal fits in the 333 ksps window beside it)
+    private val loOffset = !wide && cfg.sr < 100_000
 
     @Volatile private var running = true
     @Volatile private var searching = true
@@ -279,6 +283,12 @@ class Receiver(
                             } else if (wide && link != null && kotlin.math.abs(step) >= 5e3 && retunes < 3) {
                                 retunes++
                                 retune(step)
+                            } else if (loOffset && link != null && retunes == 0 &&
+                                       kotlin.math.abs(step) < HUMP_HZ + 0.675 * cfg.sr) {
+                                // the signal (half width 0.675 x SR at roll-off 0.35) reaches into the hump: once,
+                                // the LO goes LO_OFFSET_HZ above it and the next search finds it there
+                                retunes++
+                                retune(step + LO_OFFSET_HZ)
                             } else {
                                 retunes = 0
                                 if (proc == null) startDemod() else { status.state = "demodulating"; lastFrameLock = System.nanoTime() }
@@ -499,7 +509,7 @@ class Receiver(
                         status.state = "lost: searching again"
                         log("no good frame for %.0f s: searching again".format(aliveNs / 1e9))
                         searchFill = 0
-                        if (wide && link != null) backToEntered("LO back to the frequency entered")
+                        if ((wide || loOffset) && link != null) backToEntered("LO back to the frequency entered")
                         searching = true
                     }
                 }
@@ -605,6 +615,10 @@ class Receiver(
         const val SPEC_N = 1024; const val SPEC_SEGS = 8
         // retunes by the search stay this close to the frequency entered (crystals: ±60 kHz seen at 2.4 GHz)
         const val MAX_SHIFT_HZ = 150e3
+        // the ESP32-S3's own hump around its LO: +-25 kHz (LO leakage, ADC offset; removeDc takes out only the line at
+        // 0 Hz). Bench 2026-11-02, 40 kS/s: a weak signal on the LO did not decode at all, 80 kHz off it MER 9-12 dB.
+        const val HUMP_HZ = 25e3
+        const val LO_OFFSET_HZ = 80e3
         const val FRAMES_NORMAL = 1; const val FRAMES_SHORT = 2; const val FRAMES_BOTH = 3   // leandvb --framesizes
         fun frameSizeName(f: Int) = when (f) { FRAMES_NORMAL -> "normal"; FRAMES_SHORT -> "short"; else -> "normal+short" }
 
