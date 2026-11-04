@@ -2,6 +2,23 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## 0.18.1-beta – 2026-11-04
+
+### Receiver: the search no longer takes the S3's hump for the signal
+- Below 100 kS/s the S3's own hump on the LO (±25 kHz) looks like a 40 kS/s signal on its own (7–20 dB above
+  the floor, ~37 kHz wide) and swallowed a weak signal on it: after the LO had moved 80 kHz above the signal
+  the search found the hump again ("centre +0.0 kHz") or the hump and the signal as one ("−47 kHz, 100 kHz
+  wide"), and leandvb demodulated that for 17 s before searching again. The search beside the LO now leaves the
+  hump out; with nothing beside it, what the first search found was the hump, and the LO goes back to the
+  frequency entered. `rx_dvbs2.py` looks again the same way before it starts receiving.
+- Phone, S3 Zero (crystal), 40 kS/s short: first picture 15 s after leandvb started, where an S3 Zero had
+  taken 34 s; a new search after a loss found the signal at −94 kHz at once.
+
+### Bench note: power the transmitter straight from a computer
+- A C3 beacon powered through a USB hub (or a power bank) sends a signal that decodes badly or not at all:
+  MER 3–4 dB at CNR 20–30 dB on every receiver and at every gain. Straight from a laptop port: MER 15–16 dB
+  (XIAO S3).
+
 ## 0.18-beta – 2026-11-02
 
 Everything of the test builds v0.17-beta-test and v0.17.1-beta-test (2026-10-30, for G3YKI's 32-bit tablet,

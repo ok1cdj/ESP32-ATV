@@ -23,7 +23,8 @@ import kotlin.math.sin
  * not left to the NCO: the run stops, the LO moves to the signal's centre and the search runs again (at most 3 times,
  * until the step is below 5 kHz; as rx_dvbs2.py). What is left over, and the drift, the NCO takes out.
  * Below 100 kS/s (333 ksps) a signal found near the LO is moved off it once: the LO goes LO_OFFSET_HZ above the
- * signal, out of the S3's own hump around the LO, and the NCO takes it from there (as rx_dvbs2.py LO_OFFSET).
+ * signal, out of the S3's own hump around the LO, and the NCO takes it from there (as rx_dvbs2.py LO_OFFSET). The search
+ * there leaves the hump out; nothing beside it means the first search found only the hump: back to the frequency entered.
  */
 class Receiver(
     private val conn: UsbDeviceConnection?,
@@ -294,6 +295,9 @@ class Receiver(
                                 if (proc == null) startDemod() else { status.state = "demodulating"; lastFrameLock = System.nanoTime() }
                                 searching = false
                             }
+                        } else if (loOffset && link != null && retunes > 0) {
+                            // nothing beside the hump: what the first search found on the LO was the hump itself
+                            backToEntered("no signal beside the hump: LO back to the frequency entered")
                         }
                     } catch (t: Throwable) { status.state = "error: ${t.message}"; log(status.state) }
                     searchBusy = false
@@ -415,11 +419,18 @@ class Receiver(
         }
         val db = DoubleArray(n) { 10 * log10(pow[it] / segs + 1e-12) }
         val sm = DoubleArray(n) { k -> (-4..4).sumOf { db[(k + it).coerceIn(0, n - 1)] } / 9 }
-        val usable = (0 until n).filter { kotlin.math.abs((it - n / 2) * fs / n) < 0.45 * fs }
+        // after the LO went LO_OFFSET_HZ off the signal the hump on the LO is left out: alone it shows 7-20 dB above the
+        // floor, ~37 kHz wide, like a 40 kS/s signal, and swallowed a weak one beside it (2026-11-04, S3 Zero: "signal"
+        // at +0.0 kHz or -47 kHz 100 kHz wide instead of -80 kHz, 17 s of demodulating the hump before searching again)
+        val offHump = loOffset && retunes > 0
+        val usable = (0 until n).filter {
+            val f = kotlin.math.abs((it - n / 2) * fs / n)
+            f < 0.45 * fs && !(offHump && f < HUMP_HZ)
+        }
         val sorted = usable.map { sm[it] }.sorted()
         val floor = sorted[(0.10 * (sorted.size - 1)).toInt()]
         val peak = sorted[(0.95 * (sorted.size - 1)).toInt()]
-        if (peak - floor < 6 && retunes > 0) {
+        if (peak - floor < 6 && retunes > 0 && wide) {
             // retuned onto a signal wider than the window (400 kS/s in 500 ksps): it fills the window and leaves no floor.
             // Centre of the power above the weakest bin instead (a cut-off signal pulls it towards 0, the next step fixes that).
             val lin = usable.map { 10.0.pow((sm[it] - sorted.first()) / 10) - 1 }
