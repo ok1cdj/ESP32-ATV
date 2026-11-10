@@ -96,8 +96,11 @@ def main():
     with open(out, "rb") as fin, open(ts, "wb") as fts:
         p = subprocess.run(cmd, stdin=fin, stdout=fts, stderr=subprocess.PIPE)
     err = p.stderr.decode(errors="ignore")
-    # leandvb -d: '_' clean frame, '!' failed (':' with ldpc_tool); '.' (corrected by BCH) also appears in other lines
-    print(f"frames ok {err.count('_')}, with errors {err.count(':') + err.count('!')}, "
+    # leandvb -d: '_' clean frame, '!' failed (':' with ldpc_tool), '.' corrected by BCH. Counted only on the lines made of
+    # these marks: the legend has an '_' and the statistics after "sch stopped" a ':' on every line.
+    marks = "".join(line.strip() for line in err.split("sch stopped")[0].replace("\r", "\n").replace("Start TS at 0", "").split("\n")
+                    if line.strip() and set(line.strip()) <= set("_!.:C"))
+    print(f"frames ok {marks.count('_')}, corrected {marks.count('.')}, with errors {marks.count(':') + marks.count('!')}, "
           f"locks {err.count('LOCKED')}, TS packets {os.path.getsize(ts) // 188} -> {ts}", file=sys.stderr)
 
 
