@@ -21,6 +21,7 @@ DATV on 13 cm with ESP32 boards: a stand-alone **ESP32-C3 DVB-S2 beacon** and **
 **XIAO ESP32-S3** on USB-OTG and an **Android** phone or tablet (beta). The app also **transmits** through a XIAO
 ESP32-C3 on USB-OTG: test card, camera or a picture / video file, DVB-S2 QPSK / 8PSK encoded on the phone (`android/native/dvbs2enc`).
 Reception can be **recorded** as it is received (`.ts`, with MER / CNR as `.srt` subtitles).
+**6 cm (experimental):** a beacon and a receiver on 5715 MHz with two ESP32-C5 boards, see [below](#6-cm--esp32-c5-experimental).
 
 - **Guide / návod:** <https://ok1cdj.github.io/ESP32-ATV/> ([English](docs/rx-android.en.md), [česky](docs/rx-android.cs.md))
 - **APK:** [Releases](https://github.com/ok1cdj/ESP32-ATV/releases) ([changelog](CHANGELOG.md)) · **Firmware S3 (RX) + C3 (TX):** from the app (menu ⋮ → Firmware) or the [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/)
@@ -54,6 +55,8 @@ This project stands on the work of others – thank you:
 - **pabr** – [leansdr / leandvb](https://github.com/pabr/leansdr): the DVB-S2 demodulator.
 - **Ahmet Inan** – [LDPC](https://github.com/xdsopl/LDPC) and **Blockstream** – [its fork](https://github.com/Blockstream/LDPC):
   `ldpc_tool` and the DVB-S2 LDPC tables used by our encoder.
+- **fedaykinofdune** – [esp32-C5-sdr-tx](https://github.com/fedaykinofdune/esp32-C5-sdr-tx): the ESP32-C5's transmit
+  and receive paths (TX DC register, IQ estimator) used on 6 cm.
 - **lieff** – [minimp3](https://github.com/lieff/minimp3): MP2 / MP3 sound decoding.
 
 If you like the project: [Buy Me a Coffee](https://buymeacoffee.com/ok1cdj) ☕
@@ -164,6 +167,17 @@ records the phone's TX mux without the C3 – a white flash and a beep every 2 s
 4. Spectrum: `rx/spectrum.sh`, SDR++ / SDRangel on `127.0.0.1:1234` (rtl_tcp).
 
 Other tools: `rx/level_sweep.sh` (sensitivity sweep, `FRAME=short` for short frames), `rx/sim_frames.py` (normal vs short frames simulated end to end), `rx/raw2cf32.py` (raw packets recorded by the app -> cf32, decode), `rx/make_replay.py` (a recording for the app's *Replay* from any TS, no radio needed: our DVB-S2 encoder, offset, noise), `rx/avsync_rx.py` (the app's lip sync on such a replay, debug build).
+
+## 6 cm – ESP32-C5 (experimental)
+Two Waveshare ESP32-C5-Zero boards: a DVB-S2 beacon (`tx/c5cw`) and a receiver (`rx/c5rx`, cs4 at 250 / 333 / 400 ksps,
+the S3's protocol, so the app and `espdr nb.py` drive it) on **5715.000 MHz** (`ATV6_FREQ` in `boards.sh`, IARU Region 1
+ATV segment 5700–5720 MHz). **Transmitting needs an amateur radio licence here too.** Branch `c5-6cm`, not in the
+releases yet. Guide: [English](docs/6cm-c5.en.md), [česky](docs/6cm-c5.cs.md).
+```sh
+. ~/esp/esp-idf-v6.1/export.sh
+CALL=YOURCALL BAND=6cm tx/make_beacons.sh 125000 && tx/c5cw/flash.sh tx/beacons/yourcall-125k-6cm   # TX, then BEACON on its USB
+rx/c5rx/flash.sh && rx/c5_play.sh 125000                                                           # RX on the PC
+```
 
 ## Test without hardware
 ```sh
