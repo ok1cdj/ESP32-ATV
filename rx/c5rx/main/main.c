@@ -21,6 +21,14 @@
  *   NOUSB 1|0         diagnostics: STREAM without touching the USB FIFO
  *   ST                state
  *
+ * The ESP32-S3 receiver's binary control protocol (third_party/ESP32-DATV-RX/esp32-sdr-trx/firmware/protocol/control.h,
+ * narrowband.h) is understood next to these, so that its hosts (espdr nb.py, rx_dvbs2.py, the Android app) can drive the C5:
+ * requests B4 op arg seq crc32, responses B5 1 op status seq 0 value crc32. Differences from the S3:
+ *   - ESP_SET_LO: Hz modulo 2^32 (5710 MHz does not fit 32 bits; a value below 2 GHz is taken as + 2^32), 2300-5900 MHz, kHz
+ *     steps; the reply carries the LO in the same encoding;
+ *   - ESP_SET_GAIN: the selector 0..127 is the C5's forced RX gain index, clamped to 89;
+ *   - NB_SET_DECIM 2 and 3 are accepted, but only 4 (250 ksps) keeps up for now; NB_BENCH is unknown;
+ *   - text lines other than the commands above are ignored (the Android app probes for a C3 with "INFO").
  * 2026-11-10, 5710 MHz, C5 TX beacon 125 kBd (tx/c5cw) over the air: STREAM 4 2 (250 ksps cs4) decoded by rx/raw2cf32.py --decode,
  * 65 of 98 frames clean from a cold transmitter. 333 / 500 ksps do not keep up yet (CPU), cs8 at 250 ksps hits the USB limit.
  */
@@ -40,6 +48,8 @@
 #include "freertos/task.h"
 #include "hal/usb_serial_jtag_ll.h"
 #include "nvs_flash.h"
+#include "esp_mac.h"
+#include "esp_rom_crc.h"
 #include "soc/soc.h"
 
 #include "fir_taps.h"                /* tools/design_taps.py */
@@ -192,8 +202,9 @@ static void __attribute__((noinline)) IRAM_ATTR capture(int16_t *buf, uint32_t n
 #define HIST 64u                     /* FIR history ring (power of 2 > FIR_TAPS + 2), mirrored for contiguous windows */
 #define STREAM_FIFO 12288u
 #define NB_HEADER 20u
-#define USB_BYTES 1u                 /* per slot at most: a 44-cycle store each, and a burst of slots that each carry several falls
-                                     * behind (16 slots of 4 bytes fill a chunk: ~3000 cycles late); 1 per input gives 500 kB/s at 250 ksps */
+#define USB_BYTES 1u                 /* per slot at most, checked (24 + 44 cycles). cs4 needs 0.5 per input; cs8 needs 1, and the
+                                     * FIFO is not always free: cs8 loses packets at 250 ksps and up (2 per slot: ~450 kB/s and 333
+                                     * ksps too slow; 4 unchecked put the loop 3000 cycles behind) */
 
 typedef struct {
     uint32_t late_max, late, slots, dropped, fifo_peak, packets, samples, busy_max;
@@ -204,6 +215,7 @@ static int32_t hist_i[2 * HIST], hist_q[2 * HIST];
 static bool stream_nousb;
 static uint32_t usb_max, usb_slow, work_max, work_over;   /* the USB part of a slot: worst cycles, slots above 200 */            /* diagnostics (NOUSB 1): the stream runs without touching the USB FIFO */
 #define STREAM_PROF 0                /* 1: cycles per section (the counting itself costs about 80 cycles per slot) */
+#define STREAM_DIAG 0                /* 1: slot work, USB part and NOUSB in the loop (about 40 cycles per slot) */
 static uint64_t prof[4];             /* profile: reads + fill, Q half + packet, history + I half, USB */
 #if STREAM_PROF
 #define PROF(k) (prof[k] += esp_cpu_get_cycle_count() - pc, pc = esp_cpu_get_cycle_count())
@@ -246,7 +258,6 @@ static void __attribute__((noinline)) IRAM_ATTR stream(uint32_t r2, uint32_t fmt
     const int32_t *win_q = hist_q;
     /* the packet being filled: start in the FIFO (UINT32_MAX: none, or dropped), samples in it */
     uint32_t head = 0, tail = 0, pkt = UINT32_MAX, pkt_n = 0, used = 0, chunk = 0;
-    bool usb_ready = false;                                   /* the USB FIFO was empty: the rest of a 64-byte chunk goes in */
     bool pkt_drop = false;
     memset(hist_i, 0, sizeof(hist_i));
     memset(hist_q, 0, sizeof(hist_q));
@@ -396,46 +407,42 @@ static void __attribute__((noinline)) IRAM_ATTR stream(uint32_t r2, uint32_t fmt
             }
         }
         PROF(2);
-        /* USB: up to USB_BYTES bytes of finished packets (the one being filled starts at pkt) per slot. A store into a FIFO that is
-         * still being sent stalls the CPU, so a 64-byte chunk starts only once the FIFO reports empty (SERIAL_IN_EMPTY raw flag, a
-         * 24-cycle register read, cleared before the chunk), and then goes in unchecked. */
-        const uint32_t u0 = esp_cpu_get_cycle_count();
-        if (used && tail != pkt && stream_nousb) {             /* diagnostics: the packets are thrown away */
+        /* USB: up to USB_BYTES bytes of finished packets (the one being filled starts at pkt) per slot, each while the FIFO's
+         * not-full flag (a 24-cycle register read) is set; the FIFO takes the next chunk while the last one is being sent.
+         * (Waiting for SERIAL_IN_EMPTY instead idles between chunks: about 390 kB/s.) */
+        if (STREAM_DIAG && used && tail != pkt && stream_nousb) {             /* diagnostics: the packets are thrown away */
             tail = head;
             used = 0;
-        } else if (used && tail != pkt) {
-            if (!usb_ready && (usb_serial_jtag_ll_get_intraw_mask() & USB_SERIAL_JTAG_INTR_SERIAL_IN_EMPTY)) {
-                usb_serial_jtag_ll_clr_intsts_mask(USB_SERIAL_JTAG_INTR_SERIAL_IN_EMPTY);
-                usb_ready = true;
-            }
-            if (usb_ready) {
-                for (uint32_t b = 0; b < USB_BYTES && used && tail != pkt; ++b) {
-                    USB_SERIAL_JTAG.ep1.rdwr_byte = fifo[tail];
-                    tail = tail + 1u == STREAM_FIFO ? 0 : tail + 1u;
-                    --used;
-                    if (++chunk == 64u) break;
-                }
-                if (chunk == 64u || !used || tail == pkt) {
+        } else {
+            for (uint32_t b = 0; b < USB_BYTES && used && tail != pkt && USB_SERIAL_JTAG.ep1_conf.serial_in_ep_data_free; ++b) {
+                USB_SERIAL_JTAG.ep1.rdwr_byte = fifo[tail];
+                tail = tail + 1u == STREAM_FIFO ? 0 : tail + 1u;
+                --used;
+                if (++chunk == 64u || !used || tail == pkt) {
                     usb_serial_jtag_ll_txfifo_flush();
                     chunk = 0;
-                    usb_ready = false;
+                    break;
                 }
             }
         }
+#if STREAM_DIAG
         {
             const uint32_t ud = esp_cpu_get_cycle_count() - u0;
             if (ud > usb_max) usb_max = ud;
             if (ud > 200u) ++usb_slow;
         }
+#endif
         PROF(3);
+#if STREAM_DIAG
         {
             const uint32_t wk = esp_cpu_get_cycle_count() - (c + t);     /* this slot's own work (c is its lateness here) */
             if (wk > work_max) work_max = wk;
             if (wk > step) ++work_over;
+            const uint32_t busy = esp_cpu_get_cycle_count() - t;
+            busy_sum += busy;
+            if (busy > busy_max) busy_max = busy;
         }
-        const uint32_t busy = esp_cpu_get_cycle_count() - t;
-        busy_sum += busy;
-        if (busy > busy_max) busy_max = busy;
+#endif
         if ((slots & 1023u) == 0 && usb_serial_jtag_ll_rxfifo_data_available()) break;
         if (end_slots && slots >= end_slots) break;
         t += step;
@@ -528,6 +535,138 @@ static void usb_throughput(uint32_t secs) {
         (unsigned long)(bytes / secs / 1000u), (unsigned long)stalls);
 }
 
+/* ------------------------------------------------------------ S3 control protocol */
+
+#define CTL_OK 0
+#define CTL_UNKNOWN_OP 1
+#define CTL_BAD_ARGUMENT 2
+#define CTL_ESP_FIRMWARE_ID 0x49515306u
+enum {
+    CTL_INFO = 1, CTL_SAFE = 2, CTL_STATUS = 3, ESP_OUTPUTS = 16, ESP_RUN = 17, ESP_STOP = 18, ESP_ARG_HIGH = 19, ESP_SET_LO = 20,
+    ESP_SET_RATE = 21, ESP_SET_WIDTH = 22, ESP_SET_FILTER = 23, ESP_SET_GAIN = 24, ESP_SET_RF_GAIN = 25, ESP_SET_BB_GAIN = 26,
+    ESP_SET_DC = 27, ESP_SET_IQ = 28, NB_SET_DECIM = 29, NB_SET_FORMAT = 30, NB_SET_OUTSHIFT = 31,
+};
+enum { ESP_STAT_SERVICE_MAX0 = 11, ESP_STAT_SERVICE_MAX1 = 12, ESP_STAT_RADIO = 13, ESP_STAT_STOPPED_BY_HOST = 14, ESP_STAT_LO_HZ = 15,
+       ESP_STAT_RATE = 16, ESP_STAT_WIDTH = 17, ESP_STAT_GAIN = 19, NB_STAT_DROPPED = 32, NB_STAT_FIFO_PEAK = 33 };
+
+static struct {
+    uint32_t decim, format, outshift, gain_sel, arg_high;
+    bool has_high, stopped;
+    stream_stats_t last;
+} nb = {3, 1, 4, 50, 0, false, false, {0}};
+
+static void respond(uint8_t op, uint8_t status, uint16_t seq, uint32_t value) {
+    uint8_t r[16] = {0xB5, 1, op, status, (uint8_t)seq, (uint8_t)(seq >> 8), 0, 0,
+                     (uint8_t)value, (uint8_t)(value >> 8), (uint8_t)(value >> 16), (uint8_t)(value >> 24)};
+    const uint32_t crc = esp_rom_crc32_le(0, r, 12);
+    for (int i = 0; i < 4; ++i) r[12 + i] = (uint8_t)(crc >> (8 * i));
+    usb_write(r, sizeof(r));
+}
+
+static uint32_t lo_wire(void) { return (uint32_t)((uint64_t)fkhz * 1000u); }   /* Hz modulo 2^32 */
+
+static uint32_t stat_value(uint32_t k) {
+    switch (k) {
+    case ESP_STAT_SERVICE_MAX0:
+    case ESP_STAT_SERVICE_MAX1: return nb.last.busy_max;
+    case ESP_STAT_STOPPED_BY_HOST: return nb.stopped;
+    case ESP_STAT_LO_HZ: return lo_wire();
+    case ESP_STAT_RATE: return 1;
+    case ESP_STAT_WIDTH: return 20;
+    case ESP_STAT_GAIN: return nb.gain_sel;
+    case NB_STAT_DROPPED: return nb.last.dropped;
+    case NB_STAT_FIFO_PEAK: return nb.last.fifo_peak;
+    default: return 0;                                        /* ESP_STAT_RADIO and the rest: 0 */
+    }
+}
+
+static void control(const uint8_t *q) {
+    const uint8_t op = q[1];
+    const uint16_t seq = (uint16_t)(q[4] | q[5] << 8);
+    const uint32_t arg = (nb.has_high ? nb.arg_high << 16 : 0u) | (uint32_t)(q[2] | q[3] << 8);
+    nb.has_high = false;
+    switch (op) {
+    case CTL_INFO: {
+        uint8_t mac[6] = {0};
+        esp_efuse_mac_get_default(mac);
+        const uint32_t v = arg == 0 ? CTL_ESP_FIRMWARE_ID : arg == 1 ? (uint32_t)(mac[0] | mac[1] << 8 | mac[2] << 16 | (uint32_t)mac[3] << 24)
+                           : arg == 2 ? (uint32_t)(mac[4] | mac[5] << 8) : arg == 3 ? 1u : 0u;
+        respond(op, CTL_OK, seq, v);
+        return;
+    }
+    case CTL_STATUS: respond(op, CTL_OK, seq, stat_value(arg)); return;
+    case ESP_ARG_HIGH:
+        nb.arg_high = arg & 0xFFFFu;
+        nb.has_high = true;
+        respond(op, CTL_OK, seq, nb.arg_high);
+        return;
+    case ESP_SET_LO: {
+        const uint64_t hz = arg < 2000000000u ? (uint64_t)arg + (1ull << 32) : arg;
+        if (hz < (uint64_t)FMIN_KHZ * 1000u || hz > (uint64_t)FMAX_KHZ * 1000u) {
+            respond(op, CTL_BAD_ARGUMENT, seq, lo_wire());
+            return;
+        }
+        fkhz = (uint32_t)((hz + 500u) / 1000u);
+        rx_prepare();
+        respond(op, CTL_OK, seq, lo_wire());
+        return;
+    }
+    case ESP_SET_GAIN:
+        if (arg > 127u) {
+            respond(op, CTL_BAD_ARGUMENT, seq, nb.gain_sel);
+            return;
+        }
+        nb.gain_sel = arg;
+        gain = arg > 89u ? 89u : arg;
+        force_rx_gain(1, gain, 0);
+        respond(op, CTL_OK, seq, arg);
+        return;
+    case NB_SET_DECIM:
+        if (arg < 2u || arg > 4u) {
+            respond(op, CTL_BAD_ARGUMENT, seq, nb.decim);
+            return;
+        }
+        nb.decim = arg;
+        respond(op, CTL_OK, seq, arg);
+        return;
+    case NB_SET_FORMAT:
+        if (arg > 2u) {
+            respond(op, CTL_BAD_ARGUMENT, seq, nb.format);
+            return;
+        }
+        nb.format = arg;
+        respond(op, CTL_OK, seq, arg);
+        return;
+    case NB_SET_OUTSHIFT:
+        if (arg > 12u) {
+            respond(op, CTL_BAD_ARGUMENT, seq, nb.outshift);
+            return;
+        }
+        nb.outshift = arg;
+        respond(op, CTL_OK, seq, arg);
+        return;
+    case ESP_SET_RATE: respond(op, CTL_OK, seq, 1); return;          /* the S3's 16 Msps; the C5 has its own rates */
+    case ESP_SET_WIDTH: respond(op, CTL_OK, seq, 20); return;
+    case CTL_SAFE:
+    case ESP_OUTPUTS:
+    case ESP_SET_FILTER:
+    case ESP_SET_RF_GAIN:
+    case ESP_SET_BB_GAIN:
+    case ESP_SET_DC:
+    case ESP_SET_IQ:
+    case ESP_STOP: respond(op, CTL_OK, seq, 0); return;             /* STOP outside a run: nothing to stop */
+    case ESP_RUN: {
+        /* Packets until the time is up or any byte arrives (the host's STOP, answered after the RUN reply). */
+        force_rx_gain(1, gain, 0);
+        stream(nb.decim, nb.format, nb.format == 2u ? 0u : nb.outshift, arg & 0xFFFFu, &nb.last);
+        nb.stopped = usb_serial_jtag_ll_rxfifo_data_available();
+        respond(op, CTL_OK, seq, 0);
+        return;
+    }
+    default: respond(op, CTL_UNKNOWN_OP, seq, 0); return;
+    }
+}
+
 /* ------------------------------------------------------------ commands */
 
 /* "5710.25" = MHz with up to three decimals -> kHz */
@@ -611,7 +750,7 @@ static void handle(char *line) {
             (unsigned long)st.slots, (unsigned long)st.late, (unsigned long)st.late_max,
             (unsigned long)(st.slots ? st.busy_sum / st.slots : 0), (unsigned long)st.busy_max, (unsigned long)st.packets,
             (unsigned long)st.dropped, (unsigned long)st.fifo_peak);
-        say("USB part: worst %lu cycles, %lu slots above 200; slot work: worst %lu cycles, %lu slots above a period\n",
+        if (STREAM_DIAG) say("USB part: worst %lu cycles, %lu slots above 200; slot work: worst %lu cycles, %lu slots above a period\n",
             (unsigned long)usb_max, (unsigned long)usb_slow, (unsigned long)work_max, (unsigned long)work_over);
         if (STREAM_PROF && st.slots)
             say("PROF per slot: reads %lu, Q+packet %lu, history+I %lu, USB %lu\n", (unsigned long)(prof[0] / st.slots),
@@ -628,6 +767,8 @@ static void handle(char *line) {
     } else if (!strcmp(cmd, "BENCH")) {
         bench();
         return;
+    } else if (!strcmp(cmd, "INFO")) {
+        return;                                               /* the Android app's C3 probe: not a C3, so no answer */
     } else if (strcmp(cmd, "ST")) {
         say("ERR commands: F G ANT CAP STREAM ST\r\n");
         return;
@@ -662,9 +803,23 @@ void app_main(void) {
 
     char line[64];
     size_t used = 0;
+    uint8_t req[10];
+    size_t got = 0;                                           /* bytes of a binary request (0: none in progress) */
+    int64_t req_t = 0;
     for (;;) {
         uint8_t c;
+        if (got && esp_timer_get_time() - req_t > 100000) got = 0;   /* a partial request is dropped after 100 ms, as on the S3 */
         if (usb_serial_jtag_ll_read_rxfifo(&c, 1)) {
+            if (got || (c == 0xB4 && used == 0)) {            /* binary request */
+                if (!got) req_t = esp_timer_get_time();
+                req[got++] = c;
+                if (got == sizeof(req)) {
+                    got = 0;
+                    const uint32_t crc = esp_rom_crc32_le(0, req, 6);
+                    if ((uint32_t)(req[6] | req[7] << 8 | req[8] << 16 | (uint32_t)req[9] << 24) == crc) control(req);
+                }
+                continue;
+            }
             if (c == '\r') continue;
             if (c != '\n') {
                 if (used < sizeof(line) - 1) line[used++] = (char)c;
