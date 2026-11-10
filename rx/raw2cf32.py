@@ -76,7 +76,7 @@ def main():
     a = ap.parse_args()
 
     iq, lost, fmt = convert(open(a.raw, "rb").read())
-    fs = a.fs or {"333k": 1e6 / 3, "500k": 5e5, "250k": 2.5e5}.get((re.search(r"(333k|500k|250k)", a.raw) or [None, None])[1])
+    fs = a.fs or {"333k": 1e6 / 3, "400k": 4e5, "500k": 5e5, "250k": 2.5e5}.get((re.search(r"(333k|400k|500k|250k)", a.raw) or [None, None])[1])
     if not fs:
         sys.exit("sample rate unknown: --fs")
     print(f"{len(iq) // 2} samples = {len(iq) / 2 / fs:.1f} s at {fs / 1e3:.1f} ksps, {lost} samples lost", file=sys.stderr)

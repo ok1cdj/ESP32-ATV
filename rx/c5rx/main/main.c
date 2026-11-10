@@ -13,7 +13,8 @@
  *   G n               forced RX gain index (0-89, default 50)
  *   ANT 1|0           GPIO26 RF switch of the C5-Zero: 1 = U.FL (default), 0 = chip antenna
  *   CAP n             n complex samples (up to CAP_MAX) at CAP_RATE: "CAPD n rate late_max rearms\n", then n int16 I, Q pairs
- *   STREAM r2 fmt sh s  packets as the ESP32-S3 receiver sends them (E5 5D header, Q inverted: LO - RF) at 1 Msps / r2 (r2 2, 3, 4),
+ *   STREAM r2 fmt sh s  packets as the ESP32-S3 receiver sends them (E5 5D header, Q inverted: LO - RF) at 1 Msps / r2 (r2 2, 3, 4;
+ *                     25: 400 ksps),
  *                     fmt 0 cs16 / 1 cs8 / 2 cs4, output >> sh (not cs4), for s seconds (0: until any byte), then "END ..."
  *                     (bench: no S3 protocol)
  *   BENCH             diagnostics: cycles of an IQE read, USB register reads, a halfband output, rdcycle
@@ -27,11 +28,14 @@
  *   - ESP_SET_LO: Hz modulo 2^32 (5710 MHz does not fit 32 bits; a value below 2 GHz is taken as + 2^32), 2300-5900 MHz, kHz
  *     steps; the reply carries the LO in the same encoding;
  *   - ESP_SET_GAIN: the selector 0..127 is the C5's forced RX gain index, clamped to 89;
- *   - NB_SET_DECIM 2 and 3 are accepted, but only 4 (250 ksps) keeps up for now; NB_BENCH is unknown;
+ *   - NB_SET_DECIM also takes 25 (R2_400K: 400 ksps, carried in the packet header as 25); 333 ksps keeps up, 400 ksps is the
+ *     fast path (see stream_body), 500 ksps does not; NB_BENCH is unknown;
  *   - text lines other than the commands above are ignored (the Android app probes for a C3 with "INFO");
- *   - CTL_INFO 3 (build flags) has CTL_BUILD_C5 next to NARROWBAND: hosts pick cs4 at 250 / 333 ksps for it.
+ *   - CTL_INFO 3 (build flags) has CTL_BUILD_C5 next to NARROWBAND: hosts pick cs4 at 250 / 333 ksps for it, and 400 ksps when
+ *     CTL_BUILD_400K is set too.
  * 2026-11-10, 5710 MHz, C5 TX beacon 125 kBd (tx/c5cw) over the air: STREAM 4 2 (250 ksps cs4) decoded by rx/raw2cf32.py --decode,
- * 65 of 98 frames clean from a cold transmitter. 333 / 500 ksps do not keep up yet (CPU), cs8 at 250 ksps hits the USB limit.
+ * 65 of 98 frames clean from a cold transmitter (later: 64 of 64, the count was wrong). 333 ksps cs4 keeps up, 500 ksps does not
+ * (CPU), cs8 at 250 ksps hits the USB limit; 400 ksps (fast path) untested.
  */
 #include <inttypes.h>
 #include <stdarg.h>
@@ -192,13 +196,14 @@ static void __attribute__((noinline)) IRAM_ATTR capture(int16_t *buf, uint32_t n
 }
 
 /* ------------------------------------------------------------ stream
- * The estimator is read at twice the output rate (1 Msps / 666.7 ksps / 500 ksps for 500 / 333.3 / 250 ksps out: 240 / 360 / 480
- * CPU cycles per input), interrupts masked; one halfband FIR (tools/design_taps.py) decimates by 2. Per input: read the estimator
- * (3 register reads, ~54 cycles), put the previous input into the FIR history (a sample after a restart is filled in from its
- * neighbours, as in capture()), compute one half of an output (I in the slot of the even input, Q in the next one: 11 multiplies
- * each) and move at most one byte into the USB FIFO. Packets are assembled in place in a byte FIFO and dropped whole when it is
+ * The estimator is read at twice the output rate (1 Msps / 800 / 666.7 / 500 ksps for 500 / 400 / 333.3 / 250 ksps out: 240 / 300 /
+ * 360 / 480 CPU cycles per input), interrupts masked; one halfband FIR (tools/design_taps.py) decimates by 2. Per input: read the estimator
+ * (3 register reads, ~54 cycles; 2 in the fast path), put the previous input into the FIR history (a sample after a restart is filled in from its
+ * neighbours, as in capture()), compute one half of an output (I in the slot of the even input, Q in the next one: 8 multiplies
+ * each, 6 in the fast path) and move at most one byte into the USB FIFO. Packets are assembled in place in a byte FIFO and dropped whole when it is
  * full, as on the S3. */
 
+#define R2_400K 25u                  /* ours: NB_SET_DECIM 25 = 400 ksps (1 Msps / 2.5), also in the packet header */
 #define REARM_US 256u                /* estimator runs of 256 us (of its 409.6 us) */
 #define HIST 64u                     /* FIR history ring (power of 2 > FIR_TAPS + 2), mirrored for contiguous windows */
 #define STREAM_FIFO 12288u
@@ -236,16 +241,26 @@ static inline int32_t clamp4(int32_t v) { return v < -8 ? -8 : v > 7 ? 7 : v; }
 static inline int32_t clamp8(int32_t v) { return v < -128 ? -128 : v > 127 ? 127 : v; }
 static inline int32_t clamp16(int32_t v) { return v < -32768 ? -32768 : v > 32767 ? 32767 : v; }
 
-static inline __attribute__((always_inline)) int32_t halfband(const int32_t *x) {   /* x: the oldest of FIR_TAPS inputs */
-    const int32_t *const c = x + (FIR_TAPS - 1) / 2;
-    int32_t acc = FIR_CENTRE * c[0] + (1 << 14);
-    for (int j = 0; j < FIR_SIDE; ++j) acc += fir_side[j] * (c[-2 * j - 1] + c[2 * j + 1]);
+/* x: the oldest of FIR_TAPS (fast: FIR_FAST_TAPS) inputs */
+static inline __attribute__((always_inline)) int32_t halfband(const int32_t *x, const bool fast) {
+    const int taps = fast ? FIR_FAST_TAPS : FIR_TAPS, side = fast ? FIR_FAST_SIDE : FIR_SIDE;
+    const int16_t *const s = fast ? fir_fast_side : fir_side;
+    const int32_t *const c = x + (taps - 1) / 2;
+    int32_t acc = (fast ? FIR_FAST_CENTRE : FIR_CENTRE) * c[0] + (1 << 14);
+    for (int j = 0; j < side; ++j) acc += s[j] * (c[-2 * j - 1] + c[2 * j + 1]);
     return acc >> 15;
 }
 
-static void __attribute__((noinline)) IRAM_ATTR stream(uint32_t r2, uint32_t fmt, uint32_t sh, uint32_t secs, stream_stats_t *st) {
-    const uint32_t rate = 2000000u / r2, step = CPU_HZ / rate, rearm = REARM_US * rate / 1000000u;
-    const uint32_t per_pkt = r2 == 2u ? 500u : r2 == 3u ? 333u : 250u, bps = fmt == 2u ? 1u : fmt == 1u ? 2u : 4u;
+/* r2: 2, 3, 4 as the S3 (1 Msps / r2 out), R2_400K for 400 ksps; inputs per second, twice the output rate */
+static inline uint32_t stream_inputs(uint32_t r2) { return r2 >= 10u ? 20000000u / r2 : 2000000u / r2; }
+
+/* fast (fewer than 360 cycles per input: 400 / 500 ksps): Q read once, after I (75 ns late: an image of -28 dB at 170 kHz from
+ * the centre, less nearer it), and the shorter halfband (FIR_FAST_TAPS, -40 dB) */
+static inline __attribute__((always_inline)) void stream_body(uint32_t r2, uint32_t fmt, uint32_t sh, uint32_t secs, stream_stats_t *st,
+                                                               const bool fast) {
+    const uint32_t rate = stream_inputs(r2), step = CPU_HZ / rate, rearm = REARM_US * rate / 1000000u;
+    const uint32_t taps = fast ? FIR_FAST_TAPS : FIR_TAPS;
+    const uint32_t per_pkt = rate / 2000u, bps = fmt == 2u ? 1u : fmt == 1u ? 2u : 4u;   /* 1 ms packets */
     /* cs4: the gain in use (mantissa, shift, header byte), the DC estimate (1/16 LSB) and the packet's sums for the next ones */
     int32_t c4_m = cs4_mant[0], c4_dci = 0, c4_dcq = 0, c4_si = 0, c4_sq = 0;
     uint32_t c4_sh = 8, c4_gb = 0, c4_gb_pkt = 0, c4_abs = 0;
@@ -260,6 +275,9 @@ static void __attribute__((noinline)) IRAM_ATTR stream(uint32_t r2, uint32_t fmt
     /* the packet being filled: start in the FIFO (UINT32_MAX: none, or dropped), samples in it */
     uint32_t head = 0, tail = 0, pkt = UINT32_MAX, pkt_n = 0, used = 0, chunk = 0;
     bool pkt_drop = false;
+    /* the end of a packet is spread over the two light slots (no Q half) after it: 1 cs4 DC and gain, 2 the header, written at
+     * hdr (UINT32_MAX: none, the packet was dropped) with what was current at the end; USB stops at hdr until then */
+    uint32_t end_due = 0, hdr = UINT32_MAX, hdr_gb = 0, hdr_dropped = 0, hdr_first = 0;
     memset(hist_i, 0, sizeof(hist_i));
     memset(hist_q, 0, sizeof(hist_q));
     memset(prof, 0, sizeof(prof));
@@ -276,9 +294,15 @@ static void __attribute__((noinline)) IRAM_ATTR stream(uint32_t r2, uint32_t fmt
         uint32_t c;
         while ((int32_t)((c = esp_cpu_get_cycle_count()) - t) < 0) {}
         uint32_t pc = c;
-        const int32_t q1 = (int32_t)REG_READ(IQE_SUM_Q_REG) >> 6;
-        const int32_t si = (int32_t)REG_READ(IQE_SUM_I_REG) >> 6;
-        const int32_t sq = (q1 + ((int32_t)REG_READ(IQE_SUM_Q_REG) >> 6)) / 2;
+        int32_t si, sq;
+        if (fast) {
+            si = (int32_t)REG_READ(IQE_SUM_I_REG) >> 6;
+            sq = (int32_t)REG_READ(IQE_SUM_Q_REG) >> 6;
+        } else {
+            const int32_t q1 = (int32_t)REG_READ(IQE_SUM_Q_REG) >> 6;
+            si = (int32_t)REG_READ(IQE_SUM_I_REG) >> 6;
+            sq = (q1 + ((int32_t)REG_READ(IQE_SUM_Q_REG) >> 6)) / 2;
+        }
         c -= t;
         if (c > late_max) late_max = c;
         if (c >= step) ++late;
@@ -302,7 +326,7 @@ static void __attribute__((noinline)) IRAM_ATTR stream(uint32_t r2, uint32_t fmt
         const bool q_now = q_due;
         if (q_now) {                                          /* the Q half of the output started in the slot before */
             q_due = false;
-            const int32_t yq = halfband(win_q);
+            const int32_t yq = halfband(win_q, fast);
             if (pkt_n == 0) {                                 /* a new packet: room for the whole of it? */
                 pkt_drop = STREAM_FIFO - used < NB_HEADER + per_pkt * bps;
                 if (pkt_drop) {
@@ -338,61 +362,73 @@ static void __attribute__((noinline)) IRAM_ATTR stream(uint32_t r2, uint32_t fmt
                 }
                 used += bps;
             }
-            if (++pkt_n == per_pkt) {
-                if (fmt == 2u) {                              /* cs4: DC estimate and the gain for the next packet */
-                    const int32_t mi = c4_si * 16 / (int32_t)per_pkt, mq = c4_sq * 16 / (int32_t)per_pkt;
-                    if (!c4_dc_valid) {
-                        c4_dci = mi;
-                        c4_dcq = mq;
-                        c4_dc_valid = true;
-                    } else {
-                        c4_dci += (mi - c4_dci) >> CS4_DC_SHIFT;
-                        c4_dcq += (mq - c4_dcq) >> CS4_DC_SHIFT;
-                    }
-                    /* the S3's search for the largest g with g * mean|x| <= target, without its up to 120 steps: with
-                     * v = 2^20 target / mean100 the first e that can hold a mantissa is about 20 - log2(v) */
-                    const uint32_t mean100 = c4_abs * 50u / per_pkt;
-                    uint32_t e = 0, j = 7;
-                    if (mean100) {
-                        const uint32_t v = (CS4_TARGET << 20) / mean100, msb = 31u - (uint32_t)__builtin_clz(v | 1u);
-                        e = msb >= 20u ? 0u : 20u - msb;
-                        if (e > CS4_MAX_E - 1u) e = CS4_MAX_E - 1u;
-                        for (;;) {                            /* the S3's test itself: at most 8 + 8 steps */
-                            j = 8;
-                            while (j-- > 0 && ((uint32_t)cs4_mant[j] * mean100) >> 8 > (CS4_TARGET << e)) {}
-                            if (j < 8u || e == CS4_MAX_E - 1u) break;
-                            ++e;
-                        }
-                        if (j >= 8u) j = 0;
-                    }
-                    c4_m = cs4_mant[j];
-                    c4_sh = 8u + e;
-                    c4_gb = e | j << 4;
-                    c4_si = c4_sq = 0;
-                    c4_abs = 0;
+            if (++pkt_n == per_pkt) {                         /* the rest in the next light slots (end_due) */
+                if (!pkt_drop) {
+                    hdr = pkt;
+                    hdr_gb = c4_gb_pkt;
+                    hdr_dropped = dropped;
+                    hdr_first = first;
                 }
-                if (!pkt_drop) {                              /* the header, now that the packet is complete */
-                    uint16_t hw[10] = {0x5DE5u, (uint16_t)(fmt | r2 << 8), (uint16_t)per_pkt, (uint16_t)(dropped > 65535u ? 65535u : dropped),
-                                       (uint16_t)seq, (uint16_t)(seq >> 16), (uint16_t)first, (uint16_t)(first >> 16),
-                                       (uint16_t)(fmt == 2u ? c4_gb_pkt << 8 : sh), 0};
-                    uint32_t sum = 0;
-                    for (uint32_t j = 0; j < 9; ++j) sum += hw[j];
-                    hw[9] = (uint16_t)(0xFFFFu - (sum & 0xFFFFu));
-                    uint32_t p = pkt;
-                    for (uint32_t j = 0; j < 10; ++j) {
-                        fifo[p] = (uint8_t)hw[j];
-                        p = p + 1u == STREAM_FIFO ? 0 : p + 1u;
-                        fifo[p] = (uint8_t)(hw[j] >> 8);
-                        p = p + 1u == STREAM_FIFO ? 0 : p + 1u;
-                    }
-                    ++seq;
-                    ++packets;
-                    if (used > fifo_peak) fifo_peak = used;
-                }
+                end_due = 1;
                 first += per_pkt;
                 samples += per_pkt;
                 pkt = UINT32_MAX;
                 pkt_n = 0;
+            }
+        } else if (end_due == 1u) {                           /* before the next packet's first sample, two slots later */
+            end_due = 2;
+            if (fmt == 2u) {                                  /* cs4: DC estimate and the gain for the next packet */
+                const int32_t mi = c4_si * 16 / (int32_t)per_pkt, mq = c4_sq * 16 / (int32_t)per_pkt;
+                if (!c4_dc_valid) {
+                    c4_dci = mi;
+                    c4_dcq = mq;
+                    c4_dc_valid = true;
+                } else {
+                    c4_dci += (mi - c4_dci) >> CS4_DC_SHIFT;
+                    c4_dcq += (mq - c4_dcq) >> CS4_DC_SHIFT;
+                }
+                /* the S3's search for the largest g with g * mean|x| <= target, without its up to 120 steps: with
+                 * v = 2^20 target / mean100 the first e that can hold a mantissa is about 20 - log2(v) */
+                const uint32_t mean100 = c4_abs * 50u / per_pkt;
+                uint32_t e = 0, j = 7;
+                if (mean100) {
+                    const uint32_t v = (CS4_TARGET << 20) / mean100, msb = 31u - (uint32_t)__builtin_clz(v | 1u);
+                    e = msb >= 20u ? 0u : 20u - msb;
+                    if (e > CS4_MAX_E - 1u) e = CS4_MAX_E - 1u;
+                    for (;;) {                            /* the S3's test itself: at most 8 + 8 steps */
+                        j = 8;
+                        while (j-- > 0 && ((uint32_t)cs4_mant[j] * mean100) >> 8 > (CS4_TARGET << e)) {}
+                        if (j < 8u || e == CS4_MAX_E - 1u) break;
+                        ++e;
+                    }
+                    if (j >= 8u) j = 0;
+                }
+                c4_m = cs4_mant[j];
+                c4_sh = 8u + e;
+                c4_gb = e | j << 4;
+                c4_si = c4_sq = 0;
+                c4_abs = 0;
+            }
+        } else if (end_due == 2u) {
+            end_due = 0;
+            if (hdr != UINT32_MAX) {                          /* the header, now that the packet is complete */
+                uint16_t hw[10] = {0x5DE5u, (uint16_t)(fmt | r2 << 8), (uint16_t)per_pkt,
+                                   (uint16_t)(hdr_dropped > 65535u ? 65535u : hdr_dropped), (uint16_t)seq, (uint16_t)(seq >> 16),
+                                   (uint16_t)hdr_first, (uint16_t)(hdr_first >> 16), (uint16_t)(fmt == 2u ? hdr_gb << 8 : sh), 0};
+                uint32_t sum = 0;
+                for (uint32_t j = 0; j < 9; ++j) sum += hw[j];
+                hw[9] = (uint16_t)(0xFFFFu - (sum & 0xFFFFu));
+                uint32_t p = hdr;
+                for (uint32_t j = 0; j < 10; ++j) {
+                    fifo[p] = (uint8_t)hw[j];
+                    p = p + 1u == STREAM_FIFO ? 0 : p + 1u;
+                    fifo[p] = (uint8_t)(hw[j] >> 8);
+                    p = p + 1u == STREAM_FIFO ? 0 : p + 1u;
+                }
+                hdr = UINT32_MAX;
+                ++seq;
+                ++packets;
+                if (used > fifo_peak) fifo_peak = used;
             }
         }
         PROF(1);
@@ -400,27 +436,28 @@ static void __attribute__((noinline)) IRAM_ATTR stream(uint32_t r2, uint32_t fmt
             hist_i[w] = hist_i[w + HIST] = xi;
             hist_q[w] = hist_q[w + HIST] = xq;
             w = (w + 1u) & (HIST - 1u);
-            if (++inputs >= FIR_TAPS && !(inputs & 1u) && !q_now) {   /* an output is due: its window ends with this input */
-                const uint32_t o = (w - FIR_TAPS) & (HIST - 1u);
-                yi = halfband(hist_i + o);
+            if (++inputs >= taps && !(inputs & 1u) && !q_now) {   /* an output is due: its window ends with this input */
+                const uint32_t o = (w - taps) & (HIST - 1u);
+                yi = halfband(hist_i + o, fast);
                 win_q = hist_q + o;
                 q_due = true;
             }
         }
         PROF(2);
-        /* USB: up to USB_BYTES bytes of finished packets (the one being filled starts at pkt) per slot, each while the FIFO's
+        /* USB: up to USB_BYTES bytes of finished packets (the one being filled starts at pkt, a header due at hdr) per slot, each while the FIFO's
          * not-full flag (a 24-cycle register read) is set; the FIFO takes the next chunk while the last one is being sent.
          * (Waiting for SERIAL_IN_EMPTY instead idles between chunks: about 390 kB/s.) */
-        if (STREAM_DIAG && used && tail != pkt && stream_nousb) {             /* diagnostics: the packets are thrown away */
+        if (STREAM_DIAG && used && tail != pkt && tail != hdr && stream_nousb) {             /* diagnostics: the packets are thrown away */
             tail = head;
             used = 0;
         } else {
-            for (uint32_t b = 0; b < USB_BYTES && used && tail != pkt && USB_SERIAL_JTAG.ep1_conf.serial_in_ep_data_free; ++b) {
+            for (uint32_t b = 0; b < USB_BYTES && used && tail != pkt && tail != hdr && USB_SERIAL_JTAG.ep1_conf.serial_in_ep_data_free;
+                 ++b) {
                 USB_SERIAL_JTAG.ep1.val = fifo[tail];          /* the whole register: a bit-field store reads it first, and
                                                                  * reading it takes a byte out of the receive FIFO */
                 tail = tail + 1u == STREAM_FIFO ? 0 : tail + 1u;
                 --used;
-                if (++chunk == 64u || !used || tail == pkt) {
+                if (++chunk == 64u || !used || tail == pkt || tail == hdr) {
                     usb_serial_jtag_ll_txfifo_flush();
                     chunk = 0;
                     break;
@@ -445,9 +482,9 @@ static void __attribute__((noinline)) IRAM_ATTR stream(uint32_t r2, uint32_t fmt
             if (busy > busy_max) busy_max = busy;
         }
 #endif
-        /* any byte from the host ends the run (its ESP_STOP, as on the S3) */
-        if ((slots & 1023u) == 0 && usb_serial_jtag_ll_rxfifo_data_available()) break;
-        if (end_slots && slots >= end_slots) break;
+        /* any byte from the host ends the run (its ESP_STOP, as on the S3); not while a packet's end is due */
+        if (!end_due && (slots & 1023u) == 0 && usb_serial_jtag_ll_rxfifo_data_available()) break;
+        if (end_slots && slots >= end_slots && !end_due) break;
         t += step;
     }
 #undef FIFO_PUT
@@ -461,6 +498,18 @@ static void __attribute__((noinline)) IRAM_ATTR stream(uint32_t r2, uint32_t fmt
         if (m < n) break;
     }
     *st = (stream_stats_t){late_max, late, slots, dropped, fifo_peak, packets, samples, busy_max, busy_sum};
+}
+
+static void __attribute__((noinline)) IRAM_ATTR stream_std(uint32_t r2, uint32_t fmt, uint32_t sh, uint32_t secs, stream_stats_t *st) {
+    stream_body(r2, fmt, sh, secs, st, false);
+}
+
+static void __attribute__((noinline)) IRAM_ATTR stream_fast(uint32_t r2, uint32_t fmt, uint32_t sh, uint32_t secs, stream_stats_t *st) {
+    stream_body(r2, fmt, sh, secs, st, true);
+}
+
+static void stream(uint32_t r2, uint32_t fmt, uint32_t sh, uint32_t secs, stream_stats_t *st) {
+    (CPU_HZ / stream_inputs(r2) < 360u ? stream_fast : stream_std)(r2, fmt, sh, secs, st);
 }
 
 static void __attribute__((noinline)) IRAM_ATTR bench(void) {
@@ -480,7 +529,7 @@ static void __attribute__((noinline)) IRAM_ATTR bench(void) {
     c = esp_cpu_get_cycle_count();
     for (int i = 0; i < 1000; ++i) {
         hb[i & 15] += (int32_t)x;
-        x += (uint32_t)halfband(hb);
+        x += (uint32_t)halfband(hb, false);
     }
     r[3] = esp_cpu_get_cycle_count() - c;
     c = esp_cpu_get_cycle_count();
@@ -546,6 +595,7 @@ static void usb_throughput(uint32_t secs) {
 #define CTL_ESP_FIRMWARE_ID 0x49515306u
 #define CTL_BUILD_NARROWBAND 1u
 #define CTL_BUILD_C5 4u                  /* ours: this ESP32-C5 receiver (2 is the S3's transmitter build) */
+#define CTL_BUILD_400K 8u                /* ours: NB_SET_DECIM R2_400K */
 enum {
     CTL_INFO = 1, CTL_SAFE = 2, CTL_STATUS = 3, ESP_OUTPUTS = 16, ESP_RUN = 17, ESP_STOP = 18, ESP_ARG_HIGH = 19, ESP_SET_LO = 20,
     ESP_SET_RATE = 21, ESP_SET_WIDTH = 22, ESP_SET_FILTER = 23, ESP_SET_GAIN = 24, ESP_SET_RF_GAIN = 25, ESP_SET_BB_GAIN = 26,
@@ -598,7 +648,7 @@ static void control(const uint8_t *q) {
         uint8_t mac[6] = {0};
         esp_efuse_mac_get_default(mac);
         const uint32_t v = arg == 0 ? CTL_ESP_FIRMWARE_ID : arg == 1 ? (uint32_t)(mac[0] | mac[1] << 8 | mac[2] << 16 | (uint32_t)mac[3] << 24)
-                           : arg == 2 ? (uint32_t)(mac[4] | mac[5] << 8) : arg == 3 ? CTL_BUILD_NARROWBAND | CTL_BUILD_C5 : 0u;
+                           : arg == 2 ? (uint32_t)(mac[4] | mac[5] << 8) : arg == 3 ? CTL_BUILD_NARROWBAND | CTL_BUILD_C5 | CTL_BUILD_400K : 0u;
         respond(op, CTL_OK, seq, v);
         return;
     }
@@ -630,7 +680,7 @@ static void control(const uint8_t *q) {
         respond(op, CTL_OK, seq, arg);
         return;
     case NB_SET_DECIM:
-        if (arg < 2u || arg > 4u) {
+        if ((arg < 2u || arg > 4u) && arg != R2_400K) {
             respond(op, CTL_BAD_ARGUMENT, seq, nb.decim);
             return;
         }
@@ -749,10 +799,12 @@ static void handle(char *line) {
         return;
     } else if (!strcmp(cmd, "STREAM")) {
         char *a2 = strtok(NULL, " "), *a3 = strtok(NULL, " "), *a4 = strtok(NULL, " ");
-        const uint32_t r2 = a1 ? (uint32_t)atoi(a1) : 3u, fmt = a2 ? (uint32_t)atoi(a2) : 1u, sh = a3 ? (uint32_t)atoi(a3) : 4u,
+        uint32_t r2 = a1 ? (uint32_t)atoi(a1) : 3u;
+        const uint32_t fmt = a2 ? (uint32_t)atoi(a2) : 1u, sh = a3 ? (uint32_t)atoi(a3) : 4u,
                        secs = a4 ? (uint32_t)atoi(a4) : 0u;
-        if (r2 < 2u || r2 > 4u || fmt > 2u || sh > 12u || !fifo) {
-            say("ERR STREAM r2(2-4) fmt(0 cs16, 1 cs8, 2 cs4) shift(0-12) seconds\r\n");
+        if ((r2 < 2u || r2 > 4u) && r2 != R2_400K) r2 = 0;
+        if (!r2 || fmt > 2u || sh > 12u || !fifo) {
+            say("ERR STREAM r2(2-4, 25: 400 ksps) fmt(0 cs16, 1 cs8, 2 cs4) shift(0-12) seconds\r\n");
             return;
         }
         stream_stats_t st;

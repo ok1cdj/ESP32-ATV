@@ -6,3 +6,7 @@
 #define FIR_SIDE 7
 #define FIR_CENTRE 16341
 static const int16_t fir_side[FIR_SIDE] = {10307, -3188, 1641, -922, 509, -259, 126};
+#define FIR_FAST_TAPS 19
+#define FIR_FAST_SIDE 5
+#define FIR_FAST_CENTRE 16200
+static const int16_t fir_fast_side[FIR_FAST_SIDE] = {10190, -3082, 1509, -776, 442};

@@ -6,7 +6,7 @@
 # The two boards' 48 MHz crystals differ by up to about 150 kHz at 5.7 GHz (the transmitter warms up by ~100 kHz), more than
 # the 250 / 333 ksps stream leaves: the script first captures 16 ms at 2 Msps (text command CAP) and tunes to the centre of the
 # strongest signal within +-500 kHz of FREQ_MHz.
-# The C5 streams cs4 at 250 or 333 ksps only (500 ksps does not keep up), so SR is at most about 197 kS/s.
+# The C5 streams cs4 at 250, 333 or 400 ksps only (500 ksps does not keep up), so SR is at most 250 kS/s.
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 RX="$ROOT/third_party/ESP32-DATV-RX"
@@ -19,10 +19,11 @@ GAIN=${GAIN:-30}
 CR=${CR:-3/4}
 FRAMES=${FRAMES:-normal}
 SECONDS_=${SECONDS:-0}
-# 250 ksps passes +-100 kHz, 333 ksps +-133 kHz (rx/c5rx/tools/design_taps.py); the signal is SR * 1.35 wide
+# 250 ksps passes +-100 kHz, 333 ksps +-133 kHz, 400 ksps +-160 kHz (rx/c5rx/tools/design_taps.py); the signal is SR * 1.35 wide
 if [ "$SR" -le 148000 ]; then DECIM=4; FS=250000
 elif [ "$SR" -le 197000 ]; then DECIM=3; FS=333333
-else echo "SR $SR: the C5 receiver takes up to 197000 (cs4 at 333 ksps)"; exit 1; fi
+elif [ "$SR" -le 250000 ]; then DECIM=25; FS=400000      # rx/c5rx R2_400K
+else echo "SR $SR: the C5 receiver takes up to 250000 (cs4 at 400 ksps)"; exit 1; fi
 case "$FRAMES" in normal) FS_MASK=1 ;; short) FS_MASK=2 ;; *) echo "FRAMES: normal or short"; exit 1 ;; esac
 MODCOD=$(case "$CR" in 1/4) echo 1;; 1/3) echo 2;; 2/5) echo 3;; 1/2) echo 4;; 3/5) echo 5;; 2/3) echo 6;; 3/4) echo 7;;
          4/5) echo 8;; 5/6) echo 9;; 8/9) echo 10;; 9/10) echo 11;; *) echo 0;; esac)
