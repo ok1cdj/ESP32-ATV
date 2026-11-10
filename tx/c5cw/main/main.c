@@ -22,7 +22,9 @@
  *   VT n              diagnostics: the vendor CW alone (esp_phy_wifi_tx_tone(1, n, BO), n = channel or MHz), no DAC path
  *   RFT               diagnostics: esp_phy_rftest_config(1) + esp_phy_rftest_init() (the cert-test set-up)
  *   BEACON [amp] [S]  the DVB-S2 beacon (beacon.bin of the BEACON_DIR given to flash.sh) at F: QPSK, RRC 0.35, S samples per
- *                     symbol (8-48, default 16), amp = worst-case |I|, |Q| in DAC codes (default 150); any byte stops it
+ *                     symbol (8-48, default 16), amp = worst-case |I|, |Q| in DAC codes (default 150); any byte stops it.
+ *                     S 8 and 16 take two 4-symbol tables (2 loads per sample), the others four 2-symbol tables (4 loads)
+ *   BENCH             diagnostics: CPU cycles of a TXDC store, a TXDC store + a DRAM load, rdcycle, a DRAM load (1000 each)
  *   OFF               transmitter off
  *   ST                state
  */
@@ -179,7 +181,10 @@ static void tone(int32_t khz, int32_t amp) {
  * The C3's tables (qpsk_lut.h lut_build_t: 4 groups of 2 symbols, RRC span 8, entry T[(g * S + j) * 16 + idx], the sum of the four
  * entries xor LUT_XOR is the word). The C3's loops are cycle-exact for its core; here the loop is paced on the cycle counter instead
  * (absolute deadlines: a stall becomes jitter, not a lost sample): each sample slot stores the word of this symbol and computes the
- * same sample of the next one. Symbols: 2 bits each in beacon.bin, symbol n in byte n / 4 at bits 2 (n % 4) (bit 0 = I, 1 = Q). */
+ * same sample of the next one. Symbols: 2 bits each in beacon.bin, symbol n in byte n / 4 at bits 2 (n % 4) (bit 0 = I, 1 = Q).
+ * With four tables a sample costs about 30 instructions plus the 15-cycle store: 60 cycles (S 12 at 333 kBd) keep up, 45 (S 16) not.
+ * S 8 and 16 use qpsk_lut.h lut_build_g with two groups of 4 symbols instead (same span 8, entry T[(k * 256 + idx) * S + j]):
+ * two loads and one add per sample. */
 
 static float rrc_pulse(float t, float b) {
     const float pi = 3.14159265f;
@@ -199,7 +204,8 @@ extern const uint8_t beacon_bin_end[] asm("_binary_beacon_bin_end");
 #define BEACON_SMAX 48u
 
 typedef struct {
-    uint32_t late_max, late;         /* worst lateness [cycles], samples a whole period late */
+    uint32_t late_max, late;         /* worst lateness [cycles], samples a whole period late (S 8, 16: first samples of symbols only) */
+    uint32_t end_max;                /* S 8, 16: worst lateness of the last sample of a symbol (the loop caught up when small) */
     uint64_t symbols;
 } beacon_stats_t;
 
@@ -250,6 +256,117 @@ static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop(const uint8_t *r
     return n;
 }
 
+/* Two 4-symbol tables (lut_build_g, ngroups 2), S 8 or 16. */
+static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop_g(const uint8_t *ring, uint32_t nsym, const int32_t *T, uint32_t S,
+                                                                  sample_clock_t clk, uint32_t xb, beacon_stats_t *st) {
+    uint32_t w[2][BEACON_SMAX];
+    const uint32_t step = clk.period / S;                     /* the symbol's spare cycles go to its last sample */
+    const int32_t *const T1 = T + 256u * S;
+    uint32_t q = nsym - 1000u, C = 0, phase = 0, cur = 0, late_max = 0, late = 0, end_max = 0, n = 0;
+    for (uint32_t k = 0; k < 8; ++k) {                        /* history of the first symbol */
+        C = C << 2 | (ring[q >> 2] >> ((q & 3u) * 2u) & 3u);
+        q = q + 1u == nsym ? 0 : q + 1u;
+    }
+    for (uint32_t j = 0; j < S; ++j) w[0][j] = (uint32_t)(T[(C & 255u) * S + j] + T1[(C >> 8 & 255u) * S + j]) ^ xb;
+    const unsigned irq = portSET_INTERRUPT_MASK_FROM_ISR();
+    uint32_t t = esp_cpu_get_cycle_count() + 2000u;
+    for (;;) {
+        C = C << 2 | (ring[q >> 2] >> ((q & 3u) * 2u) & 3u);   /* the next symbol */
+        q = q + 1u == nsym ? 0 : q + 1u;
+        const int32_t *p0 = T + (C & 255u) * S, *p1 = T1 + (C >> 8 & 255u) * S;
+        const uint32_t *now_w = w[cur];
+        uint32_t *next_w = w[cur ^ 1u];
+        uint32_t c;
+        while ((int32_t)((c = esp_cpu_get_cycle_count()) - t) < 0) {}
+        REG_WRITE(TXDC_REG, now_w[0]);
+        c -= t;                                               /* lateness after the symbol's overhead: the worst sample */
+        if (c > late_max) late_max = c;
+        if (c >= step) ++late;
+        next_w[0] = (uint32_t)(p0[0] + p1[0]) ^ xb;
+        uint32_t tj = t;
+        for (uint32_t j = 1; j < S; ++j) {
+            tj += step;
+            while ((int32_t)(esp_cpu_get_cycle_count() - tj) < 0) {}
+            REG_WRITE(TXDC_REG, now_w[j]);
+            next_w[j] = (uint32_t)(p0[j] + p1[j]) ^ xb;
+        }
+        c = esp_cpu_get_cycle_count() - tj;
+        if (c > end_max) end_max = c;
+        cur ^= 1u;
+        t += sample_clock_next(clk, &phase);
+        if (!(++n & 255u) && usb_serial_jtag_ll_rxfifo_data_available()) break;
+    }
+    portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
+    st->late_max = late_max;
+    st->late = late;
+    st->symbols = n;
+    st->end_max = end_max;
+    return n;
+}
+
+/* S 16 unrolled. Measured costs (BENCH, cycles): a TXDC store 15, a DRAM load right after it about 9 more, rdcycle about 3. Each slot
+ * loads its two table entries and stores their sum (no word buffer: one load and one store fewer than beacon_loop_g); the
+ * symbol-boundary work (next symbol, its table rows, the symbol clock, the USB check) is spread over the slots. */
+#define B16_SLOT(j, extra)                                                     \
+    do {                                                                       \
+        const uint32_t wj = (uint32_t)(p0[j] + p1[j]) ^ xb;                    \
+        while ((int32_t)(esp_cpu_get_cycle_count() - tj) < 0) {}               \
+        REG_WRITE(TXDC_REG, wj);                                               \
+        extra;                                                                 \
+        tj += step;                                                            \
+    } while (0)
+
+static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop_16(const uint8_t *ring, uint32_t nsym, const int32_t *T,
+                                                                   sample_clock_t clk, uint32_t xb, beacon_stats_t *st) {
+    const uint32_t step = clk.period / 16u;                   /* the symbol's spare cycles go to its last sample */
+    const int32_t *const T1 = T + 256u * 16u;
+    uint32_t q = nsym - 1000u, C = 0, phase = 0, late_max = 0, late = 0, end_max = 0, n = 0;
+    for (uint32_t k = 0; k < 8; ++k) {                        /* history of the first symbol */
+        C = C << 2 | (ring[q >> 2] >> ((q & 3u) * 2u) & 3u);
+        q = q + 1u == nsym ? 0 : q + 1u;
+    }
+    const int32_t *p0 = T + (C & 255u) * 16u, *p1 = T1 + (C >> 8 & 255u) * 16u, *np0, *np1;
+    uint32_t b = 0, sym = 0, t1 = 0, brk = 0;
+    const unsigned irq = portSET_INTERRUPT_MASK_FROM_ISR();
+    uint32_t t = esp_cpu_get_cycle_count() + 2000u;
+    for (;;) {
+        uint32_t tj = t;
+        B16_SLOT(0, {
+            const uint32_t c = esp_cpu_get_cycle_count() - t;
+            if (c > late_max) late_max = c;
+            if (c >= step) ++late;
+        });
+        B16_SLOT(1, );
+        B16_SLOT(2, b = ring[q >> 2]);
+        B16_SLOT(3, sym = b >> ((q & 3u) * 2u) & 3u);
+        B16_SLOT(4, q = q + 1u == nsym ? 0 : q + 1u);
+        B16_SLOT(5, C = C << 2 | sym);
+        B16_SLOT(6, np0 = T + (C & 255u) * 16u);
+        B16_SLOT(7, np1 = T1 + (C >> 8 & 255u) * 16u);
+        B16_SLOT(8, );
+        B16_SLOT(9, t1 = t + sample_clock_next(clk, &phase));
+        B16_SLOT(10, );
+        B16_SLOT(11, brk = !(++n & 255u) && usb_serial_jtag_ll_rxfifo_data_available());
+        B16_SLOT(12, );
+        B16_SLOT(13, );
+        B16_SLOT(14, );
+        B16_SLOT(15, {
+            const uint32_t c = esp_cpu_get_cycle_count() - tj;
+            if (c > end_max) end_max = c;
+        });
+        if (brk) break;
+        t = t1;
+        p0 = np0;
+        p1 = np1;
+    }
+    portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
+    st->late_max = late_max;
+    st->late = late;
+    st->symbols = n;
+    st->end_max = end_max;
+    return n;
+}
+
 static void beacon(int32_t amp, uint32_t S) {
     const size_t bytes = (size_t)(beacon_bin_end - beacon_bin_start);
     if (S < 8 || S > BEACON_SMAX || amp < 1 || amp > 480) {
@@ -261,7 +378,8 @@ static void beacon(int32_t amp, uint32_t S) {
         return;
     }
     uint8_t *ring = malloc(BEACON_SYMBOLS / 4u);
-    int32_t *T = malloc(lutt_bytes(S));
+    const bool g4 = S == 8u || S == 16u;
+    int32_t *T = malloc(g4 ? 2u * 256u * S * sizeof(int32_t) : lutt_bytes(S));
     float *hb = malloc(8u * S * sizeof(float));
     if (!ring || !T || !hb) {
         say("ERR no memory\r\n");
@@ -271,15 +389,19 @@ static void beacon(int32_t amp, uint32_t S) {
         return;
     }
     memcpy(ring, beacon_bin_start, BEACON_SYMBOLS / 4u); /* flash reads would stall the loop */
-    lut_build_t(T, S, 0, 0.35f, (float)amp, 0.0f, 0.0f, 1.0f, 0.0f, hb);
+    if (g4) lut_build_g(T, S, 0, 0.35f, (float)amp, 0.0f, 0.0f, 1.0f, 0.0f, 2u);
+    else lut_build_t(T, S, 0, 0.35f, (float)amp, 0.0f, 0.0f, 1.0f, 0.0f, hb);
     free(hb);
     const sample_clock_t clk = sample_clock_init(CPU_HZ, BEACON_BAUD);
     tx_chain_on();
     say("BEACON %.3f MHz %lu Bd S %lu (%.3f MS/s, %lu cycles per sample) amp %ld scale %lu, QPSK %s: any key stops\r\n", fkhz / 1000.0,
         (unsigned long)BEACON_BAUD, (unsigned long)S, BEACON_BAUD * (double)S / 1e6, (unsigned long)(clk.period / S), (long)amp,
         (unsigned long)scale, BEACON_FEC);
-    beacon_stats_t st;
-    beacon_loop(ring, BEACON_SYMBOLS, T, S, clk, ((txdc_orig & ~TXDC_IQ) | TXDC_INJECT) ^ LUT_XOR, &st);
+    beacon_stats_t st = {0};
+    const uint32_t xb = ((txdc_orig & ~TXDC_IQ) | TXDC_INJECT) ^ LUT_XOR;
+    if (S == 16u) beacon_loop_16(ring, BEACON_SYMBOLS, T, clk, xb, &st);
+    else if (g4) beacon_loop_g(ring, BEACON_SYMBOLS, T, S, clk, xb, &st);
+    else beacon_loop(ring, BEACON_SYMBOLS, T, S, clk, xb, &st);
     uint8_t c;
     while (usb_serial_jtag_ll_read_rxfifo(&c, 1)) {}
     tx_off();
@@ -287,6 +409,33 @@ static void beacon(int32_t amp, uint32_t S) {
     free(T);
     say("BEACON off after %.1f s, worst lateness %lu cycles (%.2f us), %lu samples a period late\r\n",
         (double)st.symbols / BEACON_BAUD, (unsigned long)st.late_max, st.late_max / (CPU_HZ / 1e6), (unsigned long)st.late);
+    if (g4) say("  last sample of a symbol: worst %lu cycles after its deadline (store and table work included)\r\n", (unsigned long)st.end_max);
+}
+
+static void __attribute__((noinline)) IRAM_ATTR bench(void) {
+    static volatile uint32_t ram[64];
+    volatile uint32_t *const dc = (volatile uint32_t *)TXDC_REG;
+    const uint32_t v = REG_READ(TXDC_REG);
+    uint32_t r[4], x = 0;
+    const unsigned irq = portSET_INTERRUPT_MASK_FROM_ISR();
+    uint32_t c = esp_cpu_get_cycle_count();
+    for (int i = 0; i < 1000; ++i) *dc = v;
+    r[0] = esp_cpu_get_cycle_count() - c;
+    c = esp_cpu_get_cycle_count();
+    for (int i = 0; i < 1000; ++i) {
+        *dc = v;
+        x += ram[i & 63];
+    }
+    r[1] = esp_cpu_get_cycle_count() - c;
+    c = esp_cpu_get_cycle_count();
+    for (int i = 0; i < 1000; ++i) x += esp_cpu_get_cycle_count();
+    r[2] = esp_cpu_get_cycle_count() - c;
+    c = esp_cpu_get_cycle_count();
+    for (int i = 0; i < 1000; ++i) x += ram[i & 63];
+    r[3] = esp_cpu_get_cycle_count() - c;
+    portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
+    say("BENCH per 1000 (loop included): TXDC store %lu, store+load %lu, rdcycle %lu, DRAM load %lu (%lu)\r\n", (unsigned long)r[0],
+        (unsigned long)r[1], (unsigned long)r[2], (unsigned long)r[3], (unsigned long)(x & 1));
 }
 
 /* ------------------------------------------------------------ commands */
@@ -382,6 +531,9 @@ static void handle(char *line) {
         say("RFT done\r\n");
     } else if (!strcmp(cmd, "BEACON")) {
         beacon(a1 ? atoi(a1) : 150, a2 ? (uint32_t)atoi(a2) : 16u);
+        return;
+    } else if (!strcmp(cmd, "BENCH")) {
+        bench();
         return;
     } else if (!strcmp(cmd, "OFF")) {
         tx_off();
