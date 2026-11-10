@@ -204,6 +204,11 @@ class EspLink(private val usb: UsbCdc) {
         const val CTL_OK = 0; const val CTL_UNKNOWN_OP = 1
         const val FIRMWARE_ID = 0x49515306L
         const val CTL_BUILD_C5 = 4L                      // CTL_INFO 3: the ESP32-C5 receiver (cs4 at 250 / 333 ksps only)
+        const val CTL_BUILD_400K = 8L                    // CTL_INFO 3: the ESP32-C5 receiver takes DECIM_400K
+        /** NB_SET_DECIM of the ESP32-C5 receiver for 400 ksps (1 Msps / 2.5); packet headers carry it too */
+        const val DECIM_400K = 25
+        /** output rate [samples/s] of an NB_SET_DECIM value (or a packet header's) */
+        fun rate(decim: Int) = if (decim == DECIM_400K) 400e3 else 1e6 / decim
         const val NB_HEADER = 20
         const val FMT_CS16 = 0; const val FMT_CS8 = 1; const val FMT_CS4 = 2
         val BYTES_PER_SAMPLE = mapOf(FMT_CS16 to 4, FMT_CS8 to 2, FMT_CS4 to 1)

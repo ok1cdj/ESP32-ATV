@@ -38,7 +38,8 @@ class Receiver(
     private val boardIs: (Boolean) -> Unit = {},
 ) {
     /** replay: raw packets recorded by the USB test (F1) instead of the ESP32-S3, played at their sample rate */
-    /** c5: the ESP32-C5 receiver (6 cm, rx/c5rx): cs4 only, at 250 ksps up to 148 kS/s, at 333 ksps up to 197 kS/s */
+    /** c5: the ESP32-C5 receiver (6 cm, rx/c5rx): cs4 only, at 250 ksps up to 148 kS/s, at 333 ksps up to 197 kS/s, at 400 ksps
+     *  up to 250 kS/s */
     data class Config(val freqHz: Long, val sr: Int, val const: String = "QPSK", val cr: String = "3/4", val gainDb: Double,
                       val frameSizes: Int = FRAMES_NORMAL, val replay: File? = null, val track: Boolean = true, val c5: Boolean = false)
 
@@ -76,11 +77,12 @@ class Receiver(
 
     // a replay takes rate and format from its first packet header (word 1: format | decimation << 8)
     private val replayHead = cfg.replay?.inputStream()?.use { s -> ByteArray(4).also { s.read(it) } }
-    private val decim = replayHead?.let { it[3].toInt() and 0xFF } ?: if (cfg.c5) (if (cfg.sr <= 148_000) 4 else 3)
-                        else if (cfg.sr > 200_000) 2 else 3
+    private val decim = replayHead?.let { it[3].toInt() and 0xFF }
+        ?: if (cfg.c5) (if (cfg.sr <= 148_000) 4 else if (cfg.sr <= 197_000) 3 else EspLink.DECIM_400K)
+        else if (cfg.sr > 200_000) 2 else 3
     private val format = replayHead?.let { it[2].toInt() and 0xFF } ?: if (cfg.c5 || cfg.sr > 200_000) EspLink.FMT_CS4 else EspLink.FMT_CS8
     private val wide = format == EspLink.FMT_CS4
-    val fs = 1e6 / decim
+    val fs = EspLink.rate(decim)
     // leandvb's CNR needs noise on both sides of the signal: a window at least 3 x SR wide (none at 400 kS/s in 500 ksps)
     val cnrMeasured = fs > 3 * cfg.sr
     // below 100 kS/s the signal is kept LO_OFFSET_HZ below the LO (a narrow signal fits in the 333 ksps window beside it)
@@ -136,7 +138,9 @@ class Receiver(
                     boardIs(c5)
                     throw IOException(if (c5) "the board is the ESP32-C5 receiver: Start again" else "the board is an ESP32-S3: Start again")
                 }
-                if (c5 && cfg.sr > 197_000) throw IOException("the ESP32-C5 receiver takes up to 197 kS/s (cs4 at 333 ksps)")
+                if (c5 && cfg.sr > 250_000) throw IOException("the ESP32-C5 receiver takes up to 250 kS/s (cs4 at 400 ksps)")
+                if (c5 && decim == EspLink.DECIM_400K && (l.buildFlags() and EspLink.CTL_BUILD_400K) == 0L)
+                    throw IOException("this ESP32-C5 firmware takes up to 197 kS/s (cs4 at 333 ksps): update rx/c5rx for 400 ksps")
                 val lo = l.configure(cfg.freqHz, decim, format, EspLink.gainSelector(gainDb))
                 log("LO %.6f MHz, %.0f ksps %s, SR %d, gain %.0f dB".format(lo / 1e6, fs / 1e3, if (wide) "cs4" else "cs8", cfg.sr, gainDb))
                 status.state = "searching"
