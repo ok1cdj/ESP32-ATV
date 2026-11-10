@@ -101,11 +101,16 @@ class EspLink(private val usb: UsbCdc) {
         if (stat(ESP_STAT_RADIO) != 0L) throw IOException("radio initialisation failed on the ESP32-S3")
     }
 
+    /** CTL_INFO 3: CTL_BUILD_* of the receiver (CTL_BUILD_C5: the ESP32-C5 receiver, rx/c5rx). */
+    fun buildFlags() = command(CTL_INFO, 3).value
+
     /** Programs radio and decimator (order as espdr configure_receiver); returns the LO the ESP settled on [Hz]. */
     fun configure(freqHz: Long, decim: Int, format: Int, gain: Int): Long {
         command(ESP_SET_RATE, ESP_RATE_16M.toLong())
         command(ESP_SET_WIDTH, 20)
-        val lo = command(ESP_SET_LO, freqHz).value
+        // the LO goes as Hz modulo 2^32 (send() keeps the low 32 bits; the ESP32-C5 at 5.7 GHz takes it so) and comes back so
+        var lo = command(ESP_SET_LO, freqHz).value
+        while (lo + (1L shl 31) < freqHz) lo += 1L shl 32
         command(ESP_SET_GAIN, gain.toLong())
         command(NB_SET_DECIM, decim.toLong())
         command(NB_SET_FORMAT, format.toLong())
@@ -198,6 +203,7 @@ class EspLink(private val usb: UsbCdc) {
         const val NB_STAT_DROPPED = 32; const val NB_STAT_FIFO_PEAK = 33
         const val CTL_OK = 0; const val CTL_UNKNOWN_OP = 1
         const val FIRMWARE_ID = 0x49515306L
+        const val CTL_BUILD_C5 = 4L                      // CTL_INFO 3: the ESP32-C5 receiver (cs4 at 250 / 333 ksps only)
         const val NB_HEADER = 20
         const val FMT_CS16 = 0; const val FMT_CS8 = 1; const val FMT_CS4 = 2
         val BYTES_PER_SAMPLE = mapOf(FMT_CS16 to 4, FMT_CS8 to 2, FMT_CS4 to 1)

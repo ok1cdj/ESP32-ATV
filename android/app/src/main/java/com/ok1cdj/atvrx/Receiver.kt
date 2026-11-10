@@ -34,10 +34,13 @@ class Receiver(
     val cfg: Config,
     private val video: VideoDecoder,
     private val log: (String) -> Unit,
+    /** called with what the board turned out to be (true: ESP32-C5) when that differs from [Config.c5] */
+    private val boardIs: (Boolean) -> Unit = {},
 ) {
     /** replay: raw packets recorded by the USB test (F1) instead of the ESP32-S3, played at their sample rate */
+    /** c5: the ESP32-C5 receiver (6 cm, rx/c5rx): cs4 only, at 250 ksps up to 148 kS/s, at 333 ksps up to 197 kS/s */
     data class Config(val freqHz: Long, val sr: Int, val const: String = "QPSK", val cr: String = "3/4", val gainDb: Double,
-                      val frameSizes: Int = FRAMES_NORMAL, val replay: File? = null, val track: Boolean = true)
+                      val frameSizes: Int = FRAMES_NORMAL, val replay: File? = null, val track: Boolean = true, val c5: Boolean = false)
 
     /** What the screen shows; written by the worker threads. */
     class Status {
@@ -73,14 +76,17 @@ class Receiver(
 
     // a replay takes rate and format from its first packet header (word 1: format | decimation << 8)
     private val replayHead = cfg.replay?.inputStream()?.use { s -> ByteArray(4).also { s.read(it) } }
-    private val decim = replayHead?.let { it[3].toInt() and 0xFF } ?: if (cfg.sr > 200_000) 2 else 3
-    private val format = replayHead?.let { it[2].toInt() and 0xFF } ?: if (cfg.sr > 200_000) EspLink.FMT_CS4 else EspLink.FMT_CS8
+    private val decim = replayHead?.let { it[3].toInt() and 0xFF } ?: if (cfg.c5) (if (cfg.sr <= 148_000) 4 else 3)
+                        else if (cfg.sr > 200_000) 2 else 3
+    private val format = replayHead?.let { it[2].toInt() and 0xFF } ?: if (cfg.c5 || cfg.sr > 200_000) EspLink.FMT_CS4 else EspLink.FMT_CS8
     private val wide = format == EspLink.FMT_CS4
     val fs = 1e6 / decim
     // leandvb's CNR needs noise on both sides of the signal: a window at least 3 x SR wide (none at 400 kS/s in 500 ksps)
     val cnrMeasured = fs > 3 * cfg.sr
     // below 100 kS/s the signal is kept LO_OFFSET_HZ below the LO (a narrow signal fits in the 333 ksps window beside it)
     private val loOffset = !wide && cfg.sr < 100_000
+    // two 48 MHz crystals at 5.7 GHz differ by up to ~150 kHz, and the transmitter warms up by ~100 kHz
+    private val maxShiftHz = if (cfg.c5) MAX_SHIFT_C5_HZ else MAX_SHIFT_HZ
 
     @Volatile private var running = true
     @Volatile private var searching = true
@@ -125,6 +131,12 @@ class Receiver(
                 l.send(EspLink.ESP_STOP)
                 try { l.await(EspLink.ESP_RUN, 1500) } catch (_: IOException) {}
                 l.checkFirmware()
+                val c5 = (l.buildFlags() and EspLink.CTL_BUILD_C5) != 0L
+                if (c5 != cfg.c5) {
+                    boardIs(c5)
+                    throw IOException(if (c5) "the board is the ESP32-C5 receiver: Start again" else "the board is an ESP32-S3: Start again")
+                }
+                if (c5 && cfg.sr > 197_000) throw IOException("the ESP32-C5 receiver takes up to 197 kS/s (cs4 at 333 ksps)")
                 val lo = l.configure(cfg.freqHz, decim, format, EspLink.gainSelector(gainDb))
                 log("LO %.6f MHz, %.0f ksps %s, SR %d, gain %.0f dB".format(lo / 1e6, fs / 1e3, if (wide) "cs4" else "cs8", cfg.sr, gainDb))
                 status.state = "searching"
@@ -276,7 +288,7 @@ class Receiver(
                     try {
                         if (findSignal()) {
                             val step = ncoOffset
-                            if (wide && link != null && kotlin.math.abs(tuneHz + step - cfg.freqHz) > MAX_SHIFT_HZ) {
+                            if (wide && link != null && kotlin.math.abs(tuneHz + step - cfg.freqHz) > maxShiftHz) {
                                 // a window filled with noise has a power centre too: steps after it walked the LO
                                 // 241 kHz away (OK1PHU); back to the frequency entered, where noise shows as no signal
                                 backToEntered("LO %+.0f kHz from the frequency entered: back to it".format(
@@ -626,6 +638,7 @@ class Receiver(
         const val SPEC_N = 1024; const val SPEC_SEGS = 8
         // retunes by the search stay this close to the frequency entered (crystals: ±60 kHz seen at 2.4 GHz)
         const val MAX_SHIFT_HZ = 150e3
+        const val MAX_SHIFT_C5_HZ = 300e3
         // the ESP32-S3's own hump around its LO: +-25 kHz (LO leakage, ADC offset; removeDc takes out only the line at
         // 0 Hz). Bench 2026-11-02, 40 kS/s: a weak signal on the LO did not decode at all, 80 kHz off it MER 9-12 dB.
         const val HUMP_HZ = 25e3

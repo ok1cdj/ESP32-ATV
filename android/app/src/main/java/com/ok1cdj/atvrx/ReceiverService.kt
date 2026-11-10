@@ -78,7 +78,9 @@ class ReceiverService : Service() {
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "atvrx:receiver").apply { acquire() }
         video.reset()
         audio.reset()
-        val r = Receiver(conn, device, applicationInfo.nativeLibraryDir, cacheDir, cfg, video, ::say)
+        val r = Receiver(conn, device, applicationInfo.nativeLibraryDir, cacheDir, cfg, video, ::say) { c5 ->
+            device?.let { UsbBoards.serial(getSystemService(USB_SERVICE) as UsbManager, it) }?.let { UsbBoards.rememberC5(this, it, c5) }
+        }
         r.demux.onAudio = { type, es, pts -> audio.feed(type, es, pts) }
         r.onConstellation = onConstellation
         receiver = r

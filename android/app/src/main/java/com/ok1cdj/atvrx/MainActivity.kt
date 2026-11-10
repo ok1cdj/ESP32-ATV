@@ -450,8 +450,9 @@ class MainActivity : Activity() {
         val fr = frameChoices[frames.selectedItemPosition]
         prefs.edit().putString("freq", freq.text.toString()).putInt("sr", sr).putInt("gain", g)
             .putString("const", c).putString("cr", cr).putInt("frames", fr).putBoolean("track", track.isChecked).apply()
+        val c5 = UsbBoards.serial(getSystemService(USB_SERVICE) as UsbManager, dev)?.let { UsbBoards.isC5(this, it) } ?: false
         val cfg = Receiver.Config(freqHz = Math.round(mhz * 1e6), sr = sr, const = c, cr = cr, gainDb = g.toDouble(), frameSizes = fr,
-            track = track.isChecked)
+            track = track.isChecked, c5 = c5)
         val svc = service ?: return run { pendingStart = ::start }
         constView.clear(); specView.clear(); tsHistory.clear(); blank.visibility = View.VISIBLE
         svc.startRx(cfg, dev)

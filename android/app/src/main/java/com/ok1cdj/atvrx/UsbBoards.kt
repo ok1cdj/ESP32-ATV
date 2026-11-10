@@ -14,9 +14,10 @@ import android.os.Build
  * MAC is found once by asking the board (the C3 answers INFO, the S3 the receiver's protocol) and remembered.
  * Android lets the app read a serial number only with the permission for that device, so [pick] asks for it device by
  * device. With a single board connected nothing changes: it is used for either role, as before.
+ * A receiver is an ESP32-S3 or the ESP32-C5 (6 cm, rx/c5rx): which one is remembered too ([isC5]), from its build flags.
  */
 object UsbBoards {
-    enum class Role(val label: String) { S3("ESP32-S3 receiver"), C3("ESP32-C3 transmitter") }
+    enum class Role(val label: String) { S3("receiver (ESP32-S3 / C5)"), C3("ESP32-C3 transmitter") }
 
     sealed interface Pick {
         class Found(val dev: UsbDevice) : Pick
@@ -40,6 +41,12 @@ object UsbBoards {
 
     fun remember(ctx: Context, mac: String, role: Role) =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(mac, role.name).apply()
+
+    /** The receiver with this MAC is the ESP32-C5 one (false for an S3, and when not known yet). */
+    fun isC5(ctx: Context, mac: String) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("c5:$mac", false)
+
+    fun rememberC5(ctx: Context, mac: String, c5: Boolean) =
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("c5:$mac", c5).apply()
 
     @Volatile private var identifying = false
 
@@ -88,7 +95,11 @@ object UsbBoards {
             if (isC3) Role.C3 else {
                 val conn2 = m.openDevice(dev) ?: return null
                 val l = EspLink(UsbCdc(conn2, dev))
-                try { l.checkFirmware(); Role.S3 } catch (_: Exception) { null } finally { l.close() }
+                try {
+                    l.checkFirmware()
+                    rememberC5(ctx, mac, (l.buildFlags() and EspLink.CTL_BUILD_C5) != 0L)
+                    Role.S3
+                } catch (_: Exception) { null } finally { l.close() }
             }
         } catch (_: Exception) { null }
         if (role != null) remember(ctx, mac, role)
