@@ -13,7 +13,7 @@
  * A CPU store into TXDC takes 15 cycles; TONE paces it on the cycle counter at TONE_RATE with interrupts masked.
  *
  * Commands (USB Serial/JTAG, one per line):
- *   F 5710.000        frequency in MHz (kHz with up to three decimals, 2300-5900); retunes a running carrier
+ *   F 5715.000        frequency in MHz (kHz with up to three decimals, 2300-5900); retunes a running carrier
  *   CW [i q]          carrier: a constant DAC word (default 200 0); CW 0 0 leaves the LO leakage alone
  *   TONE kHz [amp]    single tone at F + kHz (negative: below), amp 1-511 (default 200); any byte stops it
  *   SCALE n           DAC scale, both branches (0-255, default 15)
@@ -21,9 +21,10 @@
  *   ANT 1|0           GPIO26 RF switch of the C5-Zero: 1 = U.FL (default), 0 = chip antenna
  *   VT n              diagnostics: the vendor CW alone (esp_phy_wifi_tx_tone(1, n, BO), n = channel or MHz), no DAC path
  *   RFT               diagnostics: esp_phy_rftest_config(1) + esp_phy_rftest_init() (the cert-test set-up)
- *   BEACON [amp] [S]  the DVB-S2 beacon (beacon.bin of the BEACON_DIR given to flash.sh) at F: QPSK, RRC 0.35, S samples per
+ *   BEACON [amp] [S] [dci dcq]  the DVB-S2 beacon (beacon.bin of the BEACON_DIR given to flash.sh) at F: QPSK, RRC 0.35, S samples per
  *                     symbol (8-48, default 16), amp = worst-case |I|, |Q| in DAC codes (default 150); any byte stops it.
- *                     S 8 and 16 take two 4-symbol tables (2 loads per sample), the others four 2-symbol tables (4 loads)
+ *                     S 8 and 16 take two 4-symbol tables (2 loads per sample), the others four 2-symbol tables (4 loads);
+ *                     dci dcq: DC in DAC codes against the carrier leakage, as found with CW i q (tx/c5_dccal.py)
  *   BENCH             diagnostics: CPU cycles of a TXDC store, a TXDC store + a DRAM load, rdcycle, a DRAM load (1000 each)
  *   OFF               transmitter off
  *   ST                state
@@ -71,7 +72,8 @@ extern unsigned char phy_param[];
 #define TONE_RATE 2000000u           /* 120 CPU cycles per sample */
 #define TONE_MAX 4000u               /* samples per period: tones down to 0.5 kHz */
 
-static uint32_t fkhz = 5710000, scale = 15, backoff = 0, ant = 1;
+static uint32_t fkhz = BEACON_FREQ_KHZ >= FMIN_KHZ && BEACON_FREQ_KHZ <= FMAX_KHZ ? BEACON_FREQ_KHZ : 5715000u;   /* the beacon's (BAND=6cm) */
+static uint32_t scale = 15, backoff = 0, ant = 1;
 static uint32_t tone_arg;            /* the argument the vendor CW was started with */
 static bool tx_on;
 static uint32_t txdc_orig;
@@ -367,7 +369,8 @@ static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop_16(const uint8_t
     return n;
 }
 
-static void beacon(int32_t amp, uint32_t S) {
+/* dci, dcq: DC added to the I and Q words [DAC codes, as CW i q] against the carrier leakage (tx/c5_dccal.py finds them) */
+static void beacon(int32_t amp, uint32_t S, float dci, float dcq) {
     const size_t bytes = (size_t)(beacon_bin_end - beacon_bin_start);
     if (S < 8 || S > BEACON_SMAX || amp < 1 || amp > 480) {
         say("ERR BEACON [amp 1-480] [S 8-%u]\r\n", (unsigned)BEACON_SMAX);
@@ -389,14 +392,14 @@ static void beacon(int32_t amp, uint32_t S) {
         return;
     }
     memcpy(ring, beacon_bin_start, BEACON_SYMBOLS / 4u); /* flash reads would stall the loop */
-    if (g4) lut_build_g(T, S, 0, 0.35f, (float)amp, 0.0f, 0.0f, 1.0f, 0.0f, 2u);
-    else lut_build_t(T, S, 0, 0.35f, (float)amp, 0.0f, 0.0f, 1.0f, 0.0f, hb);
+    if (g4) lut_build_g(T, S, 0, 0.35f, (float)amp, dci, dcq, 1.0f, 0.0f, 2u);
+    else lut_build_t(T, S, 0, 0.35f, (float)amp, dci, dcq, 1.0f, 0.0f, hb);
     free(hb);
     const sample_clock_t clk = sample_clock_init(CPU_HZ, BEACON_BAUD);
     tx_chain_on();
-    say("BEACON %.3f MHz %lu Bd S %lu (%.3f MS/s, %lu cycles per sample) amp %ld scale %lu, QPSK %s: any key stops\r\n", fkhz / 1000.0,
-        (unsigned long)BEACON_BAUD, (unsigned long)S, BEACON_BAUD * (double)S / 1e6, (unsigned long)(clk.period / S), (long)amp,
-        (unsigned long)scale, BEACON_FEC);
+    say("BEACON %.3f MHz %lu Bd S %lu (%.3f MS/s, %lu cycles per sample) amp %ld scale %lu dc %.1f %.1f, QPSK %s: any key stops\r\n",
+        fkhz / 1000.0, (unsigned long)BEACON_BAUD, (unsigned long)S, BEACON_BAUD * (double)S / 1e6, (unsigned long)(clk.period / S),
+        (long)amp, (unsigned long)scale, (double)dci, (double)dcq, BEACON_FEC);
     beacon_stats_t st = {0};
     const uint32_t xb = ((txdc_orig & ~TXDC_IQ) | TXDC_INJECT) ^ LUT_XOR;
     if (S == 16u) beacon_loop_16(ring, BEACON_SYMBOLS, T, clk, xb, &st);
@@ -467,7 +470,7 @@ static void state(void) {
 }
 
 static void handle(char *line) {
-    char *cmd = strtok(line, " "), *a1 = strtok(NULL, " "), *a2 = strtok(NULL, " ");
+    char *cmd = strtok(line, " "), *a1 = strtok(NULL, " "), *a2 = strtok(NULL, " "), *a3 = strtok(NULL, " "), *a4 = strtok(NULL, " ");
     if (!cmd) return;
     for (char *p = cmd; *p; ++p)
         if (*p >= 'a' && *p <= 'z') *p -= 32;
@@ -530,7 +533,7 @@ static void handle(char *line) {
         esp_phy_rftest_init();
         say("RFT done\r\n");
     } else if (!strcmp(cmd, "BEACON")) {
-        beacon(a1 ? atoi(a1) : 150, a2 ? (uint32_t)atoi(a2) : 16u);
+        beacon(a1 ? atoi(a1) : 150, a2 ? (uint32_t)atoi(a2) : 16u, a3 ? strtof(a3, NULL) : 0.0f, a4 ? strtof(a4, NULL) : 0.0f);
         return;
     } else if (!strcmp(cmd, "BENCH")) {
         bench();

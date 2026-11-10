@@ -8,3 +8,6 @@ C5RX_PORT=${C5RX_PORT:-/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_uni
 # 2340.000 until 2026-10-16). Not on a multiple of 20 MHz: there the XIAO ESP32-S3's PLL has a spur of its own (2320, 2340,
 # 2360 MHz: 12-28 dB above the noise), which lands inside the signal.
 ATV_FREQ=${ATV_FREQ:-2345.000}
+# 6 cm (ESP32-C5, tx/c5cw, rx/c5rx): IARU Region 1 ATV segment 5700-5720 MHz. Above EU Wi-Fi channel 140 (5690-5710 MHz), not on a
+# multiple of 20 MHz (the S3's PLL spurs) nor of 48 MHz (the C5's crystal: 5712, 5760).
+ATV6_FREQ=${ATV6_FREQ:-5715.000}

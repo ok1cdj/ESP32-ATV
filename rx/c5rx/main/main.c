@@ -9,7 +9,7 @@
  *     A run ends after 32768 inputs (409.6 us), so it is restarted every IQE_REARM samples, right after a read (see capture()).
  *
  * Commands (USB Serial/JTAG, one per line):
- *   F 5710.000        LO in MHz (kHz with up to three decimals, 2300-5900)
+ *   F 5715.000        LO in MHz (kHz with up to three decimals, 2300-5900)
  *   G n               forced RX gain index (0-89, default 50)
  *   ANT 1|0           GPIO26 RF switch of the C5-Zero: 1 = U.FL (default), 0 = chip antenna
  *   CAP n             n complex samples (up to CAP_MAX) at CAP_RATE: "CAPD n rate late_max rearms\n", then n int16 I, Q pairs
@@ -84,7 +84,7 @@ extern unsigned char phy_param[];
 #define CAP_MAX 32768u
 #define IQE_REARM 512u               /* samples per estimator run: 256 us of its 409.6 us */
 
-static uint32_t fkhz = 5710000, gain = 50, ant = 1, ctrl1;
+static uint32_t fkhz = 5715000, gain = 50, ant = 1, ctrl1;   /* boards.sh ATV6_FREQ */
 static uint8_t *fifo;                /* stream output (STREAM_FIFO bytes), from the heap at boot */
 
 /* ------------------------------------------------------------ USB */
