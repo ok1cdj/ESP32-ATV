@@ -28,7 +28,8 @@
  *     steps; the reply carries the LO in the same encoding;
  *   - ESP_SET_GAIN: the selector 0..127 is the C5's forced RX gain index, clamped to 89;
  *   - NB_SET_DECIM 2 and 3 are accepted, but only 4 (250 ksps) keeps up for now; NB_BENCH is unknown;
- *   - text lines other than the commands above are ignored (the Android app probes for a C3 with "INFO").
+ *   - text lines other than the commands above are ignored (the Android app probes for a C3 with "INFO");
+ *   - CTL_INFO 3 (build flags) has CTL_BUILD_C5 next to NARROWBAND: hosts pick cs4 at 250 / 333 ksps for it.
  * 2026-11-10, 5710 MHz, C5 TX beacon 125 kBd (tx/c5cw) over the air: STREAM 4 2 (250 ksps cs4) decoded by rx/raw2cf32.py --decode,
  * 65 of 98 frames clean from a cold transmitter. 333 / 500 ksps do not keep up yet (CPU), cs8 at 250 ksps hits the USB limit.
  */
@@ -415,7 +416,8 @@ static void __attribute__((noinline)) IRAM_ATTR stream(uint32_t r2, uint32_t fmt
             used = 0;
         } else {
             for (uint32_t b = 0; b < USB_BYTES && used && tail != pkt && USB_SERIAL_JTAG.ep1_conf.serial_in_ep_data_free; ++b) {
-                USB_SERIAL_JTAG.ep1.rdwr_byte = fifo[tail];
+                USB_SERIAL_JTAG.ep1.val = fifo[tail];          /* the whole register: a bit-field store reads it first, and
+                                                                 * reading it takes a byte out of the receive FIFO */
                 tail = tail + 1u == STREAM_FIFO ? 0 : tail + 1u;
                 --used;
                 if (++chunk == 64u || !used || tail == pkt) {
@@ -443,6 +445,7 @@ static void __attribute__((noinline)) IRAM_ATTR stream(uint32_t r2, uint32_t fmt
             if (busy > busy_max) busy_max = busy;
         }
 #endif
+        /* any byte from the host ends the run (its ESP_STOP, as on the S3) */
         if ((slots & 1023u) == 0 && usb_serial_jtag_ll_rxfifo_data_available()) break;
         if (end_slots && slots >= end_slots) break;
         t += step;
@@ -503,7 +506,7 @@ static void __attribute__((noinline)) IRAM_ATTR usb_store_cost(void) {
         wait += esp_cpu_get_cycle_count() - c;
         for (int i = 0; i < 64; ++i) {
             c = esp_cpu_get_cycle_count();
-            USB_SERIAL_JTAG.ep1.rdwr_byte = (uint8_t)'.';
+            USB_SERIAL_JTAG.ep1.val = (uint8_t)'.';
             const uint32_t d = esp_cpu_get_cycle_count() - c;
             store += d;
             if (d > store_max) store_max = d;
@@ -541,6 +544,8 @@ static void usb_throughput(uint32_t secs) {
 #define CTL_UNKNOWN_OP 1
 #define CTL_BAD_ARGUMENT 2
 #define CTL_ESP_FIRMWARE_ID 0x49515306u
+#define CTL_BUILD_NARROWBAND 1u
+#define CTL_BUILD_C5 4u                  /* ours: this ESP32-C5 receiver (2 is the S3's transmitter build) */
 enum {
     CTL_INFO = 1, CTL_SAFE = 2, CTL_STATUS = 3, ESP_OUTPUTS = 16, ESP_RUN = 17, ESP_STOP = 18, ESP_ARG_HIGH = 19, ESP_SET_LO = 20,
     ESP_SET_RATE = 21, ESP_SET_WIDTH = 22, ESP_SET_FILTER = 23, ESP_SET_GAIN = 24, ESP_SET_RF_GAIN = 25, ESP_SET_BB_GAIN = 26,
@@ -553,7 +558,9 @@ static struct {
     uint32_t decim, format, outshift, gain_sel, arg_high;
     bool has_high, stopped;
     stream_stats_t last;
-} nb = {3, 1, 4, 50, 0, false, false, {0}};
+    uint8_t pend[64];                /* what the host sent during a run (its ESP_STOP), parsed after the RUN reply */
+    uint32_t npend, stop_bytes;
+} nb = {3, 1, 4, 50, 0, false, false, {0}, {0}, 0, 0};
 
 static void respond(uint8_t op, uint8_t status, uint16_t seq, uint32_t value) {
     uint8_t r[16] = {0xB5, 1, op, status, (uint8_t)seq, (uint8_t)(seq >> 8), 0, 0,
@@ -576,6 +583,7 @@ static uint32_t stat_value(uint32_t k) {
     case ESP_STAT_GAIN: return nb.gain_sel;
     case NB_STAT_DROPPED: return nb.last.dropped;
     case NB_STAT_FIFO_PEAK: return nb.last.fifo_peak;
+    case 40: return nb.stop_bytes;                            /* ours: bytes read when the last run ended */
     default: return 0;                                        /* ESP_STAT_RADIO and the rest: 0 */
     }
 }
@@ -590,7 +598,7 @@ static void control(const uint8_t *q) {
         uint8_t mac[6] = {0};
         esp_efuse_mac_get_default(mac);
         const uint32_t v = arg == 0 ? CTL_ESP_FIRMWARE_ID : arg == 1 ? (uint32_t)(mac[0] | mac[1] << 8 | mac[2] << 16 | (uint32_t)mac[3] << 24)
-                           : arg == 2 ? (uint32_t)(mac[4] | mac[5] << 8) : arg == 3 ? 1u : 0u;
+                           : arg == 2 ? (uint32_t)(mac[4] | mac[5] << 8) : arg == 3 ? CTL_BUILD_NARROWBAND | CTL_BUILD_C5 : 0u;
         respond(op, CTL_OK, seq, v);
         return;
     }
@@ -659,7 +667,13 @@ static void control(const uint8_t *q) {
         /* Packets until the time is up or any byte arrives (the host's STOP, answered after the RUN reply). */
         force_rx_gain(1, gain, 0);
         stream(nb.decim, nb.format, nb.format == 2u ? 0u : nb.outshift, arg & 0xFFFFu, &nb.last);
-        nb.stopped = usb_serial_jtag_ll_rxfifo_data_available();
+        /* the bytes that ended the run, read now: they are answered after the RUN reply, as on the S3 */
+        const int64_t until = esp_timer_get_time() + 20000;
+        nb.npend = 0;
+        while (nb.npend < sizeof(nb.pend) && esp_timer_get_time() < until)
+            nb.npend += usb_serial_jtag_ll_read_rxfifo(nb.pend + nb.npend, sizeof(nb.pend) - nb.npend);
+        nb.stop_bytes = nb.npend;
+        nb.stopped = nb.npend != 0;
         respond(op, CTL_OK, seq, 0);
         return;
     }
@@ -806,10 +820,19 @@ void app_main(void) {
     uint8_t req[10];
     size_t got = 0;                                           /* bytes of a binary request (0: none in progress) */
     int64_t req_t = 0;
+    uint32_t pend_i = 0;
     for (;;) {
         uint8_t c;
         if (got && esp_timer_get_time() - req_t > 100000) got = 0;   /* a partial request is dropped after 100 ms, as on the S3 */
-        if (usb_serial_jtag_ll_read_rxfifo(&c, 1)) {
+        bool have = false;
+        if (pend_i < nb.npend) {                              /* first what ended a run */
+            c = nb.pend[pend_i++];
+            have = true;
+        } else {
+            pend_i = nb.npend = 0;
+            have = usb_serial_jtag_ll_read_rxfifo(&c, 1);
+        }
+        if (have) {
             if (got || (c == 0xB4 && used == 0)) {            /* binary request */
                 if (!got) req_t = esp_timer_get_time();
                 req[got++] = c;
