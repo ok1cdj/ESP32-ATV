@@ -9,7 +9,7 @@ import android.widget.LinearLayout
 
 /**
  * The RX | TX switch at the top of both screens: the active side coloured (RX blue, TX red), the other grey and
- * clickable. RX uses the ESP32-S3, TX the ESP32-C3; both are 303a:1001 on the one USB port.
+ * clickable. No board in the labels: RX takes an ESP32-S3 or ESP32-C5, TX an ESP32-C3 (all 303a:1001 on the one USB port).
  */
 fun modeSwitch(ctx: Context, tx: Boolean, onRx: () -> Unit, onTx: () -> Unit) = LinearLayout(ctx).apply {
     orientation = LinearLayout.HORIZONTAL
@@ -21,9 +21,9 @@ fun modeSwitch(ctx: Context, tx: Boolean, onRx: () -> Unit, onTx: () -> Unit) = 
         isEnabled = !active
         setOnClickListener { onClick() }
     }
-    addView(side("RX · ESP32-S3", !tx, Color.rgb(0x1E, 0x5A, 0xA8), onRx),
+    addView(side("RX", !tx, Color.rgb(0x1E, 0x5A, 0xA8), onRx),
         LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { rightMargin = 8 })
-    addView(side("TX · ESP32-C3", tx, Color.rgb(0xA8, 0x2E, 0x1E), onTx),
+    addView(side("TX", tx, Color.rgb(0xA8, 0x2E, 0x1E), onTx),
         LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
 }
 

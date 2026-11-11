@@ -53,11 +53,14 @@ class MainActivity : Activity() {
             }
         }
     }
+    // the frequency first, as in the saved ones (currentPreset)
     private val builtIn = listOf(40_000 to "40k", 50_000 to "50k", 66_666 to "66.7k", 125_000 to "125k", 333_000 to "333k")
-        .map { (sr, n) -> Preset("Beacon $n QPSK 3/4", DEFAULT_FREQ, sr, "QPSK", "3/4", Receiver.FRAMES_NORMAL) } +
+        .map { (sr, n) -> Preset("$DEFAULT_FREQ Beacon $n QPSK 3/4", DEFAULT_FREQ, sr, "QPSK", "3/4", Receiver.FRAMES_NORMAL) } +
         listOf(40_000 to "40k", 50_000 to "50k", 66_666 to "66.7k")
-            .map { (sr, n) -> Preset("Beacon $n QPSK 3/4 short", DEFAULT_FREQ, sr, "QPSK", "3/4", Receiver.FRAMES_SHORT) } +
-        Preset("PC 8PSK 3/5 333k", DEFAULT_FREQ, 333_000, "8PSK", "3/5", Receiver.FRAMES_NORMAL)
+            .map { (sr, n) -> Preset("$DEFAULT_FREQ Beacon $n QPSK 3/4 short", DEFAULT_FREQ, sr, "QPSK", "3/4", Receiver.FRAMES_SHORT) } +
+        Preset("$DEFAULT_FREQ PC 8PSK 3/5 333k", DEFAULT_FREQ, 333_000, "8PSK", "3/5", Receiver.FRAMES_NORMAL) +
+        listOf(125_000 to "125k", 250_000 to "250k")    // 6 cm: the ESP32-C5 (tx/c5cw beacon, up to 250 kS/s)
+            .map { (sr, n) -> Preset("$FREQ_6CM Beacon $n QPSK 3/4", FREQ_6CM, sr, "QPSK", "3/4", Receiver.FRAMES_NORMAL) }
     private lateinit var presetSpinner: Spinner
     private fun userPresets() = (prefs.getString("presets", "") ?: "").lines().mapNotNull { Preset.decode(it) }
     private fun allPresets() = builtIn + userPresets()
@@ -538,6 +541,8 @@ class MainActivity : Activity() {
     companion object {
         /** IARU R1 13 cm ATV segment 2322-2355 MHz; ATV_FREQ of boards.sh on the PC side */
         const val DEFAULT_FREQ = "2345.000"         // not on n x 20 MHz: the S3 has a spur there
+        /** 5700-5720 MHz; ATV6_FREQ of boards.sh: above EU Wi-Fi channel 140, not on n x 20 / 48 MHz */
+        const val FREQ_6CM = "5715.000"
         private const val LOG_LINES = 60
         // what the S3's gain selector 0..127 covers (EspLink.gainSelector)
         private const val GAIN_MIN = -29; private const val GAIN_MAX = 96
