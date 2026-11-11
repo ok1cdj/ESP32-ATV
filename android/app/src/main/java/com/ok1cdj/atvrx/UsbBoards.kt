@@ -17,7 +17,7 @@ import android.os.Build
  * A receiver is an ESP32-S3 or the ESP32-C5 (6 cm, rx/c5rx): which one is remembered too ([isC5]), from its build flags.
  */
 object UsbBoards {
-    enum class Role(val label: String) { S3("receiver (ESP32-S3 / C5)"), C3("ESP32-C3 transmitter") }
+    enum class Role(val label: String) { S3("receiver (ESP32-S3 / C5)"), C3("transmitter (ESP32-C3 / C5)") }
 
     sealed interface Pick {
         class Found(val dev: UsbDevice) : Pick

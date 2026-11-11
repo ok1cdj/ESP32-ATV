@@ -169,7 +169,7 @@ class TxActivity : Activity() {
         // a stand-alone beacon: the C3 keeps transmitting this loop by itself (QPSK, up to ~333 kS/s)
         fun loopName(v: Int) = if (v == 0) "video" else "$v s"
         loopSeconds = spinner(loopChoices.map(::loopName), loopName(prefs.getInt("loopSeconds", 20)))
-        val save = button("Save as beacon in the C3") { saveBeacon() }.apply {
+        val save = button("Save as beacon") { saveBeacon() }.apply {
             background = GradientDrawable().apply { setColor(Color.rgb(0x5A, 0x3A, 0x8A)); cornerRadius = 16f }
         }
         body.addView(row(save, loopSeconds), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = 8 })
@@ -247,7 +247,8 @@ class TxActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFY)
         val mhz = freq.text.toString().replace(',', '.').toDoubleOrNull() ?: return null.also { log("frequency?") }
-        if (mhz < 2300.0 || mhz > 2450.0) return null.also { log("the C3 transmits only in 2300..2450 MHz") }
+        // the C3 on 13 cm; the ESP32-C5 on 6 cm, a stored beacon only (Save as beacon)
+        if (mhz !in 2300.0..2450.0 && mhz !in 5650.0..5900.0) return null.also { log("the C3 transmits in 2300..2450 MHz, the C5 in 5650..5900 MHz") }
         UsbBoards.serial(usbManager, dev)?.let { mac ->
             if (DcStore.all(this, mac).isNotEmpty() && DcStore.near(this, mac, mhz, CAL_NEAR_MHZ) == null)
                 log("no calibration of the C3 within %.0f MHz of %.3f: RX screen, menu → Transmitter calibration".format(CAL_NEAR_MHZ, mhz))

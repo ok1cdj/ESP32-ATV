@@ -1,0 +1,6 @@
+# Name,   Type, SubType, Offset,   Size
+# as the C3 transmitter (third_party/ESP32-DATV-SA/firmware/partitions.csv): the app's "Save as beacon" (VIDW) writes the loop to "video"
+nvs,      data, nvs,     0x9000,   24K
+phy_init, data, phy,     0xf000,   4K
+factory,  app,  factory, 0x10000,  1M
+video,    data, 0x40,    0x110000, 0x2F0000

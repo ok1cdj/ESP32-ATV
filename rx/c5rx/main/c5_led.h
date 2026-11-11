@@ -10,7 +10,7 @@
 #include "soc/gpio_reg.h"
 
 #define LED_GPIO 27
-#define LED_LEVEL 12u                /* of 255: the bare LED is bright */
+static uint32_t led_level = 12u;     /* of 255: the bare LED is bright; 0 dark */
 enum { LED_IDLE, LED_RX, LED_TX };
 
 static void __attribute__((noinline)) IRAM_ATTR led_bits(uint32_t grb) {
@@ -32,6 +32,7 @@ static void __attribute__((noinline)) IRAM_ATTR led_bits(uint32_t grb) {
 
 static inline void led(int state) {
     static bool init;
+    const uint32_t LED_LEVEL = led_level;
     if (!init) {
         gpio_reset_pin(LED_GPIO);
         gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);

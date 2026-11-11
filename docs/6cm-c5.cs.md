@@ -17,8 +17,12 @@ ESP32-C5 (rx/c5rx: IQ estimátor -> halfband -> cs4 250 / 333 / 400 ksps přes U
 ```
 
 **Stav:** větev `c5-6cm`, zatím ne ve vydaných verzích ani ve webovém flasheru. 10. 11. 2026: maják z C5 dekódován druhým
-C5 na PC i v telefonu (zámek, obraz, MER 11–17 dB). 400 ksps (symbolová rychlost do 250 kBd) je napsané, ale na deskách
-zatím neověřené.
+C5 na PC i v telefonu (zámek, obraz, MER 11–17 dB). 11. 11. 2026: 250 kBd přes 400 ksps na PC i v telefonu (3 m od sebe,
+nalepovací antény z balení: MER 13–17 dB, 319 rámců z 320 bez chyb, žádné ztracené USB pakety).
+
+**Vysílač C5 je zatím jen samostatný maják.** Stejně jako C3 si uloží smyčku natočenou v telefonu (záložka TX → *Save as
+beacon*) a po zapnutí ji sám vysílá. **Živé vysílání z telefonu (kamera, testovací obrazec) přes C5 zatím nejde**: Start na
+záložce TX to oznámí.
 
 ## Vysílač – `tx/c5cw`
 
@@ -27,10 +31,19 @@ Cesta podle [fedaykinofdune/esp32-C5-sdr-tx](https://github.com/fedaykinofdune/e
 bere hodnotu z registru TX DC (0x600a0c08), do kterého CPU zapisuje vzorky I/Q (15 cyklů na zápis) podle čítače cyklů
 s maskovanými přerušeními. Maják používá tabulky modulátoru QPSK s RRC 0,35 z ESP32-DATV-SA (`qpsk_lut.h`).
 
+**Maják z telefonu** (jako u C3): nahrajte firmware vysílače (aplikace: menu → Firmware, *6 cm transmitter*; nebo
+`tx/c5cw/flash.sh none`), připojte C5 do telefonu, na záložce TX zadejte 5715.000 MHz, symbolovou rychlost (do 250 kS/s pro
+přijímač C5) a značku a dejte *Save as beacon*. Smyčka (DATVVID1 jako u C3, až ~3 MB flash) se hned spustí a pak po každém
+zapnutí; libovolný bajt na jejím USB ji zastaví, `PLAY` ji spustí znovu. AMP z C3 se na C5 přepočítá jako AMP × 150 / 300
+(AMP 300 = úroveň, na které byl maják změřen). 11. 11. 2026: smyčka uložená z telefonu (250 kS/s, short rámce) přijatá
+přijímačem C5 v telefonu, MER ~17 dB, 1084 rámců bez chyby z 1088.
+
+**Maják zabudovaný ve firmwaru** (PC, pro vývoj):
+
 ```sh
 . ~/esp/esp-idf-v6.1/export.sh                       # ESP-IDF v6.1 s podporou esp32c5 (install.sh esp32c5)
 CALL=YOURCALL BAND=6cm tx/make_beacons.sh 125000     # -> tx/beacons/yourcall-125k-6cm (ATV6_FREQ z boards.sh)
-tx/c5cw/flash.sh tx/beacons/yourcall-125k-6cm        # C5_PORT z boards.sh; "-" jen přeloží
+tx/c5cw/flash.sh tx/beacons/yourcall-125k-6cm        # C5_PORT z boards.sh; "-" jen přeloží; "none": bez vestavěného majáku
 ```
 
 Příkazy na USB konzoli C5 (jeden na řádek):
@@ -38,6 +51,9 @@ Příkazy na USB konzoli C5 (jeden na řádek):
 | Příkaz | Význam |
 |---|---|
 | `BEACON [amp] [S] [dci dcq]` | maják na kmitočtu `F`: amp = nejvyšší \|I\|, \|Q\| v kódech DAC (výchozí 150), S vzorků na symbol (výchozí 16: 2 MS/s při 125 kBd, 4 MS/s při 250 kBd), dci dcq = korekce úniku nosné; libovolný bajt ho zastaví |
+| `PLAY` | uložená smyčka (spustí se i sama po zapnutí); libovolný bajt ji zastaví |
+| `VIDW …`, `INFO` | uložení smyčky, identifikace desky: jako u C3 (*Save as beacon* v aplikaci) |
+| `DC [i q]` | korekce úniku nosné pro uloženou smyčku, uložená ve flash |
 | `F 5715.000` | kmitočet v MHz (2300–5900) |
 | `CW [i q]` / `TONE kHz [amp]` | nosná / jeden tón pro spektrální analyzátor |
 | `SCALE n`, `ANT 1\|0`, `OFF`, `ST` | měřítko DAC (výchozí 15), U.FL / čipová anténa, vypnout, stav |
@@ -48,6 +64,8 @@ Korekci najde `tx/c5_dccal.py` (vysílač vysílá `CW i q`, přijímač měří
 ```sh
 third_party/ESP32-DATV-RX/.venv/bin/python tx/c5_dccal.py --beacon      # najde dci dcq a spustí BEACON 150 16 dci dcq
 ```
+
+Pro uloženou smyčku pošlete nalezenou korekci příkazem `DC dci dcq` (uloží se do flash). Z telefonu C5 zatím kalibrovat nejde.
 
 Naměřeno (tinySA Ultra přes antény, úrovně orientační): nosná −8 dBm na 5710 MHz, únik LO 39 dBc, zrcadlo 42 dBc,
 obrazy vzorkování (S=16) ~34 dBc. **Krystal se vysíláním ohřívá:** od studeného startu ~+100 kHz (19 ppm) během několika
@@ -64,7 +82,7 @@ protokol S3, takže ho bez úprav ovládá `espdr nb.py` i aplikace.
 |---|---|---|---|
 | 250 ksps | 500 k/s | 480 | do 148 kBd |
 | 333 ksps | 667 k/s | 360 | do 197 kBd |
-| 400 ksps (`NB_SET_DECIM 25`) | 800 k/s | 300 | do 250 kBd (neověřeno) |
+| 400 ksps (`NB_SET_DECIM 25`) | 800 k/s | 300 | do 250 kBd |
 
 Pro 400 ksps čte firmware estimátor jen dvakrát (I, pak Q; Q se zpozdí o 75 ns, zrcadlo −28 dB na kraji pásma)
 a použije kratší halfband (19 tapů, −40 dB). 500 ksps nestíhá CPU a cs8 nestíhá USB.
@@ -77,7 +95,13 @@ rx/c5_play.sh 125000                   # PC: SR (do 250000), volitelně kmitoče
 Krystaly dvou C5 se na 5,7 GHz liší až o ~150 kHz, proto `rx/c5_play.sh` nejdřív zachytí 16 ms při 2 MS/s a naladí se na
 střed nejsilnějšího signálu v ±500 kHz.
 
+**LED** na C5-Zero: tlumeně modrá = firmware běží a čeká, zelená = příjem, červená = vysílání, zhasnutá = ROM bootloader
+(resetujte).
+
 ## Android
+
+Oba firmwary jde nahrát z telefonu: menu → Firmware se u ESP32-C5 zeptá, jestli bude přijímač, nebo vysílač pro 6 cm (nebo
+webový flasher, který má tlačítko pro každý).
 
 Aplikace přijímač C5 pozná podle příznaků v `CTL_INFO 3` a zapamatuje si ho: vždy cs4, 250 ksps do 148 kS/s, 333 ksps
 do 197 kS/s a 400 ksps do 250 kS/s (s firmwarem, který to umí). Hledání signálu sahá do ±300 kHz. Kmitočet zadejte
@@ -88,5 +112,6 @@ do 197 kS/s a 400 ksps do 250 kS/s (s firmwarem, který to umí). Hledání sign
 - **Na krátkou vzdálenost horší příjem než na delší:** přebuzení přijímače (pevný zisk, 0 dB v aplikaci = index 30 z 0–89).
   Zatím pomůže snížit zisk; AGC se chystá.
 - Obě C5 po připojení k telefonu občas skončí v ROM bootloaderu (stačí reset).
-- S vysílací C5 na stejném hubu aplikace donekonečna „identifikuje“ desky (`c5cw` neodpovídá jako C3 ani jako přijímač).
+- Živé vysílání přes C5 zatím nejde (jen uložený maják) a korekce nosné C5 se nastavuje na PC (`tx/c5_dccal.py`, `DC i q`),
+  ne z telefonu.
 - Drift krystalů: aplikace a `rx/c5_play.sh` ho dohledají, při ohřevu vysílače ale může signál ujet z okna.

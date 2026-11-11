@@ -10,7 +10,8 @@ import java.nio.ByteOrder
 /**
  * "Save as beacon": records [seconds] of the TX picture (test card, camera or file, the same chain as live TX: Canvas -> H.264
  * -> TS) in real time, encodes it as a stand-alone loop - QPSK, whole TS packets per BBFRAME so that the loop joins up,
- * the first packet's CRC slot from the last one - and stores it in the C3's "video" partition (VIDW). The header
+ * the first packet's CRC slot from the last one - and stores it in the transmitter's "video" partition (VIDW: the C3, or the
+ * ESP32-C5's tx/c5cw, which takes the same loop). The header
  * (DATVVID1 version 3, ESP32-ATV's fork) carries symbol rate, MODCOD, frame size, pilots, service, frequency and level:
  * the C3 then transmits it by itself after every power-up, without the phone. With [wholeVideo] the loop lasts [seconds]
  * rounded up to whole frames (a video's length: none of it cut), as much as the flash holds.
@@ -26,6 +27,8 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
         val sper = Math.round(C3Link.CPU_HZ.toDouble() / cfg.baud)
         if ((sper - 4) / 20 < 16) throw IOException("symbol rate too high for a stand-alone loop (about 333 kS/s at most)")
         val baud = C3Link.CPU_HZ.toDouble() / sper                      // what the C3 sends
+        val board = probe()
+        if (board == "C3" && cfg.freqKhz > 2_450_000) throw IOException("the C3 transmits only in 2300..2450 MHz (6 cm: the ESP32-C5)")
         val enc = S2Encoder("QPSK", cfg.rate, cfg.shortFrame, cfg.pilots)
         try {
             val fs = enc.frameSymbols
@@ -37,7 +40,7 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
             if (nframes < 2) throw IOException("too short")
             if (wholeVideo && nframes > maxFrames) {
                 nframes = maxFrames
-                log("the video is longer than the C3's flash holds at this rate: only its first %.1f s".format(nframes * fs / baud))
+                log("the video is longer than the $board's flash holds at this rate: only its first %.1f s".format(nframes * fs / baud))
             }
             val npk = nframes * ppf
             val nsym = nframes * fs
@@ -104,24 +107,37 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
             val image = header(nsym, Math.round(baud).toInt(), data, MODCODS.indexOf(cfg.rate) + 1) + data
             log("loop: ${image.size} bytes (%d %% of the partition)".format(100L * image.size / PARTITION))
 
-            // into the C3
+            // into the transmitter
             val conn = usbManager.openDevice(device) ?: throw IOException("openDevice failed")
             val link = C3Link(UsbCdc(conn, device))
             try {
                 Thread.sleep(1200)
-                link.info() ?: throw IOException("no ESP32-DATV answer: is this the C3?")
-                if (link.vidw == null) throw IOException("this C3 firmware cannot store a loop: write the current one (menu → Firmware)")
+                link.info() ?: throw IOException("no ESP32-DATV answer: is this the transmitter?")
                 val line = link.storeLoop(image) { done, total ->
-                    progress("Storing in the C3… ${done / 1024} / ${total / 1024} kB", 0.82 + 0.18 * done / total)
+                    progress("Storing in the $board… ${done / 1024} / ${total / 1024} kB", 0.82 + 0.18 * done / total)
                 }
                 log(line)
-                log("stored: the C3 now transmits it by itself, also after power-up (unplug it from the phone)")
-                progress("Stored: the C3 transmits this beacon by itself", 1.0)
+                log("stored: the $board now transmits it by itself, also after power-up (unplug it from the phone)")
+                progress("Stored: the $board transmits this beacon by itself", 1.0)
             } finally {
                 link.close()
             }
         } finally {
             enc.close()
+        }
+    }
+
+    /** Before recording: the transmitter can store a loop ("C3" or "C5"); throws why not. */
+    private fun probe(): String {
+        val conn = usbManager.openDevice(device) ?: throw IOException("openDevice failed")
+        val link = C3Link(UsbCdc(conn, device))
+        try {
+            Thread.sleep(1200)                                          // opening the port may reset the C3
+            link.info() ?: throw IOException("no ESP32-DATV answer: is this the transmitter?")
+            if (link.vidw == null) throw IOException("this C3 firmware cannot store a loop: write the current one (menu → Firmware)")
+            return if (link.c5) "C5" else "C3"
+        } finally {
+            link.close()
         }
     }
 

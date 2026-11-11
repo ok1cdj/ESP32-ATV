@@ -91,6 +91,8 @@ class C3Link(private val usb: UsbCdc) : AutoCloseable {
         }
     }
 
+    /** after info(): the transmitter is the ESP32-C5 (tx/c5cw: "ESP32DATV 1 C5"; a stored beacon only, no live TX yet) */
+    @Volatile var c5 = false; private set
     /** after info(): the firmware's VIDW line ("VIDW 1 VIDEO ..."; null: no VIDW command) and FW line */
     @Volatile var vidw: String? = null; private set
     @Volatile var fw: String? = null; private set
@@ -107,8 +109,9 @@ class C3Link(private val usb: UsbCdc) : AutoCloseable {
         command("")
         command("INFO")
         val id = waitLine(1500) { it.startsWith("ESP32DATV") } ?: return null
+        c5 = id.trim().split(' ').contains("C5")
         val beacon = waitLine(300) { it.startsWith("BEACON ") }
-        vidw = waitLine(300) { it.startsWith("VIDW ") }
+        vidw = waitLine(300) { it.startsWith("VIDW ") } ?: lines.lastOrNull { it.startsWith("VIDW ") }   // also when it came during the wait for BEACON
         fw = lines.lastOrNull { it.startsWith("FW ") }
         booted = lines.any { it.startsWith("ESP-ROM") || it.startsWith("rst:") }
         return id to beacon

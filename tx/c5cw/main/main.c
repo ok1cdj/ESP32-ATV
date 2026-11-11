@@ -25,6 +25,10 @@
  *                     symbol (8-48, default 16), amp = worst-case |I|, |Q| in DAC codes (default 150); any byte stops it.
  *                     S 8 and 16 take two 4-symbol tables (2 loads per sample), the others four 2-symbol tables (4 loads);
  *                     dci dcq: DC in DAC codes against the carrier leakage, as found with CW i q (tx/c5_dccal.py)
+ *   PLAY              the loop stored with VIDW (also after power-up, by itself); any byte stops it
+ *   VIDW ...          stores a loop in the "video" partition, as the C3 (the app's Save as beacon); INFO answers as the C3
+ *   SPIT [dummy]      diagnostics: SPI1 reads of the stored loop (as its feed does them) against the mapped flash
+ *   DC [i q]          DC of the stored loop in DAC codes (saved in NVS; tx/c5_dccal.py --save)
  *   BENCH             diagnostics: CPU cycles of a TXDC store, a TXDC store + a DRAM load, rdcycle, a DRAM load (1000 each)
  *   OFF               transmitter off
  *   ST                state
@@ -39,6 +43,7 @@
 
 #include "esp_cpu.h"
 #include "esp_event.h"
+#include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "driver/gpio.h"
@@ -48,8 +53,17 @@
 #include "hal/usb_serial_jtag_ll.h"
 #include "nvs_flash.h"
 #include "soc/soc.h"
+#include "hal/spimem_flash_ll.h"
+#include "soc/spi_mem_struct.h"
 
+#ifdef C5CW_NO_BEACON                /* the web build: only a stored loop (VIDW) */
+#define BEACON_FREQ_KHZ 5715000u
+#define BEACON_BAUD 250000u
+#define BEACON_SYMBOLS 0u
+#define BEACON_FEC "-"
+#else
 #include "beacon_cfg.h"              /* of the beacon directory (flash.sh) */
+#endif
 #include "sample_clock.h"            /* third_party/ESP32-DATV-SA/firmware/main */
 
 extern void esp_phy_wifi_tx_tone(uint32_t start, uint32_t mhz, uint32_t backoff);
@@ -78,6 +92,7 @@ static uint32_t scale = 15, backoff = 0, ant = 1;
 static uint32_t tone_arg;            /* the argument the vendor CW was started with */
 static bool tx_on;
 static uint32_t txdc_orig;
+static uint32_t txdc_boot;           /* TXDC after the PHY's start, its I/Q cleared: written back after every run */
 static uint32_t tone_w[TONE_MAX];
 
 /* ------------------------------------------------------------ USB */
@@ -124,7 +139,7 @@ static void set_scale(void) {
 
 static void tx_off(void) {
     if (!tx_on) return;
-    REG_WRITE(TXDC_REG, txdc_orig);
+    REG_WRITE(TXDC_REG, txdc_boot);
     esp_phy_wifi_tx_tone(0, tone_arg, backoff);
     tx_on = false;
     led(LED_IDLE);
@@ -133,6 +148,7 @@ static void tx_off(void) {
 /* The vendor CW on the MHz turns the chain on, its tone stop hands the DAC to TXDC, then only the PLL takes the kHz. */
 static void tx_chain_on(void) {
     tx_off();
+    REG_WRITE(TXDC_REG, txdc_boot);
     const uint32_t mhz = fkhz / 1000, khz = fkhz % 1000;
     esp_phy_wifi_tx_tone(1, tone_arg = mhz, backoff);
     phy_stop_tx_tone(1);
@@ -203,8 +219,10 @@ static float rrc_pulse(float t, float b) {
 
 #include "qpsk_lut.h"
 
+#ifndef C5CW_NO_BEACON
 extern const uint8_t beacon_bin_start[] asm("_binary_beacon_bin_start");
 extern const uint8_t beacon_bin_end[] asm("_binary_beacon_bin_end");
+#endif
 
 #define BEACON_SMAX 48u
 
@@ -214,7 +232,7 @@ typedef struct {
     uint64_t symbols;
 } beacon_stats_t;
 
-static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop(const uint8_t *ring, uint32_t nsym, const int32_t *T, uint32_t S, sample_clock_t clk,
+static uint32_t __attribute__((noinline, unused)) IRAM_ATTR beacon_loop(const uint8_t *ring, uint32_t nsym, const int32_t *T, uint32_t S, sample_clock_t clk,
                                       uint32_t xb, beacon_stats_t *st) {
     uint32_t w[2][BEACON_SMAX], off[BEACON_SMAX];
     const uint32_t step = clk.period / S;
@@ -262,7 +280,7 @@ static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop(const uint8_t *r
 }
 
 /* Two 4-symbol tables (lut_build_g, ngroups 2), S 8 or 16. */
-static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop_g(const uint8_t *ring, uint32_t nsym, const int32_t *T, uint32_t S,
+static uint32_t __attribute__((noinline, unused)) IRAM_ATTR beacon_loop_g(const uint8_t *ring, uint32_t nsym, const int32_t *T, uint32_t S,
                                                                   sample_clock_t clk, uint32_t xb, beacon_stats_t *st) {
     uint32_t w[2][BEACON_SMAX];
     const uint32_t step = clk.period / S;                     /* the symbol's spare cycles go to its last sample */
@@ -311,7 +329,11 @@ static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop_g(const uint8_t 
 
 /* S 16 unrolled. Measured costs (BENCH, cycles): a TXDC store 15, a DRAM load right after it about 9 more, rdcycle about 3. Each slot
  * loads its two table entries and stores their sum (no word buffer: one load and one store fewer than beacon_loop_g); the
- * symbol-boundary work (next symbol, its table rows, the symbol clock, the USB check) is spread over the slots. */
+ * symbol-boundary work (next symbol, its table rows, the symbol clock, the USB check) is spread over the slots.
+ * fl (a loop stored in the "video" partition, too big for the RAM; reading it through the flash cache would stall the loop): as the
+ * C3's lutf.S, the symbols come from a 512 byte RAM ring that SPI1 fills: a 64 byte read starts every 256 symbols and its 16 words
+ * move into the ring one per 16 symbols, 8 symbols after the start onwards (the read takes about 14 us). The ring keeps VIDEO_LEAD
+ * bytes ahead of the loop; the stream joins up over the loop's end through the 64 bytes repeated after it (VIDEO_TAIL). */
 #define B16_SLOT(j, extra)                                                     \
     do {                                                                       \
         const uint32_t wj = (uint32_t)(p0[j] + p1[j]) ^ xb;                    \
@@ -321,15 +343,27 @@ static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop_g(const uint8_t 
         tj += step;                                                            \
     } while (0)
 
-static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop_16(const uint8_t *ring, uint32_t nsym, const int32_t *T,
-                                                                   sample_clock_t clk, uint32_t xb, beacon_stats_t *st) {
+#define VIDEO_RING 512u
+#define VIDEO_LEAD 256u
+
+typedef struct {
+    uint32_t base, off, bytes;       /* flash address of the loop's symbols, the next read's offset in them, nsym / 4 */
+    uint32_t *ring;                  /* VIDEO_RING bytes, VIDEO_LEAD of them filled from offset 0 and the read of the next 64 started */
+} flash_feed_t;
+
+static inline __attribute__((always_inline)) uint32_t b16_body(const uint8_t *ring, uint32_t nsym, const int32_t *T, sample_clock_t clk,
+                                                               uint32_t xb, beacon_stats_t *st, flash_feed_t *ff, const bool fl) {
     const uint32_t step = clk.period / 16u;                   /* the symbol's spare cycles go to its last sample */
     const int32_t *const T1 = T + 256u * 16u;
-    uint32_t q = nsym - 1000u, C = 0, phase = 0, late_max = 0, late = 0, end_max = 0, n = 0;
-    for (uint32_t k = 0; k < 8; ++k) {                        /* history of the first symbol */
-        C = C << 2 | (ring[q >> 2] >> ((q & 3u) * 2u) & 3u);
-        q = q + 1u == nsym ? 0 : q + 1u;
-    }
+    uint32_t q = fl ? 0 : nsym - 1000u, C = 0, phase = 0, late_max = 0, late = 0, end_max = 0, n = 0;
+    if (!fl)
+        for (uint32_t k = 0; k < 8; ++k) {                    /* history of the first symbol */
+            C = C << 2 | (ring[q >> 2] >> ((q & 3u) * 2u) & 3u);
+            q = q + 1u == nsym ? 0 : q + 1u;
+        }
+    const uint8_t *const fr = fl ? (const uint8_t *)ff->ring : ring;
+    uint32_t *const fw = fl ? ff->ring : NULL;
+    uint32_t foff = fl ? ff->off : 0, fadr = 0, wpos = VIDEO_LEAD / 4u;
     const int32_t *p0 = T + (C & 255u) * 16u, *p1 = T1 + (C >> 8 & 255u) * 16u, *np0, *np1;
     uint32_t b = 0, sym = 0, t1 = 0, brk = 0;
     const unsigned irq = portSET_INTERRUPT_MASK_FROM_ISR();
@@ -342,19 +376,22 @@ static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop_16(const uint8_t
             if (c >= step) ++late;
         });
         B16_SLOT(1, );
-        B16_SLOT(2, b = ring[q >> 2]);
+        B16_SLOT(2, b = fl ? fr[(q >> 2) & (VIDEO_RING - 1u)] : ring[q >> 2]);
         B16_SLOT(3, sym = b >> ((q & 3u) * 2u) & 3u);
-        B16_SLOT(4, q = q + 1u == nsym ? 0 : q + 1u);
+        B16_SLOT(4, q = fl ? q + 1u : q + 1u == nsym ? 0 : q + 1u);
         B16_SLOT(5, C = C << 2 | sym);
         B16_SLOT(6, np0 = T + (C & 255u) * 16u);
         B16_SLOT(7, np1 = T1 + (C >> 8 & 255u) * 16u);
-        B16_SLOT(8, );
+        B16_SLOT(8, if (fl && (q & 255u) == 255u) fadr = ff->base + foff);
         B16_SLOT(9, t1 = t + sample_clock_next(clk, &phase));
-        B16_SLOT(10, );
+        B16_SLOT(10, if (fl && (q & 255u) == 255u) { foff += 64u; if (foff >= ff->bytes) foff -= ff->bytes; });
         B16_SLOT(11, brk = !(++n & 255u) && usb_serial_jtag_ll_rxfifo_data_available());
-        B16_SLOT(12, );
-        B16_SLOT(13, );
-        B16_SLOT(14, );
+        B16_SLOT(12, if (fl && (q & 15u) == 8u) {             /* a word of the last read into the ring */
+            fw[wpos] = SPIMEM1.data_buf[(q >> 4) & 15u];
+            wpos = (wpos + 1u) & (VIDEO_RING / 4u - 1u);
+        });
+        B16_SLOT(13, if (fl && (q & 255u) == 0u) SPIMEM1.addr = fadr);   /* fadr was set at q & 255 == 255 */
+        B16_SLOT(14, if (fl && (q & 255u) == 0u) SPIMEM1.cmd.val = 0x40000u);   /* SPI_MEM_USR: the next 64 bytes */
         B16_SLOT(15, {
             const uint32_t c = esp_cpu_get_cycle_count() - tj;
             if (c > end_max) end_max = c;
@@ -372,8 +409,23 @@ static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop_16(const uint8_t
     return n;
 }
 
+static uint32_t __attribute__((noinline, unused)) IRAM_ATTR beacon_loop_16(const uint8_t *ring, uint32_t nsym, const int32_t *T,
+                                                                   sample_clock_t clk, uint32_t xb, beacon_stats_t *st) {
+    return b16_body(ring, nsym, T, clk, xb, st, NULL, false);
+}
+
+static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop_16f(flash_feed_t *ff, const int32_t *T, sample_clock_t clk, uint32_t xb,
+                                                                    beacon_stats_t *st) {
+    return b16_body(NULL, 0, T, clk, xb, st, ff, true);
+}
+
 /* dci, dcq: DC added to the I and Q words [DAC codes, as CW i q] against the carrier leakage (tx/c5_dccal.py finds them) */
 static void beacon(int32_t amp, uint32_t S, float dci, float dcq) {
+#ifdef C5CW_NO_BEACON
+    (void)amp, (void)S, (void)dci, (void)dcq;
+    say("ERR no built-in beacon in this build: store a loop (the app's Save as beacon, VIDW)\r\n");
+}
+#else
     const size_t bytes = (size_t)(beacon_bin_end - beacon_bin_start);
     if (S < 8 || S > BEACON_SMAX || amp < 1 || amp > 480) {
         say("ERR BEACON [amp 1-480] [S 8-%u]\r\n", (unsigned)BEACON_SMAX);
@@ -416,6 +468,310 @@ static void beacon(int32_t amp, uint32_t S, float dci, float dcq) {
     say("BEACON off after %.1f s, worst lateness %lu cycles (%.2f us), %lu samples a period late\r\n",
         (double)st.symbols / BEACON_BAUD, (unsigned long)st.late_max, st.late_max / (CPU_HZ / 1e6), (unsigned long)st.late);
     if (g4) say("  last sample of a symbol: worst %lu cycles after its deadline (store and table work included)\r\n", (unsigned long)st.end_max);
+}
+#endif
+
+
+/* ------------------------------------------------------------ stored loop (VIDW)
+ * As the C3's fork of ESP32-DATV-SA, so that the app's "Save as beacon" (LoopMaker, C3Link.storeLoop) writes it unchanged: the
+ * "video" partition holds a DATVVID1 version 3 header (4 KB) and the symbols, 4 per byte (as beacon.bin), the first 64 bytes
+ * repeated after them. A valid loop starts by itself after power-up, at its frequency; any byte from USB stops it.
+ * The loop's level is the C3's DAC amplitude (AMP on the TX screen, 300 by default): here amp x 150 / 300, the beacon's default
+ * 150 (its spectrum checked on the tinySA, 2026-11-10). DC against the carrier leakage: DC i q (kept in NVS, tx/c5_dccal.py). */
+#include "esp_app_desc.h"
+#include "esp_partition.h"
+#include "esp_rom_crc.h"
+#include "nvs.h"
+
+typedef struct {
+    char magic[8];
+    uint32_t version, nsym, baud, bytes, crc;                        /* bytes: the symbol data and VIDEO_TAIL bytes repeated past its end */
+    uint8_t pilots, modcod, flags, pad;                              /* flags bit 0: short FECFRAMEs */
+    char service[32], provider[32];
+    uint32_t freq_khz;                                               /* 0: F as it is */
+    uint16_t amp, pad2;
+} video_hdr_t;
+#define VIDEO_HEADER 4096u
+#define VIDEO_TAIL 64u
+#define VIDEO_SHORT 1u
+#define VIDEO_BAUD_MAX 333334u                                       /* S 16: 45 cycles per sample */
+
+static const video_hdr_t *video;
+static uint32_t video_addr;                                          /* flash address of the partition */
+static esp_partition_mmap_handle_t video_map;
+static bool video_checked;
+static float dc_i, dc_q;                                             /* DC i q */
+
+static uint32_t video_frame_syms(const video_hdr_t *v) {           /* a PLFRAME in QPSK: 360 slots normal, 90 short */
+    const uint32_t slots = (v->flags & VIDEO_SHORT) ? 90u : 360u;
+    return 90u + slots * 90u + (v->pilots ? 36u * ((slots - 1u) / 16u) : 0u);
+}
+
+static const video_hdr_t *video_find(void) {                        /* the mapped partition when it holds a valid loop (checked once) */
+    if (video_checked) return video;
+    video_checked = true;
+    const esp_partition_t *part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, 0x40, "video");
+    const void *map;
+    esp_partition_mmap_handle_t h;
+    if (!part || esp_partition_mmap(part, 0, part->size, ESP_PARTITION_MMAP_DATA, &map, &h) != ESP_OK) {
+        say("VIDEO no partition\r\n");
+        return NULL;
+    }
+    const video_hdr_t *v = map;
+    const char *why = NULL;
+    if (memcmp(v->magic, "DATVVID1", 8) || v->version != 3u) why = "none";
+    else if (v->baud < 1000u || v->baud > VIDEO_BAUD_MAX || v->modcod < 1u || v->modcod > 11u || v->nsym == 0 ||
+             v->nsym % (2u * video_frame_syms(v)) || v->nsym / 4u < 2u * VIDEO_LEAD)
+        why = "unsupported format";
+    else if (v->bytes != v->nsym / 4u + VIDEO_TAIL || VIDEO_HEADER + v->bytes > part->size) why = "bad length";
+    else if (esp_rom_crc32_le(0, (const uint8_t *)map + VIDEO_HEADER, v->bytes) != v->crc) why = "bad CRC";
+    if (why) {
+        say("VIDEO %s\r\n", why);
+        esp_partition_munmap(h);
+        return NULL;
+    }
+    video_map = h;
+    video_addr = part->address;
+    say("VIDEO %.31s / %.31s, %lu symbols at %lu Bd, MODCOD %u%s, %lu kHz amp %u\r\n", v->service, v->provider, (unsigned long)v->nsym,
+        (unsigned long)v->baud, (unsigned)v->modcod, (v->flags & VIDEO_SHORT) ? " short" : "", (unsigned long)v->freq_khz, (unsigned)v->amp);
+    return video = v;
+}
+
+static void video_forget(void) {                                    /* before the partition is written */
+    if (video) esp_partition_munmap(video_map);
+    video = NULL;
+    video_checked = false;
+}
+
+typedef struct { uint32_t ctrl, user, user1, user2, miso, mosi; } spi1_saved_t;
+static uint32_t spi_dummy = 7;      /* the C3 takes 8 (0x0B: 8 dummy clocks); on the C5 8 read every bit one clock late (SPIT, 2026-11-11) */
+
+static void spi1_setup(spi1_saved_t *sv) {                          /* fast read 0x0B, single line, 24 bit address, spi_dummy, 64 bytes */
+    spi_mem_dev_t *d = &SPIMEM1;
+    spimem_flash_ll_get_common_command_register_info(d, &sv->ctrl, &sv->user, &sv->user1, &sv->user2);
+    sv->miso = d->miso_dlen.val;
+    sv->mosi = d->mosi_dlen.val;
+    spimem_flash_ll_reset(d);
+    spimem_flash_ll_set_read_mode(d, SPI_FLASH_FASTRD);
+    spimem_flash_ll_set_command(d, 0x0B, 8);
+    spimem_flash_ll_set_addr_bitlen(d, 24);
+    spimem_flash_ll_set_dummy(d, spi_dummy);
+    spimem_flash_ll_set_mosi_bitlen(d, 0);
+    spimem_flash_ll_set_miso_bitlen(d, 512);
+}
+
+static void spi1_restore(const spi1_saved_t *sv) {                  /* the flash driver's own setting back */
+    spi_mem_dev_t *d = &SPIMEM1;
+    while (!spimem_flash_ll_cmd_is_done(d)) {}
+    spimem_flash_ll_set_common_command_register_info(d, sv->ctrl, sv->user, sv->user1, sv->user2);
+    d->miso_dlen.val = sv->miso;
+    d->mosi_dlen.val = sv->mosi;
+}
+
+/* Plays the stored loop until a byte arrives; false if there is none. */
+static bool video_play(void) {
+    const video_hdr_t *v = video_find();
+    if (!v) return false;
+    const uint32_t S = 16u;
+    int32_t amp = (int32_t)(v->amp ? v->amp : 300u) * 150 / 300;
+    amp = amp < 1 ? 1 : amp > 480 ? 480 : amp;
+    if (v->freq_khz >= FMIN_KHZ && v->freq_khz <= FMAX_KHZ) fkhz = v->freq_khz;
+    int32_t *T = malloc(2u * 256u * S * sizeof(int32_t));
+    uint32_t *ring = heap_caps_aligned_alloc(4, VIDEO_RING, MALLOC_CAP_INTERNAL);
+    if (!T || !ring) {
+        say("ERR no memory\r\n");
+        free(T);
+        free(ring);
+        return true;
+    }
+    lut_build_g(T, S, 0, 0.35f, (float)amp, dc_i, dc_q, 1.0f, 0.0f, 2u);
+    memcpy(ring, (const uint8_t *)v + VIDEO_HEADER, VIDEO_LEAD);    /* the lead through the cache, before the loop */
+    flash_feed_t ff = {video_addr + VIDEO_HEADER, VIDEO_LEAD + 64u, v->nsym / 4u, ring};
+    const sample_clock_t clk = sample_clock_init(CPU_HZ, v->baud);
+    tx_chain_on();
+    say("BEACON %.3f MHz %lu Bd S 16 (%lu cycles per sample) amp %ld scale %lu dc %.1f %.1f, stored loop %.31s MODCOD %u%s, %.1f s: any key stops\r\n",
+        fkhz / 1000.0, (unsigned long)v->baud, (unsigned long)(clk.period / S), (long)amp, (unsigned long)scale, (double)dc_i, (double)dc_q,
+        v->service, (unsigned)v->modcod, (v->flags & VIDEO_SHORT) ? " short" : "", (double)v->nsym / v->baud);
+    spi1_saved_t sv;
+    spi1_setup(&sv);
+    spimem_flash_ll_set_address(&SPIMEM1, video_addr + VIDEO_HEADER + VIDEO_LEAD);   /* the first read, done before its words are due */
+    spimem_flash_ll_user_start(&SPIMEM1, false);
+    beacon_stats_t st = {0};
+    beacon_loop_16f(&ff, T, clk, ((txdc_orig & ~TXDC_IQ) | TXDC_INJECT) ^ LUT_XOR, &st);
+    spi1_restore(&sv);
+    uint8_t c;
+    while (usb_serial_jtag_ll_read_rxfifo(&c, 1)) {}
+    tx_off();
+    free(ring);
+    free(T);
+    say("BEACON off after %.1f s, worst lateness %lu cycles (%.2f us), %lu symbols late, last sample worst %lu cycles\r\n",
+        (double)st.symbols / v->baud, (unsigned long)st.late_max, st.late_max / (CPU_HZ / 1e6), (unsigned long)st.late,
+        (unsigned long)st.end_max);
+    return true;
+}
+
+/* SPIT: diagnostics of the flash feed - SPI1 set up as for the loop, 64 byte reads at a few offsets compared with the mapped loop */
+static void spi_test(void) {
+    const video_hdr_t *v = video_find();
+    if (!v) {
+        say("ERR SPIT: no stored loop\r\n");
+        return;
+    }
+    spi1_saved_t sv;
+    uint32_t got[16], bad = 0, cyc = 0;
+    const uint32_t offs[4] = {VIDEO_LEAD, VIDEO_LEAD + 64u, v->nsym / 4u - 64u, 65536u};
+    for (int k = 0; k < 4; ++k) {
+        const unsigned irq = portSET_INTERRUPT_MASK_FROM_ISR();
+        spi1_setup(&sv);
+        spimem_flash_ll_set_address(&SPIMEM1, video_addr + VIDEO_HEADER + offs[k]);
+        const uint32_t c0 = esp_cpu_get_cycle_count();
+        SPIMEM1.cmd.val = 0x40000u;
+        while (!spimem_flash_ll_cmd_is_done(&SPIMEM1)) {}
+        cyc = esp_cpu_get_cycle_count() - c0;
+        for (int i = 0; i < 16; ++i) got[i] = SPIMEM1.data_buf[i];
+        spi1_restore(&sv);
+        portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
+        const uint32_t *want = (const uint32_t *)((const uint8_t *)v + VIDEO_HEADER + offs[k]);
+        uint32_t diff = 0;
+        for (int i = 0; i < 16; ++i) diff += got[i] != want[i];
+        bad += diff;
+        say("SPIT @%lu: read %lu cycles (%.1f us), %lu of 16 words differ; got %08lx %08lx want %08lx %08lx\r\n", (unsigned long)offs[k], (unsigned long)cyc, cyc / (CPU_HZ / 1e6), (unsigned long)diff,
+            (unsigned long)got[0], (unsigned long)got[1], (unsigned long)want[0], (unsigned long)want[1]);
+    }
+    say("SPIT dummy %lu: %s\r\n", (unsigned long)spi_dummy, bad ? "FAIL" : "OK");
+}
+
+static bool usb_read_exact(uint8_t *b, uint32_t n, int64_t timeout_us) {
+    const int64_t end = esp_timer_get_time() + timeout_us;
+    while (n) {
+        const int k = usb_serial_jtag_ll_read_rxfifo(b, n);
+        b += k;
+        n -= (uint32_t)k;
+        if (!k && esp_timer_get_time() > end) return false;
+    }
+    return true;
+}
+
+/* VIDW BEGIN bytes crc32   erase what the file needs; OK VIDW BEGIN bytes
+ * VIDW DATA offset n crc32 then exactly n raw bytes (n <= 4096); written at offset; OK VIDW DATA offset
+ * VIDW END                 CRC32 of all against BEGIN's, the loop checked: OK VIDW END crc (VIDEO ... before it), then it plays
+ * VIDW ERASE               erase the header: nothing is transmitted after power-up */
+static uint32_t vidw_total, vidw_crc, vidw_written;
+static bool vidw_open;
+
+static void vidw(const char *a0, const char *a1s, const char *a2s, const char *a3s) {
+    const esp_partition_t *part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, 0x40, "video");
+    if (!part) {
+        say("ERR VIDW no video partition\r\n");
+        return;
+    }
+    const uint32_t a1 = a1s ? strtoul(a1s, NULL, 10) : 0, a2 = a2s ? strtoul(a2s, NULL, 10) : 0, a3 = a3s ? strtoul(a3s, NULL, 16) : 0;
+    if (a0 && !strcmp(a0, "BEGIN")) {
+        if (a1 < VIDEO_HEADER || a1 > part->size) {
+            say("ERR VIDW %lu bytes do not fit %lu\r\n", (unsigned long)a1, (unsigned long)part->size);
+            return;
+        }
+        video_forget();
+        const uint32_t erase = (a1 + 4095u) & ~4095u;
+        if (esp_partition_erase_range(part, 0, erase) != ESP_OK) {
+            say("ERR VIDW erase\r\n");
+            return;
+        }
+        vidw_total = a1;
+        vidw_crc = (uint32_t)strtoul(a2s ? a2s : "0", NULL, 16);
+        vidw_written = 0;
+        vidw_open = true;
+        say("OK VIDW BEGIN %lu\r\n", (unsigned long)vidw_total);
+    } else if (a0 && !strcmp(a0, "DATA")) {
+        static uint8_t buf[4096];
+        if (!vidw_open || a2 == 0 || a2 > 4096u || a1 + a2 > vidw_total) {
+            say("ERR VIDW DATA out of order\r\n");
+            return;
+        }
+        if (!usb_read_exact(buf, a2, 2000000)) {
+            say("ERR VIDW DATA timeout\r\n");
+            return;
+        }
+        if (esp_rom_crc32_le(0, buf, a2) != a3) {
+            say("ERR VIDW DATA crc %lu\r\n", (unsigned long)a1);
+            return;
+        }
+        if (esp_partition_write(part, a1, buf, a2) != ESP_OK) {
+            say("ERR VIDW write %lu\r\n", (unsigned long)a1);
+            return;
+        }
+        vidw_written += a2;
+        say("OK VIDW DATA %lu\r\n", (unsigned long)a1);
+    } else if (a0 && !strcmp(a0, "END")) {
+        if (!vidw_open) {
+            say("ERR VIDW END without BEGIN\r\n");
+            return;
+        }
+        vidw_open = false;
+        static uint8_t buf[4096];
+        uint32_t crc = 0;
+        for (uint32_t o = 0; o < vidw_total; o += sizeof(buf)) {
+            const uint32_t n = vidw_total - o < sizeof(buf) ? vidw_total - o : sizeof(buf);
+            if (esp_partition_read(part, o, buf, n) != ESP_OK) {
+                say("ERR VIDW read\r\n");
+                return;
+            }
+            crc = esp_rom_crc32_le(crc, buf, n);
+        }
+        if (crc != vidw_crc) {
+            say("ERR VIDW crc %08lx, expected %08lx (%lu bytes written)\r\n", (unsigned long)crc, (unsigned long)vidw_crc,
+                (unsigned long)vidw_written);
+            return;
+        }
+        video_forget();
+        const bool ok = video_find() != NULL;
+        say("%s VIDW END %08lx\r\n", ok ? "OK" : "ERR", (unsigned long)crc);
+        if (ok) video_play();                                        /* as the C3: the new loop goes on air at once */
+    } else if (a0 && !strcmp(a0, "ERASE")) {
+        video_forget();
+        if (esp_partition_erase_range(part, 0, 4096) != ESP_OK) {
+            say("ERR VIDW erase\r\n");
+            return;
+        }
+        say("OK VIDW ERASE\r\n");
+    } else {
+        say("ERR VIDW BEGIN bytes crc32hex | DATA offset n crc32hex + n bytes | END | ERASE\r\n");
+    }
+}
+
+static void dc_load(void) {
+    nvs_handle_t h;
+    if (nvs_open("c5cw", NVS_READONLY, &h) != ESP_OK) return;
+    uint32_t i = 0, q = 0;
+    if (nvs_get_u32(h, "dci", &i) == ESP_OK && nvs_get_u32(h, "dcq", &q) == ESP_OK) {
+        memcpy(&dc_i, &i, 4);
+        memcpy(&dc_q, &q, 4);
+    }
+    nvs_close(h);
+}
+
+static void dc_save(void) {
+    nvs_handle_t h;
+    if (nvs_open("c5cw", NVS_READWRITE, &h) != ESP_OK) return;
+    uint32_t i, q;
+    memcpy(&i, &dc_i, 4);
+    memcpy(&q, &dc_q, 4);
+    nvs_set_u32(h, "dci", i);
+    nvs_set_u32(h, "dcq", q);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+/* INFO as the C3 answers it (C3Link.info: the ESP32DATV line, FW, BEACON, VIDW); C5 marks this transmitter */
+static void info(void) {
+    say("ESP32DATV 1 C5\r\n");
+    say("FW %s c5%s\r\n", esp_app_get_description()->version, BEACON_SYMBOLS ? "" : " no-builtin-beacon");
+    if (BEACON_SYMBOLS) say("BEACON %lu Bd QPSK %s, %.3f MHz (built-in, BEACON)\r\n", (unsigned long)BEACON_BAUD, BEACON_FEC, BEACON_FREQ_KHZ / 1000.0);
+    else say("BEACON none (no built-in beacon)\r\n");          /* the C3 always has this line; C3Link.info waits for it */
+    const video_hdr_t *v = video_find();
+    if (v) say("VIDW 1 VIDEO %.31s %lu Bd MODCOD %u%s %lu symbols\r\n", v->service, (unsigned long)v->baud, (unsigned)v->modcod,
+               (v->flags & VIDEO_SHORT) ? " short" : "", (unsigned long)v->nsym);
+    else say("VIDW 1 VIDEO none\r\n");
 }
 
 static void __attribute__((noinline)) IRAM_ATTR bench(void) {
@@ -539,19 +895,55 @@ static void handle(char *line) {
     } else if (!strcmp(cmd, "BEACON")) {
         beacon(a1 ? atoi(a1) : 150, a2 ? (uint32_t)atoi(a2) : 16u, a3 ? strtof(a3, NULL) : 0.0f, a4 ? strtof(a4, NULL) : 0.0f);
         return;
+    } else if (!strcmp(cmd, "PLAY")) {
+        if (!video_play()) say("ERR no stored loop (VIDW)\r\n");
+        return;
+    } else if (!strcmp(cmd, "LED")) {
+        led_level = a1 ? (uint32_t)atoi(a1) : 12u;
+        led(tx_on ? LED_TX : LED_IDLE);
+        say("LED %lu\r\n", (unsigned long)led_level);
+        return;
+    } else if (!strcmp(cmd, "SPIT")) {
+        if (a1) spi_dummy = (uint32_t)atoi(a1);
+        spi_test();
+        return;
+    } else if (!strcmp(cmd, "INFO")) {
+        info();
+        return;
+    } else if (!strcmp(cmd, "VIDW")) {
+        vidw(a1, a2, a3, a4);
+        return;
+    } else if (!strcmp(cmd, "DC")) {
+        if (a1 && a2) {
+            dc_i = strtof(a1, NULL);
+            dc_q = strtof(a2, NULL);
+            dc_save();
+        }
+        say("DC %.2f %.2f (stored loop; saved)\r\n", (double)dc_i, (double)dc_q);
+        return;
+    } else if (!strcmp(cmd, "QPSKT") || !strcmp(cmd, "PSK8T") || !strcmp(cmd, "A16T") || !strcmp(cmd, "A32T")) {
+        say("ERR live TX is not supported on the ESP32-C5 yet: store a loop (Save as beacon)\r\n");
+        return;
+    } else if (!strcmp(cmd, "BDC") || !strcmp(cmd, "PA") || !strcmp(cmd, "HEAP")) {
+        say("ERR %s: not on the ESP32-C5 (DC i q)\r\n", cmd);
+        return;
     } else if (!strcmp(cmd, "BENCH")) {
         bench();
         return;
     } else if (!strcmp(cmd, "OFF")) {
         tx_off();
     } else if (strcmp(cmd, "ST")) {
-        say("ERR commands: F CW TONE BEACON SCALE BO ANT VT RFT OFF ST\r\n");
+        say("ERR commands: F CW TONE BEACON PLAY VIDW DC INFO SCALE BO ANT VT RFT OFF ST\r\n");
         return;
     }
     state();
 }
 
 void app_main(void) {
+    /* TXDC survives a reset (not a power cycle): a run leaves its last sample in it, with the DC injection on, and the PHY's start-up
+     * calibration then nulled that instead of the leakage - about 100 DAC codes of carrier afterwards, every DC trim far off
+     * (2026-11-11). Cleared before the PHY starts. */
+    REG_WRITE(TXDC_REG, REG_READ(TXDC_REG) & ~TXDC_IQ);
     gpio_reset_pin(ANT_GPIO);
     gpio_set_direction(ANT_GPIO, GPIO_MODE_INPUT_OUTPUT);
     gpio_set_level(ANT_GPIO, ant);               /* U.FL: the external antenna or coax */
@@ -570,9 +962,11 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_wifi_start());           /* brings the PHY up and calibrates it */
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous(true));
-    txdc_orig = REG_READ(TXDC_REG);
+    txdc_boot = txdc_orig = REG_READ(TXDC_REG) & ~TXDC_IQ;
     say("c5cw ready, TX off\r\n");
     state();
+    dc_load();
+    video_play();                                /* a stored loop starts by itself (any byte stops it) */
 
     char line[64];
     size_t used = 0;

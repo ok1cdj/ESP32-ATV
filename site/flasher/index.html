@@ -49,11 +49,20 @@
     <span slot="unsupported">This browser cannot talk to serial ports: use Chrome or Edge on a computer.</span>
     <span slot="not-allowed">Web Serial needs HTTPS.</span>
   </esp-web-install-button></p>
+  <p>The 6 cm <b>transmitter</b> for a second ESP32-C5-Zero: a stand-alone beacon only. Like the C3 build it <b>transmits nothing</b>
+     until you store a loop with your callsign (TX screen → Save as beacon, frequency 5650–5900 MHz); live TX from the phone through
+     the C5 is not there yet. Licensed radio amateurs only.</p>
+  <p><esp-web-install-button manifest="c5tx/manifest.json">
+    <button slot="activate">Install the 6 cm transmitter firmware (C5)</button>
+    <span slot="unsupported">This browser cannot talk to serial ports: use Chrome or Edge on a computer.</span>
+    <span slot="not-allowed">Web Serial needs HTTPS.</span>
+  </esp-web-install-button></p>
   <h2>Česky</h2>
   <p>Zapíše firmware přijímače do flash <b>XIAO ESP32-S3</b>. Chrome nebo Edge na počítači, USB-C datový kabel;
      držet <b>BOOT</b>, ťuknout <b>RESET</b>, pustit BOOT; tlačítko výše, vybrat port, potvrdit. Po dokončení <b>RESET</b>.
      Firmware vysílače do <b>XIAO ESP32-C3</b> stejně druhým tlačítkem; sám nevysílá, dokud neuložíš smyčku se svou značkou.
-     Přijímač pro 6 cm do <b>Waveshare ESP32-C5-Zero</b> třetím tlačítkem.
+     Přijímač pro 6 cm do <b>Waveshare ESP32-C5-Zero</b> třetím tlačítkem, vysílač pro 6 cm čtvrtým: zatím jen maják
+     (uložená smyčka se značkou, TX → Save as beacon), živé vysílání přes C5 ještě nejde.
      Všechny firmwary umí nahrát i aplikace z telefonu (menu → Firmware).</p>
   <p class="muted">Images: bootloader 0x0 (C5: 0x2000), partition table 0x8000, firmware 0x10000 (DIO). Licences: esp32-sdr-trx 0BSD,
      ESP32-DATV-RX BSD-3-Clause; the transmitter (C3): PolyForm Noncommercial 1.0.0 (ESP32-DATV / ESP32-DATV-SA); the images

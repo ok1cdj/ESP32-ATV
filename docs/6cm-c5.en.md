@@ -18,8 +18,12 @@ ESP32-C5 (rx/c5rx: IQ estimator -> halfband -> cs4 250 / 333 / 400 ksps over USB
 ```
 
 **Status:** branch `c5-6cm`, not in the releases or the web flasher yet. 2026-11-10: the C5 beacon was decoded by a second
-C5 on a PC and on a phone (lock, picture, MER 11–17 dB). 400 ksps (symbol rates up to 250 kBd) is written but not yet
-tested on the boards.
+C5 on a PC and on a phone (lock, picture, MER 11–17 dB). 2026-11-11: 250 kBd through 400 ksps on the PC and on the phone
+(3 m apart with the boards' stick-on antennas: MER 13–17 dB, 319 frames clean of 320, no USB packets lost).
+
+**The C5 transmitter is a stand-alone beacon only.** Like the C3 it stores a loop recorded on the phone (TX screen → *Save
+as beacon*) and transmits it by itself after power-up. **Live TX from the phone (camera, test card) through the C5 is not
+there yet**: the TX screen's Start says so.
 
 ## Transmitter – `tx/c5cw`
 
@@ -28,10 +32,19 @@ The path follows [fedaykinofdune/esp32-C5-sdr-tx](https://github.com/fedaykinofd
 then takes the TX DC register (0x600a0c08), into which the CPU stores the I/Q samples (15 cycles a store), paced on the
 cycle counter with interrupts masked. The beacon uses the QPSK RRC 0.35 modulator tables of ESP32-DATV-SA (`qpsk_lut.h`).
 
+**A beacon from the phone** (as with the C3): write the transmitter firmware (app: menu → Firmware, *6 cm transmitter*; or
+`tx/c5cw/flash.sh none`), plug the C5 into the phone, on the TX screen enter 5715.000 MHz, the symbol rate (up to 250 kS/s
+for the C5 receiver) and your callsign, then *Save as beacon*. The loop (DATVVID1 as the C3's, up to ~3 MB of flash) starts at
+once and after every power-up; any byte on its USB stops it, `PLAY` starts it again. The C3's AMP maps to the C5 as
+AMP × 150 / 300 (AMP 300 = the level the beacon was measured at). 2026-11-11: a loop saved on the phone (250 kS/s, short
+frames) received by the C5 receiver on the phone, MER ~17 dB, 1084 frames clean of 1088.
+
+**A beacon built into the firmware** (PC, for development):
+
 ```sh
 . ~/esp/esp-idf-v6.1/export.sh                       # ESP-IDF v6.1 with esp32c5 (install.sh esp32c5)
 CALL=YOURCALL BAND=6cm tx/make_beacons.sh 125000     # -> tx/beacons/yourcall-125k-6cm (ATV6_FREQ of boards.sh)
-tx/c5cw/flash.sh tx/beacons/yourcall-125k-6cm        # C5_PORT of boards.sh; "-" only builds
+tx/c5cw/flash.sh tx/beacons/yourcall-125k-6cm        # C5_PORT of boards.sh; "-" only builds; "none": no built-in beacon
 ```
 
 Commands on the C5's USB console (one per line):
@@ -39,6 +52,9 @@ Commands on the C5's USB console (one per line):
 | Command | Meaning |
 |---|---|
 | `BEACON [amp] [S] [dci dcq]` | the beacon on `F`: amp = largest \|I\|, \|Q\| in DAC codes (default 150), S samples per symbol (default 16: 2 MS/s at 125 kBd, 4 MS/s at 250 kBd), dci dcq = carrier leakage trim; any byte stops it |
+| `PLAY` | the stored loop (it also starts by itself after power-up); any byte stops it |
+| `VIDW …`, `INFO` | store a loop, identify the board: as the C3 (the app's *Save as beacon*) |
+| `DC [i q]` | carrier leakage trim of the stored loop, kept in flash |
 | `F 5715.000` | frequency in MHz (2300–5900) |
 | `CW [i q]` / `TONE kHz [amp]` | a carrier / a single tone for a spectrum analyser |
 | `SCALE n`, `ANT 1\|0`, `OFF`, `ST` | DAC scale (default 15), U.FL / chip antenna, off, state |
@@ -50,6 +66,8 @@ the PC):
 ```sh
 third_party/ESP32-DATV-RX/.venv/bin/python tx/c5_dccal.py --beacon      # finds dci dcq and starts BEACON 150 16 dci dcq
 ```
+
+For a stored loop send the trim found with `DC dci dcq` (kept in flash). The phone cannot calibrate the C5 yet.
 
 Measured (tinySA Ultra over the air, levels approximate): carrier −8 dBm on 5710 MHz, LO leakage 39 dBc, image 42 dBc,
 sampling images (S=16) ~34 dBc. **The crystal warms up while transmitting:** about +100 kHz (19 ppm) from a cold start
@@ -68,7 +86,7 @@ drive it unchanged.
 |---|---|---|---|
 | 250 ksps | 500 k/s | 480 | up to 148 kBd |
 | 333 ksps | 667 k/s | 360 | up to 197 kBd |
-| 400 ksps (`NB_SET_DECIM 25`) | 800 k/s | 300 | up to 250 kBd (untested) |
+| 400 ksps (`NB_SET_DECIM 25`) | 800 k/s | 300 | up to 250 kBd |
 
 For 400 ksps the firmware reads the estimator only twice (I, then Q; Q comes 75 ns late, an image of −28 dB at the band
 edge) and uses a shorter halfband (19 taps, −40 dB). 500 ksps is too much for the CPU, cs8 too much for the USB.
@@ -81,7 +99,13 @@ rx/c5_play.sh 125000                   # PC: SR (up to 250000), optionally the f
 The two C5s' crystals differ by up to ~150 kHz at 5.7 GHz, so `rx/c5_play.sh` first captures 16 ms at 2 MS/s and tunes to
 the centre of the strongest signal within ±500 kHz.
 
+**The LED** of the C5-Zero: dim blue = firmware running and waiting, green = receiving, red = transmitting, dark = the ROM
+loader (reset it).
+
 ## Android
+
+Both firmwares can be written from the phone: menu → Firmware asks, for an ESP32-C5, whether it becomes the 6 cm receiver or
+transmitter (or the web flasher, which has a button for each).
 
 The app recognises the C5 receiver by the flags of `CTL_INFO 3` and remembers it: always cs4, 250 ksps up to 148 kS/s,
 333 ksps up to 197 kS/s and 400 ksps up to 250 kS/s (with a firmware that has it). The signal search reaches ±300 kHz.
@@ -92,6 +116,6 @@ Enter 5715.000 MHz.
 - **Worse reception at short range than further away:** the receiver overloads (fixed gain, 0 dB in the app = index 30 of
   0–89). Turning the gain down helps for now; an AGC is planned.
 - Both C5s sometimes end up in the ROM bootloader after being connected to the phone (a reset helps).
-- With the transmitting C5 on the same hub the app keeps "identifying" the boards (`c5cw` answers neither as a C3 nor as
-  a receiver).
+- Live TX through the C5 is not there yet (only a stored beacon), and the C5's carrier trim is set on the PC
+  (`tx/c5_dccal.py`, `DC i q`), not from the phone.
 - Crystal drift: the app and `rx/c5_play.sh` follow it, but a warming transmitter can still walk out of the window.

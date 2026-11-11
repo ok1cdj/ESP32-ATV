@@ -169,7 +169,7 @@ records the phone's TX mux without the C3 – a white flash and a beep every 2 s
 Other tools: `rx/level_sweep.sh` (sensitivity sweep, `FRAME=short` for short frames), `rx/sim_frames.py` (normal vs short frames simulated end to end), `rx/raw2cf32.py` (raw packets recorded by the app -> cf32, decode), `rx/make_replay.py` (a recording for the app's *Replay* from any TS, no radio needed: our DVB-S2 encoder, offset, noise), `rx/avsync_rx.py` (the app's lip sync on such a replay, debug build).
 
 ## 6 cm – ESP32-C5 (experimental)
-Two Waveshare ESP32-C5-Zero boards: a DVB-S2 beacon (`tx/c5cw`) and a receiver (`rx/c5rx`, cs4 at 250 / 333 / 400 ksps,
+Two Waveshare ESP32-C5-Zero boards: a DVB-S2 beacon (`tx/c5cw`; a loop stored from the phone like the C3's, no live TX yet) and a receiver (`rx/c5rx`, cs4 at 250 / 333 / 400 ksps,
 the S3's protocol, so the app and `espdr nb.py` drive it) on **5715.000 MHz** (`ATV6_FREQ` in `boards.sh`, IARU Region 1
 ATV segment 5700–5720 MHz). **Transmitting needs an amateur radio licence here too.** Branch `c5-6cm`, not in the
 releases yet. Guide: [English](docs/6cm-c5.en.md), [česky](docs/6cm-c5.cs.md).
