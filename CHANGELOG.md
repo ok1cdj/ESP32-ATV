@@ -2,6 +2,29 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## Unreleased
+
+### 6 cm with the ESP32-C5 (experimental)
+- **A receiver for the app on 5.7 GHz:** a Waveshare ESP32-C5-Zero with `rx/c5rx` (the C5's IQ estimator read on a fixed
+  clock, a halfband FIR, cs4 at 250 / 333 / 400 ksps in the S3 receiver's packets and protocol). The app recognises it and
+  takes symbol rates up to 250 kS/s. 400 ksps keeps up after the USB writes two bytes in every other slot (it had dropped
+  8 % of its packets). Phone, 250 kS/s, 3 m apart with the boards' stick-on antennas: MER 13–17 dB, 319 frames clean of
+  320, no USB packets lost.
+- **A beacon on 6 cm stored from the phone:** `tx/c5cw` takes the C3's loop (*Save as beacon*) and transmits it by itself
+  after power-up, at 5715 MHz, up to 250 kS/s. A loop saved on the phone (250 kS/s, short frames) was received on the phone
+  with MER ~17 dB. **Live TX from the phone through the C5 is not there yet** (Start TX says so). The output power has not
+  been measured (no cable to an analyser yet).
+- **Firmware for both C5s** from the app (menu ⋮ → Firmware asks receiver or transmitter) and from the web flasher.
+- **LED** of the C5-Zero: dim blue waiting, green receiving, red transmitting, dark = ROM loader.
+- Guide: [English](docs/6cm-c5.en.md), [česky](docs/6cm-c5.cs.md).
+
+### App
+- **Presets on the TX screen** (frequency, symbol rate, modulation, frames, pilots, AMP, beacon length): 13 cm for the C3,
+  6 cm for the C5, your own with *Save* / *Delete*. The TX screen takes 5650–5900 MHz too (the C5).
+- The RX presets start with their frequency; two 6 cm presets (5715 MHz, 125k and 250k).
+- *Delete preset* offers the list of saved presets (it deleted only the one matching the fields as they were).
+- The RX | TX switch no longer names the boards (RX takes an ESP32-S3 or C5, TX a C3 or C5).
+
 ## 0.18.1-beta – 2026-11-04
 
 ### Receiver: the search no longer takes the S3's hump for the signal
