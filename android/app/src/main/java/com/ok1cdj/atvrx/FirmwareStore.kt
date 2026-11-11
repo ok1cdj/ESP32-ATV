@@ -17,8 +17,10 @@ class FirmwareStore(private val ctx: Context, private val base: String = DEFAULT
     class Part(val offset: Int, val data: ByteArray)
     class Firmware(val chip: String, val name: String, val version: String, val parts: List<Part>, val fromCache: Boolean)
 
-    /** The manifest of the board's firmware: ESP32-S3 the receiver, ESP32-C3 the transmitter. */
-    private fun manifestUrl(chip: String) = if (chip == "ESP32-C3") "$base/c3/manifest.json" else "$base/manifest.json"
+    /** The manifest of the board's firmware: ESP32-S3 the receiver, ESP32-C3 the transmitter, ESP32-C5 the 6 cm receiver. */
+    private fun manifestUrl(chip: String) = when (chip) {
+        "ESP32-C3" -> "$base/c3/manifest.json"; "ESP32-C5" -> "$base/c5/manifest.json"; else -> "$base/manifest.json"
+    }
 
     /** Downloads (and caches) the firmware for [chip]; without a network the cached one, if any. */
     fun get(chip: String, log: (String) -> Unit): Firmware {

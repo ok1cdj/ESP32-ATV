@@ -97,7 +97,7 @@ class EspRom(private val usb: UsbCdc, private val log: (String) -> Unit) {
         while (frame(end) != null) {}
     }
 
-    /** GET_SECURITY_INFO's chip id: 5 ESP32-C3, 9 ESP32-S3. */
+    /** GET_SECURITY_INFO's chip id: 5 ESP32-C3, 9 ESP32-S3, 23 ESP32-C5. */
     fun chipId(): Int {
         val r = command(GET_SECURITY_INFO, ByteArray(0))
         if (r.data.size < 16) throw IOException("short security info")
@@ -152,7 +152,7 @@ class EspRom(private val usb: UsbCdc, private val log: (String) -> Unit) {
         const val FLASH_DEFL_BEGIN = 0x10; const val FLASH_DEFL_DATA = 0x11; const val FLASH_DEFL_END = 0x12
         const val SPI_FLASH_MD5 = 0x13
         const val BLOCK = 0x400                            // the ROM loader's write block
-        const val CHIP_C3 = 5; const val CHIP_S3 = 9
+        const val CHIP_C3 = 5; const val CHIP_S3 = 9; const val CHIP_C5 = 23
 
         /**
          * Into the ROM loader through USB-Serial/JTAG's line states (DTR = GPIO9 boot strap, RTS = reset), the sequence

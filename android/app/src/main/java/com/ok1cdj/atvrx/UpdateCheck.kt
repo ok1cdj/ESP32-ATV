@@ -64,7 +64,7 @@ object UpdateCheck {
         if (!force && (!enabled(ctx) || now - p.getLong("last", 0) < DAY_MS)) return null
         val web = HashMap<String, String>()
         val store = FirmwareStore(ctx)
-        for (chip in listOf("ESP32-S3", "ESP32-C3")) store.onlineVersion(chip)?.let { web[chip] = it }
+        for (chip in FirmwareActivity.CHIPS) store.onlineVersion(chip)?.let { web[chip] = it }
         val app = try { newestRelease() } catch (_: Exception) { null }
         if (app == null && web.isEmpty()) return null                  // offline: try again next time
         val e = p.edit().putLong("last", now)

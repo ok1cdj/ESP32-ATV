@@ -56,7 +56,7 @@ class FirmwareActivity : Activity() {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(TextView(this).apply {
             text = "Firmware for the board on USB, the current version from the web:\n" +
-                "• ESP32-S3 → receiver\n• ESP32-C3 → transmitter (no built-in beacon: then store a loop with your callsign on the TX screen)\n" +
+                "• ESP32-S3 → receiver\n• ESP32-C5 → 6 cm receiver\n• ESP32-C3 → transmitter (no built-in beacon: then store a loop with your callsign on the TX screen)\n" +
                 "The board is put into its ROM loader, which tells the chip; it then appears on USB again (allow access if asked)."
             textSize = 13f
         })
@@ -93,7 +93,7 @@ class FirmwareActivity : Activity() {
 
     private fun check() = work {
         val web = HashMap<String, String>()
-        for (chip in listOf("ESP32-S3", "ESP32-C3")) {
+        for (chip in CHIPS) {
             val v = store().onlineVersion(chip)
             if (v != null) web[chip] = v
             log("$chip on the web: ${v ?: "– (no network?)"}")
@@ -165,10 +165,10 @@ class FirmwareActivity : Activity() {
             val rom = EspRom(usb) { log(it) }
             rom.sync()
             val chip = when (val id = rom.chipId()) {
-                EspRom.CHIP_C3 -> "ESP32-C3"; EspRom.CHIP_S3 -> "ESP32-S3"
-                else -> throw IOException("chip id $id: not an ESP32-C3 or ESP32-S3")
+                EspRom.CHIP_C3 -> "ESP32-C3"; EspRom.CHIP_S3 -> "ESP32-S3"; EspRom.CHIP_C5 -> "ESP32-C5"
+                else -> throw IOException("chip id $id: not an ESP32-C3, ESP32-S3 or ESP32-C5")
             }
-            log("chip: $chip (${if (chip == "ESP32-S3") "receiver" else "transmitter"})")
+            log("chip: $chip (${if (chip == "ESP32-C3") "transmitter" else "receiver"})")
             progress("$chip: getting the firmware…", 0.0)
             val fw = store().get(chip) { log(it) }
             rom.attachFlash()
@@ -264,5 +264,10 @@ class FirmwareActivity : Activity() {
         text = t; isAllCaps = false; setTextColor(Color.WHITE)
         background = GradientDrawable().apply { setColor(Color.rgb(0x1E, 0x5A, 0xA8)); cornerRadius = 16f }
         setOnClickListener { onClick() }
+    }
+
+    companion object {
+        /** The chips with a firmware on the web (FirmwareStore's manifests) */
+        val CHIPS = listOf("ESP32-S3", "ESP32-C3", "ESP32-C5")
     }
 }

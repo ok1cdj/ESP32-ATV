@@ -1,13 +1,14 @@
 # GitHub Pages: the guide (docs/rx-android.*.md -> HTML) and the firmware of both boards for the web flasher (ESP Web Tools)
 # and the app's Firmware screen: the ESP32-S3 receiver from the ESP32-DATV-RX submodule (checked against its SHA256SUMS),
-# the ESP32-C3 transmitter built here from the ESP32-DATV-SA submodule (tx/build_c3_web.sh); manifests by tx/make_fw_site.py.
+# the ESP32-C3 transmitter built here from the ESP32-DATV-SA submodule (tx/build_c3_web.sh), the ESP32-C5 receiver from
+# rx/c5rx (rx/c5rx/build_web.sh); manifests by tx/make_fw_site.py.
 name: Pages
 
 on:
   push:
     branches: [master]
     paths: ['site/**', 'docs/rx-android.*', 'docs/img/**', 'third_party/ESP32-DATV-RX', 'third_party/ESP32-DATV-SA',
-            'tx/build_c3_web.sh', 'tx/make_fw_site.py', '.github/workflows/pages.yml']
+            'tx/build_c3_web.sh', 'rx/c5rx/**', 'tx/make_fw_site.py', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -36,10 +37,19 @@ jobs:
           apt-get update -q > /dev/null && apt-get install -y -q rsync > /dev/null
           . $IDF_PATH/export.sh > /dev/null
           tx/build_c3_web.sh "$PWD/c3-out"
+      - name: ESP32-C5 receiver firmware
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh > /dev/null
+          rx/c5rx/build_web.sh "$PWD/c5-out"
       - uses: actions/upload-artifact@v4
         with:
           name: c3-firmware
           path: c3-out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c5-firmware
+          path: c5-out
 
   build:
     needs: c3
@@ -53,6 +63,10 @@ jobs:
         with:
           name: c3-firmware
           path: c3-out
+      - uses: actions/download-artifact@v4
+        with:
+          name: c5-firmware
+          path: c5-out
       - name: Site
         run: |
           sudo apt-get install -y -q pandoc > /dev/null
@@ -64,7 +78,7 @@ jobs:
           done
           fw=third_party/ESP32-DATV-RX/firmware
           (cd "$fw" && sha256sum -c --ignore-missing SHA256SUMS)
-          python3 tx/make_fw_site.py public/flasher --c3 c3-out
+          python3 tx/make_fw_site.py public/flasher --c3 c3-out --c5 c5-out
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

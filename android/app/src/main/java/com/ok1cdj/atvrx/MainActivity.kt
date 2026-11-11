@@ -272,7 +272,7 @@ class MainActivity : Activity() {
             if (r.boards.isNotEmpty()) {
                 if (isNotEmpty()) append("\n\n")
                 append("Newer firmware on the web:\n")
-                r.boards.forEach { append("• ${if (it.chip == "ESP32-C3") "C3 transmitter" else "S3 receiver"} ${it.mac}: ${it.has} → ${it.web}\n") }
+                r.boards.forEach { append("• ${when (it.chip) { "ESP32-C3" -> "C3 transmitter"; "ESP32-C5" -> "C5 receiver"; else -> "S3 receiver" }} ${it.mac}: ${it.has} → ${it.web}\n") }
                 append("Connect the board and write it: menu ⋮ → Firmware.")
             }
         }
@@ -309,7 +309,7 @@ class MainActivity : Activity() {
             "Delete preset" to ::deletePreset,
             "Replay recording" to ::startReplay,
             "USB test" to { stop(); startActivity(Intent(this, BenchActivity::class.java)) },
-            "Firmware (S3 / C3)" to { stop(); startActivity(Intent(this, FirmwareActivity::class.java)) },
+            "Firmware" to { stop(); startActivity(Intent(this, FirmwareActivity::class.java)) },
             "Transmitter calibration (S3 + C3)" to { stop(); startActivity(Intent(this, CalibrationActivity::class.java)) },
             "Check for updates" to { checkUpdates(force = true) },
             (if (UpdateCheck.enabled(this)) "Daily update check: on" else "Daily update check: off") to {

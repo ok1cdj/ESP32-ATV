@@ -40,12 +40,22 @@
     <span slot="unsupported">This browser cannot talk to serial ports: use Chrome or Edge on a computer.</span>
     <span slot="not-allowed">Web Serial needs HTTPS.</span>
   </esp-web-install-button></p>
+  <h1>ESP32-C5 receiver firmware (6 cm)</h1>
+  <p>Writes the 6 cm receiver (<code>rx/c5rx</code>, 5.7 GHz) into a <b>Waveshare ESP32-C5-Zero</b>: the app's RX screen takes
+     it like the ESP32-S3, up to 250 kS/s. The same steps as above (BOOT held while it is plugged in or reset); the app can
+     write it too (menu → Firmware).</p>
+  <p><esp-web-install-button manifest="c5/manifest.json">
+    <button slot="activate">Install the 6 cm receiver firmware (C5)</button>
+    <span slot="unsupported">This browser cannot talk to serial ports: use Chrome or Edge on a computer.</span>
+    <span slot="not-allowed">Web Serial needs HTTPS.</span>
+  </esp-web-install-button></p>
   <h2>Česky</h2>
   <p>Zapíše firmware přijímače do flash <b>XIAO ESP32-S3</b>. Chrome nebo Edge na počítači, USB-C datový kabel;
      držet <b>BOOT</b>, ťuknout <b>RESET</b>, pustit BOOT; tlačítko výše, vybrat port, potvrdit. Po dokončení <b>RESET</b>.
      Firmware vysílače do <b>XIAO ESP32-C3</b> stejně druhým tlačítkem; sám nevysílá, dokud neuložíš smyčku se svou značkou.
-     Oba firmwary umí nahrát i aplikace z telefonu (menu → Firmware).</p>
-  <p class="muted">Images: bootloader 0x0, partition table 0x8000, receiver 0x10000 (DIO). Licences: esp32-sdr-trx 0BSD,
+     Přijímač pro 6 cm do <b>Waveshare ESP32-C5-Zero</b> třetím tlačítkem.
+     Všechny firmwary umí nahrát i aplikace z telefonu (menu → Firmware).</p>
+  <p class="muted">Images: bootloader 0x0 (C5: 0x2000), partition table 0x8000, firmware 0x10000 (DIO). Licences: esp32-sdr-trx 0BSD,
      ESP32-DATV-RX BSD-3-Clause; the transmitter (C3): PolyForm Noncommercial 1.0.0 (ESP32-DATV / ESP32-DATV-SA); the images
      link Espressif's PHY library. <a href="../">Back</a></p>
 </main>
