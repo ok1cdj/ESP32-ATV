@@ -6,13 +6,13 @@
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Become%20a%20Supporter-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/ok1cdj)
 
 > [!WARNING]
-> **This equipment transmits on the 13 cm amateur radio band (2.3–2.45 GHz). Using it requires an amateur radio
-> licence.** Transmit only with your own callsign, on frequencies and at power levels your licence and national band
-> plan allow (2345 MHz lies in the ATV segment of the IARU Region 1 band plan). The 2.4 GHz part of the band is shared
-> with Wi-Fi and other services – without a licence, transmitting here is illegal and can disturb other users. The
+> **This equipment transmits on the 13 cm (2.3–2.45 GHz) and, with the ESP32-C5, the 6 cm (5.65–5.85 GHz) amateur radio
+> bands. Using it requires an amateur radio licence.** Transmit only with your own callsign, on frequencies and at power levels your licence and national band
+> plan allow (2345 and 5715 MHz lie in the ATV segments of the IARU Region 1 band plan). The 2.4 GHz part of the 13 cm
+> band and the 6 cm band are shared with Wi-Fi and other services – without a licence, transmitting here is illegal and can disturb other users. The
 > receiver alone needs no licence.
 >
-> **Zařízení vysílá v radioamatérském pásmu 13 cm (2,3–2,45 GHz). K vysílání je nutné platné oprávnění
+> **Zařízení vysílá v radioamatérském pásmu 13 cm (2,3–2,45 GHz) a s ESP32-C5 i 6 cm (5,65–5,85 GHz). K vysílání je nutné platné oprávnění
 > (koncese) radioamatéra.** Vysílejte jen se svou značkou, na kmitočtech a s výkonem, které vaše oprávnění a národní
 > kmitočtový plán dovolují. Bez koncese je vysílání nezákonné a může rušit ostatní uživatele pásma (Wi-Fi apod.).
 > Samotný příjem koncesi nevyžaduje.
@@ -21,10 +21,12 @@ DATV on 13 cm with ESP32 boards: a stand-alone **ESP32-C3 DVB-S2 beacon** and **
 **XIAO ESP32-S3** on USB-OTG and an **Android** phone or tablet (beta). The app also **transmits** through a XIAO
 ESP32-C3 on USB-OTG: test card, camera or a picture / video file, DVB-S2 QPSK / 8PSK encoded on the phone (`android/native/dvbs2enc`).
 Reception can be **recorded** as it is received (`.ts`, with MER / CNR as `.srt` subtitles).
-**6 cm (experimental):** a beacon and a receiver on 5715 MHz with two ESP32-C5 boards, see [below](#6-cm--esp32-c5-experimental).
+**6 cm (experimental):** two **Waveshare ESP32-C5-Zero** boards on 5715 MHz – a receiver for the same app (up to 250 kS/s)
+and a stand-alone beacon stored from the phone (*Save as beacon*, as with the C3; live TX through the C5 is not there yet),
+see [below](#6-cm--esp32-c5-experimental).
 
 - **Guide / návod:** <https://ok1cdj.github.io/ESP32-ATV/> ([English](docs/rx-android.en.md), [česky](docs/rx-android.cs.md))
-- **APK:** [Releases](https://github.com/ok1cdj/ESP32-ATV/releases) ([changelog](CHANGELOG.md)) · **Firmware S3 (RX) + C3 (TX):** from the app (menu ⋮ → Firmware) or the [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/)
+- **APK:** [Releases](https://github.com/ok1cdj/ESP32-ATV/releases) ([changelog](CHANGELOG.md)) · **Firmware S3 (RX) + C3 (TX) + C5 (6 cm RX / TX):** from the app (menu ⋮ → Firmware) or the [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/)
 - **Transmitting: licensed radio amateurs only** (see above). GNU GPL v3 ([LICENSE](LICENSE)); third-party parts keep their licences (below).
 
 <p align="center"><img src="docs/img/atvrx-rx-tx.png" alt="ATV RX/TX on Android: receiving the ESP32-C3 beacon (RX) and transmitting a test card through the ESP32-C3 (TX)" width="640"></p>
@@ -34,6 +36,11 @@ XIAO ESP32-C3 (ESP32-DATV-SA beacon, DVB-S2 QPSK 3/4, 40–500 kS/s, 2345.000 MH
    ~ 13 cm ~>
 XIAO ESP32-S3 (ESP32-DATV-RX firmware: radio dump 16 MS/s -> 500 ksps cs4 / 333 ksps cs8 over native USB; receives 40–400 kS/s)
    -> Android: ATV RX/TX (leandvb + ldpc_tool, MediaCodec)      or      PC: rx/rx.sh (rx_dvbs2.py, leandvb, ffplay)
+
+ESP32-C5-Zero (tx/c5cw: a loop stored from the app, DVB-S2 QPSK, up to 250 kS/s, 5715.000 MHz)
+   ~ 6 cm ~>
+ESP32-C5-Zero (rx/c5rx: IQ estimator -> cs4 250 / 333 / 400 ksps over USB, the S3's protocol)
+   -> Android: ATV RX/TX (the same app)      or      PC: rx/c5_play.sh
 ```
 
 | Part | Project | Licence |
@@ -69,7 +76,7 @@ remote `upstream`. Update: `git -C third_party/<repo> fetch upstream && git -C t
 | Fork | Changes |
 |---|---|
 | ESP32-DATV-SA | beacon 40–500 kS/s (rate table, default rate from `BEACON_BAUD`, `make_beacon.py`); DC/IQ correction of the beacon (`--cal`, `BDC` command); DVB-S2 short frames (`--frame short`); branch `xiao-panel` (the one used here): front panel pins for the XIAO ESP32-C3, upstream's video from the flash merged, loops from the flash at any rate / QPSK code rate / frame size with frequency and level (header version 3), `VIDW` to store a loop over USB, `CONFIG_DATV_BUILTIN_BEACON=n` for the web build, `FW` line in `INFO` |
-| ESP32-DATV-RX | `rx_dvbs2.py --sampler auto/linear/rrc`, `--rrc-rej` (RRC below 100 kS/s), `--device`, `--frame normal/short/auto`, DC removal in the 8-bit mode, MER / CNR in the status line, `--decimate` (experimental) |
+| ESP32-DATV-RX | `rx_dvbs2.py --sampler auto/linear/rrc`, `--rrc-rej` (RRC below 100 kS/s), `--device`, `--frame normal/short/auto`, DC removal in the 8-bit mode, MER / CNR in the status line, `--decimate` (experimental); `espdr nb.py --decim 25` (400 ksps of the ESP32-C5 receiver) |
 
 ## One-time setup (PC, Linux)
 ```sh
@@ -79,7 +86,7 @@ sudo cp third_party/ESP32-DATV-RX/esp32-sdr-trx/udev/70-espdr.rules /etc/udev/ru
   && sudo udevadm control --reload && sudo udevadm trigger   # keeps ModemManager off the port (any byte stops the stream)
 # ESP-IDF for the C3 (v6.1)
 git clone --depth 1 -b v6.1 --recursive --shallow-submodules https://github.com/espressif/esp-idf ~/esp/esp-idf-v6.1
-~/esp/esp-idf-v6.1/install.sh esp32c3
+~/esp/esp-idf-v6.1/install.sh esp32c3,esp32c5      # esp32c5 for 6 cm
 ```
 Board ports are told apart by MAC address in `boards.sh` (both boards are `303a:1001`); edit it for your boards.
 
@@ -89,10 +96,12 @@ One place: `ATV_FREQ` in `boards.sh` – **2345.000 MHz**, the 2322–2355 MHz A
 `rx/cal_dc.py`; the app defaults to it. **Avoid multiples of 20 MHz** (2320, 2340, 2360 …): the XIAO ESP32-S3's PLL has
 a spur exactly there, 12–28 dB above the noise (strongest on multiples of 40 MHz), which lands inside the signal – also
 on another frequency, keep the carrier a few hundred kHz away from them. 2340.000 MHz was used until 2026-10-16.
+6 cm: `ATV6_FREQ` – **5715.000 MHz** (IARU Region 1 ATV segment 5700–5720 MHz, above EU Wi-Fi channel 140, not on a
+multiple of 20 MHz nor of the C5's 48 MHz crystal).
 
 ## Transmitter – XIAO ESP32-C3
 **For everyone:** the firmware from the web (the app's menu ⋮ → Firmware, or the [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/))
-transmits nothing until a beacon is stored: the app's TX screen → *Save as beacon in the C3* (records the test card, the
+transmits nothing until a beacon is stored: the app's TX screen → *Save as beacon* (records the test card, the
 camera or your picture / video with your settings and stores the loop; the C3 then transmits it by itself), or from a PC:
 ```sh
 python3 tx/make_flash_loop.py video.mp4 --baud 40000 --frame short --call YOURCALL --freq 2345 --amp 300 -o loop.bin
@@ -148,6 +157,8 @@ cd android && ./gradlew assembleDebug
 Switch **RX | TX** in the app, the C3 on OTG instead of the S3: test card, camera or a picture / video
 file → H.264, microphone and / or the callsign in Morse or the video's sound → AAC (HE-AAC at low rates) → TS (time stamps from the capture clock) → our DVB-S2 encoder
 (`android/native/dvbs2enc`, C, GPL) → the C3's PC streaming mode. See the [guide](docs/rx-android.en.md#5-transmitting-from-the-phone-tx-beta).
+The TX screen has presets (13 cm C3, 6 cm C5; *Save* / *Delete* your own). Through the ESP32-C5 only *Save as beacon* works
+so far, not live TX.
 On a PC: `tx/tx_s2enc.py TS_FILE` streams a TS through the C3 with the same encoder; `rx/test_dvbs2enc.py` checks the
 encoder bit for bit against ESP32-DATV's encoders and decodes it with leandvb. `tx/mux_selftest.sh` (debug build)
 records the phone's TX mux without the C3 – a white flash and a beep every 2 s – and `tx/avsync.py` measures its lip sync.
@@ -169,14 +180,28 @@ records the phone's TX mux without the C3 – a white flash and a beep every 2 s
 Other tools: `rx/level_sweep.sh` (sensitivity sweep, `FRAME=short` for short frames), `rx/sim_frames.py` (normal vs short frames simulated end to end), `rx/raw2cf32.py` (raw packets recorded by the app -> cf32, decode), `rx/make_replay.py` (a recording for the app's *Replay* from any TS, no radio needed: our DVB-S2 encoder, offset, noise), `rx/avsync_rx.py` (the app's lip sync on such a replay, debug build).
 
 ## 6 cm – ESP32-C5 (experimental)
-Two Waveshare ESP32-C5-Zero boards: a DVB-S2 beacon (`tx/c5cw`; a loop stored from the phone like the C3's, no live TX yet) and a receiver (`rx/c5rx`, cs4 at 250 / 333 / 400 ksps,
-the S3's protocol, so the app and `espdr nb.py` drive it) on **5715.000 MHz** (`ATV6_FREQ` in `boards.sh`, IARU Region 1
-ATV segment 5700–5720 MHz). **Transmitting needs an amateur radio licence here too.** Branch `c5-6cm`, not in the
-releases yet. Guide: [English](docs/6cm-c5.en.md), [česky](docs/6cm-c5.cs.md).
+Two **Waveshare ESP32-C5-Zero** boards (ESP32-C5, the only Espressif chip with 5 GHz; U.FL antenna) on **5715.000 MHz**.
+**Transmitting needs an amateur radio licence here too.** Not in a release yet (master). Guide with the details:
+[English](docs/6cm-c5.en.md), [česky](docs/6cm-c5.cs.md).
+
+- **Firmware:** from the app (menu ⋮ → Firmware asks *6 cm receiver* or *6 cm transmitter* for an ESP32-C5) or the
+  [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/); on a PC `rx/c5rx/flash.sh`, `tx/c5cw/flash.sh none`.
+- **Receiver** (`rx/c5rx`): the IQ estimator read on a fixed clock, a halfband FIR, cs4 at 250 / 333 / 400 ksps in the S3
+  receiver's packets and protocol – the app and `espdr nb.py` drive it unchanged. Symbol rates up to 250 kS/s.
+- **Transmitter** (`tx/c5cw`): the TX DC register path of [esp32-C5-sdr-tx](https://github.com/fedaykinofdune/esp32-C5-sdr-tx)
+  with the C3's QPSK RRC tables. Like the C3 it stores a loop from the app's TX screen (*Save as beacon*, presets
+  "5715.000 6 cm beacon …") and transmits it by itself after power-up; **live TX from the phone through the C5 is not
+  there yet.** The carrier trim (`DC i q`) is set on a PC with `tx/c5_dccal.py`.
+- **LED** of the C5-Zero: dim blue waiting, green receiving, red transmitting, dark = ROM loader.
+- **Tested 2026-11-11:** 250 kS/s through 400 ksps on a PC and on a phone, a loop saved on the phone received with MER
+  ~17 dB, 3 m apart with the boards' stick-on antennas. **The output power has not been measured** (no cable to an
+  analyser yet; over the air only).
+
 ```sh
 . ~/esp/esp-idf-v6.1/export.sh
-CALL=YOURCALL BAND=6cm tx/make_beacons.sh 125000 && tx/c5cw/flash.sh tx/beacons/yourcall-125k-6cm   # TX, then BEACON on its USB
-rx/c5rx/flash.sh && rx/c5_play.sh 125000                                                           # RX on the PC
+rx/c5rx/flash.sh && rx/c5_play.sh 250000                                                           # RX on the PC (SR up to 250000)
+tx/c5cw/flash.sh none                                                                              # TX without a built-in beacon (as the web build)
+CALL=YOURCALL BAND=6cm tx/make_beacons.sh 125000 && tx/c5cw/flash.sh tx/beacons/yourcall-125k-6cm   # or a built-in one: BEACON on its USB
 ```
 
 ## Test without hardware
