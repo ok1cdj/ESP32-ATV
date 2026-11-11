@@ -5,5 +5,6 @@ if(NOT beacon AND NOT CMAKE_BUILD_EARLY_EXPANSION)
 endif()
 idf_component_register(SRCS "main.c"
                        INCLUDE_DIRS "${beacon}" "${CMAKE_CURRENT_LIST_DIR}/../../../third_party/ESP32-DATV-SA/firmware/main"
+                                    "${CMAKE_CURRENT_LIST_DIR}/../../../rx/c5rx/main"   # c5_led.h
                        EMBED_FILES "${beacon}/beacon.bin"
                        REQUIRES esp_phy esp_wifi nvs_flash esp_timer esp_driver_gpio esp_hal_usb)

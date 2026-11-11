@@ -49,6 +49,7 @@
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "driver/gpio.h"
+#include "c5_led.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "hal/usb_serial_jtag_ll.h"
@@ -513,7 +514,9 @@ static void __attribute__((noinline)) IRAM_ATTR stream_fast(uint32_t r2, uint32_
 }
 
 static void stream(uint32_t r2, uint32_t fmt, uint32_t sh, uint32_t secs, stream_stats_t *st) {
+    led(LED_RX);
     (CPU_HZ / stream_inputs(r2) < 360u ? stream_fast : stream_std)(r2, fmt, sh, secs, st);
+    led(LED_IDLE);
 }
 
 static void __attribute__((noinline)) IRAM_ATTR bench(void) {
@@ -850,6 +853,7 @@ void app_main(void) {
     gpio_reset_pin(ANT_GPIO);
     gpio_set_direction(ANT_GPIO, GPIO_MODE_INPUT_OUTPUT);
     gpio_set_level(ANT_GPIO, ant);               /* U.FL: the external antenna */
+    led(LED_IDLE);
     esp_err_t e = nvs_flash_init();
     if (e == ESP_ERR_NVS_NO_FREE_PAGES || e == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());

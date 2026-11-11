@@ -42,6 +42,7 @@
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "driver/gpio.h"
+#include "c5_led.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "hal/usb_serial_jtag_ll.h"
@@ -126,6 +127,7 @@ static void tx_off(void) {
     REG_WRITE(TXDC_REG, txdc_orig);
     esp_phy_wifi_tx_tone(0, tone_arg, backoff);
     tx_on = false;
+    led(LED_IDLE);
 }
 
 /* The vendor CW on the MHz turns the chain on, its tone stop hands the DAC to TXDC, then only the PLL takes the kHz. */
@@ -139,6 +141,7 @@ static void tx_chain_on(void) {
     txdc_orig = REG_READ(TXDC_REG);
     gpio_set_level(ANT_GPIO, ant);               /* the vendor CW puts the switch back to the chip antenna */
     tx_on = true;
+    led(LED_TX);
 }
 
 /* Plays one period of tone_w until a byte arrives from the host. */
@@ -526,6 +529,7 @@ static void handle(char *line) {
         esp_phy_wifi_tx_tone(1, tone_arg = atoi(a1), backoff);
         gpio_set_level(ANT_GPIO, ant);
         tx_on = true;
+        led(LED_TX);
         say("VT %lu\r\n", (unsigned long)tone_arg);
     } else if (!strcmp(cmd, "RFT")) {
         tx_off();
@@ -551,6 +555,7 @@ void app_main(void) {
     gpio_reset_pin(ANT_GPIO);
     gpio_set_direction(ANT_GPIO, GPIO_MODE_INPUT_OUTPUT);
     gpio_set_level(ANT_GPIO, ant);               /* U.FL: the external antenna or coax */
+    led(LED_IDLE);
     esp_err_t e = nvs_flash_init();
     if (e == ESP_ERR_NVS_NO_FREE_PAGES || e == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
