@@ -211,6 +211,9 @@ static void __attribute__((noinline)) IRAM_ATTR capture(int16_t *buf, uint32_t n
 #define USB_BYTES 1u                 /* per slot at most, checked (24 + 44 cycles). cs4 needs 0.5 per input; cs8 needs 1, and the
                                      * FIFO is not always free: cs8 loses packets at 250 ksps and up (2 per slot: ~450 kB/s and 333
                                      * ksps too slow; 4 unchecked put the loop 3000 cycles behind) */
+#define USB_BYTES_LIGHT 2u           /* in a slot without a Q half, the flag read once: the FIFO is empty when it is set after a
+                                     * flush and chunk stops at 64. The host takes a chunk ~80 us after its flush, so 1 byte per
+                                     * slot (64 slots to fill) capped 400 ksps cs4 at ~385 kB/s (8 % of its packets dropped) */
 
 typedef struct {
     uint32_t late_max, late, slots, dropped, fifo_peak, packets, samples, busy_max;
@@ -451,7 +454,8 @@ static inline __attribute__((always_inline)) void stream_body(uint32_t r2, uint3
             tail = head;
             used = 0;
         } else {
-            for (uint32_t b = 0; b < USB_BYTES && used && tail != pkt && tail != hdr && USB_SERIAL_JTAG.ep1_conf.serial_in_ep_data_free;
+            const uint32_t nb = q_now ? USB_BYTES : USB_BYTES_LIGHT;
+            for (uint32_t b = 0; b < nb && used && tail != pkt && tail != hdr && (b || USB_SERIAL_JTAG.ep1_conf.serial_in_ep_data_free);
                  ++b) {
                 USB_SERIAL_JTAG.ep1.val = fifo[tail];          /* the whole register: a bit-field store reads it first, and
                                                                  * reading it takes a byte out of the receive FIFO */
