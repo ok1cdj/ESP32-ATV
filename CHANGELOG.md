@@ -2,7 +2,7 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
-## Unreleased
+## 0.19-beta – 2026-11-11
 
 ### 6 cm with the ESP32-C5 (experimental)
 - **A receiver for the app on 5.7 GHz:** a Waveshare ESP32-C5-Zero with `rx/c5rx` (the C5's IQ estimator read on a fixed
