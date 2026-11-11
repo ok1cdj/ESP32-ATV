@@ -360,14 +360,18 @@ class MainActivity : Activity() {
         say("preset saved: ${p.name}")
     }
 
-    /** Deletes the user preset that matches the current settings (the built-in ones stay). */
+    /** Deletes a saved preset picked from their list (the built-in ones stay). */
     private fun deletePreset() {
-        val p = currentPreset() ?: return
-        val left = userPresets().filter { it.name != p.name }
-        if (left.size == userPresets().size) return say("no saved preset ${p.name}")
-        prefs.edit().putString("presets", left.joinToString("\n") { it.encode() }).apply()
-        refreshPresets()
-        say("preset deleted: ${p.name}")
+        val saved = userPresets()
+        if (saved.isEmpty()) return say("no saved presets (the built-in ones stay)")
+        android.app.AlertDialog.Builder(this).setTitle("Delete preset")
+            .setItems(saved.map { it.name }.toTypedArray()) { _, i ->
+                val p = saved[i]
+                prefs.edit().putString("presets", saved.filter { it.name != p.name }.joinToString("\n") { it.encode() }).apply()
+                refreshPresets()
+                say("preset deleted: ${p.name}")
+            }
+            .setNegativeButton("Cancel", null).show()
     }
 
     private fun rateList(c: String) = Receiver.MODCODS.keys.filter { it.first == c }.map { it.second }
