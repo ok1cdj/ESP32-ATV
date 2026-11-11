@@ -477,7 +477,7 @@ static void beacon(int32_t amp, uint32_t S, float dci, float dcq) {
  * "video" partition holds a DATVVID1 version 3 header (4 KB) and the symbols, 4 per byte (as beacon.bin), the first 64 bytes
  * repeated after them. A valid loop starts by itself after power-up, at its frequency; any byte from USB stops it.
  * The loop's level is the C3's DAC amplitude (AMP on the TX screen, 300 by default): here amp x 150 / 300, the beacon's default
- * 150 (its spectrum checked on the tinySA, 2026-11-10). DC against the carrier leakage: DC i q (kept in NVS, tx/c5_dccal.py). */
+ * 150 (its spectrum checked over the air on the tinySA, 2026-11-10; the output power has not been measured - no cable to the analyser). DC against the carrier leakage: DC i q (kept in NVS, tx/c5_dccal.py). */
 #include "esp_app_desc.h"
 #include "esp_partition.h"
 #include "esp_rom_crc.h"

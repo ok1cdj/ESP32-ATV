@@ -36,7 +36,7 @@ cycle counter with interrupts masked. The beacon uses the QPSK RRC 0.35 modulato
 `tx/c5cw/flash.sh none`), plug the C5 into the phone, on the TX screen enter 5715.000 MHz, the symbol rate (up to 250 kS/s
 for the C5 receiver) and your callsign, then *Save as beacon*. The loop (DATVVID1 as the C3's, up to ~3 MB of flash) starts at
 once and after every power-up; any byte on its USB stops it, `PLAY` starts it again. The C3's AMP maps to the C5 as
-AMP × 150 / 300 (AMP 300 = the level the beacon was measured at). 2026-11-11: a loop saved on the phone (250 kS/s, short
+AMP × 150 / 300 (AMP 300 = the level used in these tests; the output power was not measured). 2026-11-11: a loop saved on the phone (250 kS/s, short
 frames) received by the C5 receiver on the phone, MER ~17 dB, 1084 frames clean of 1088.
 
 **A beacon built into the firmware** (PC, for development):
@@ -69,7 +69,9 @@ third_party/ESP32-DATV-RX/.venv/bin/python tx/c5_dccal.py --beacon      # finds 
 
 For a stored loop send the trim found with `DC dci dcq` (kept in flash). The phone cannot calibrate the C5 yet.
 
-Measured (tinySA Ultra over the air, levels approximate): carrier −8 dBm on 5710 MHz, LO leakage 39 dBc, image 42 dBc,
+**The output power has not been measured:** the transmitter was never connected to a spectrum analyser by cable. Over the
+air (tinySA Ultra with an antenna near the board, levels only a rough indication, not the transmitter's power): carrier
+about −8 dBm at the analyser on 5710 MHz; the relative figures are more reliable: LO leakage 39 dBc, image 42 dBc,
 sampling images (S=16) ~34 dBc. **The crystal warms up while transmitting:** about +100 kHz (19 ppm) from a cold start
 within a few minutes. Power the transmitter straight from a computer, not through a hub or a power bank (on the C3 that
 ruined the MER).

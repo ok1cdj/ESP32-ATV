@@ -35,7 +35,7 @@ s maskovanými přerušeními. Maják používá tabulky modulátoru QPSK s RRC 
 `tx/c5cw/flash.sh none`), připojte C5 do telefonu, na záložce TX zadejte 5715.000 MHz, symbolovou rychlost (do 250 kS/s pro
 přijímač C5) a značku a dejte *Save as beacon*. Smyčka (DATVVID1 jako u C3, až ~3 MB flash) se hned spustí a pak po každém
 zapnutí; libovolný bajt na jejím USB ji zastaví, `PLAY` ji spustí znovu. AMP z C3 se na C5 přepočítá jako AMP × 150 / 300
-(AMP 300 = úroveň, na které byl maják změřen). 11. 11. 2026: smyčka uložená z telefonu (250 kS/s, short rámce) přijatá
+(AMP 300 = úroveň použitá při těchto testech; výstupní výkon nebyl měřen). 11. 11. 2026: smyčka uložená z telefonu (250 kS/s, short rámce) přijatá
 přijímačem C5 v telefonu, MER ~17 dB, 1084 rámců bez chyby z 1088.
 
 **Maják zabudovaný ve firmwaru** (PC, pro vývoj):
@@ -67,7 +67,9 @@ third_party/ESP32-DATV-RX/.venv/bin/python tx/c5_dccal.py --beacon      # najde 
 
 Pro uloženou smyčku pošlete nalezenou korekci příkazem `DC dci dcq` (uloží se do flash). Z telefonu C5 zatím kalibrovat nejde.
 
-Naměřeno (tinySA Ultra přes antény, úrovně orientační): nosná −8 dBm na 5710 MHz, únik LO 39 dBc, zrcadlo 42 dBc,
+**Výstupní výkon nebyl měřen:** vysílač nikdy nebyl připojen ke spektrálnímu analyzátoru kabelem. Přes antény (tinySA
+Ultra s anténou u desky, úrovně jen hrubě orientační, nejde o výkon vysílače): nosná asi −8 dBm na vstupu analyzátoru na
+5710 MHz; spolehlivější jsou relativní údaje: únik LO 39 dBc, zrcadlo 42 dBc,
 obrazy vzorkování (S=16) ~34 dBc. **Krystal se vysíláním ohřívá:** od studeného startu ~+100 kHz (19 ppm) během několika
 minut. Napájejte vysílač přímo z počítače, ne přes hub nebo powerbanku (u C3 to kazilo MER).
 
