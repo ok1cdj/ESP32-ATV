@@ -102,6 +102,31 @@ class TxActivity : Activity() {
     private lateinit var preview: ImageView
     private val rates = listOf(40_000, 50_000, 66_666, 100_000, 125_000, 250_000, 333_000, 500_000)
 
+    /**
+     * Transmission settings by name, for live TX and Save as beacon: frequency, symbol rate, modulation, frames, pilots,
+     * AMP and the beacon's length. Callsign, locator and picture stay as they are (they are the operator's, not the mode's).
+     */
+    data class Preset(val name: String, val freq: String, val sr: Int, val const: String, val fec: String, val short: Boolean,
+                      val pilots: Boolean, val amp: Int, val loop: Int) {
+        fun encode() = listOf(name, freq, sr, const, fec, short, pilots, amp, loop).joinToString("|")
+        companion object {
+            fun decode(l: String) = l.split('|').takeIf { it.size == 9 }?.let {
+                Preset(it[0], it[1], it[2].toIntOrNull() ?: return null, it[3], it[4], it[5].toBoolean(), it[6].toBoolean(),
+                    it[7].toIntOrNull() ?: return null, it[8].toIntOrNull() ?: return null)
+            }
+        }
+    }
+    // 13 cm: the C3 (stand-alone loops up to ~333 kS/s); 6 cm: the ESP32-C5, a stored beacon up to 250 kS/s (its receiver's limit)
+    private val builtIn = listOf(
+        Preset("${MainActivity.DEFAULT_FREQ} beacon 40k QPSK 3/4 short", MainActivity.DEFAULT_FREQ, 40_000, "QPSK", "3/4", true, true, 300, 20),
+        Preset("${MainActivity.DEFAULT_FREQ} beacon 125k QPSK 3/4", MainActivity.DEFAULT_FREQ, 125_000, "QPSK", "3/4", false, true, 300, 20),
+        Preset("${MainActivity.DEFAULT_FREQ} 333k QPSK 3/4 short", MainActivity.DEFAULT_FREQ, 333_000, "QPSK", "3/4", true, true, 300, 20),
+        Preset("${MainActivity.FREQ_6CM} 6 cm beacon 125k QPSK 3/4 (C5)", MainActivity.FREQ_6CM, 125_000, "QPSK", "3/4", false, true, 300, 20),
+        Preset("${MainActivity.FREQ_6CM} 6 cm beacon 250k QPSK 3/4 short (C5)", MainActivity.FREQ_6CM, 250_000, "QPSK", "3/4", true, true, 300, 10))
+    private lateinit var presetSpinner: Spinner
+    private fun userPresets() = (prefs.getString("presets", "") ?: "").lines().mapNotNull { Preset.decode(it) }
+    private fun allPresets() = builtIn + userPresets()
+
     private val permissionReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
             if (i.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) afterPermission() else log("USB permission denied")
@@ -125,6 +150,25 @@ class TxActivity : Activity() {
         info = TextView(this).apply { typeface = Typeface.MONOSPACE; setPadding(0, 12, 0, 8); fitStatusText(this) }
         body.addView(info)
 
+        presetSpinner = Spinner(this)
+        refreshPresets()
+        presetSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(a: AdapterView<*>?, v: android.view.View?, pos: Int, id: Long) {
+                if (pos > 0) { applyPreset(allPresets()[pos - 1]); presetSpinner.setSelection(0) }
+            }
+            override fun onNothingSelected(a: AdapterView<*>?) {}
+        }
+        // the preset list takes the room, Save / Delete stay small (row() would share the width out evenly)
+        body.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(presetSpinner, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            for ((t, f) in listOf<Pair<String, () -> Unit>>("Save" to ::savePreset, "Delete" to ::deletePreset))
+                addView(button(t) { f() }.apply {
+                    isSingleLine = true; minWidth = 0; minimumWidth = 0; setPadding(24, 8, 24, 8)
+                    (background as GradientDrawable).setColor(Color.rgb(0x3A, 0x3A, 0x3A))
+                }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { leftMargin = 8 })
+        })
         freq = edit(prefs.getString("freq", MainActivity.DEFAULT_FREQ)!!, InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
         rate = spinner(rates.map { "%.1f kS/s".format(it / 1e3) }, "%.1f kS/s".format(prefs.getInt("sr", 50_000) / 1e3))
         body.addView(row(label("MHz"), freq, label("SR"), rate))
@@ -278,6 +322,60 @@ class TxActivity : Activity() {
     }
 
     private var afterPermission: () -> Unit = {}
+
+    private fun refreshPresets() {
+        presetSpinner.adapter = adapter(listOf("Preset…") + allPresets().map { it.name })
+    }
+
+    /** Puts a preset into the fields (a running TX goes on with what it has: Stop, Start). */
+    private fun applyPreset(p: Preset) {
+        freq.setText(p.freq)
+        rate.setSelection(rates.indexOf(p.sr).coerceAtLeast(0))
+        constel.setSelection(listOf("QPSK", "8PSK").indexOf(p.const).coerceAtLeast(0))
+        // the code rates of the new constellation now, so that its listener keeps this one
+        val list = rateList(p.const)
+        fec.adapter = adapter(list)
+        fec.setSelection(list.indexOf(p.fec).coerceAtLeast(0))
+        frame.setSelection(if (p.short) 1 else 0)
+        pilots.isChecked = p.pilots
+        amp.setText(p.amp.toString())
+        loopSeconds.setSelection(loopChoices.indexOf(p.loop).coerceAtLeast(0))
+        log("preset: ${p.name}${if (tx != null) " (Stop and Start to transmit with it)" else ""}")
+    }
+
+    private fun currentPreset(): Preset? {
+        val f = freq.text.toString().replace(',', '.').toDoubleOrNull() ?: return null
+        val sr = rates[rate.selectedItemPosition]
+        val c = constel.selectedItem as String; val r = fec.selectedItem as String
+        val short = frame.selectedItem == "short"
+        val a = amp.text.toString().toIntOrNull() ?: return null
+        val loop = loopChoices[loopSeconds.selectedItemPosition]
+        val name = "%.3f %s %s %s%s%s AMP %d".format(java.util.Locale.US, f, if (sr % 1000 == 0) "${sr / 1000}k" else "%.1fk".format(java.util.Locale.US, sr / 1e3),
+            c, r, if (short) " short" else "", if (pilots.isChecked) "" else " no pilots", a)
+        return Preset(name, "%.3f".format(java.util.Locale.US, f), sr, c, r, short, pilots.isChecked, a, loop)
+    }
+
+    private fun savePreset() {
+        val p = currentPreset() ?: return log("frequency or AMP?")
+        if (allPresets().any { it.name == p.name }) return log("preset exists: ${p.name}")
+        prefs.edit().putString("presets", (userPresets() + p).joinToString("\n") { it.encode() }).apply()
+        refreshPresets()
+        log("preset saved: ${p.name}")
+    }
+
+    /** Deletes a saved preset picked from their list (the built-in ones stay). */
+    private fun deletePreset() {
+        val saved = userPresets()
+        if (saved.isEmpty()) return log("no saved presets (the built-in ones stay)")
+        android.app.AlertDialog.Builder(this).setTitle("Delete preset")
+            .setItems(saved.map { it.name }.toTypedArray()) { _, i ->
+                val p = saved[i]
+                prefs.edit().putString("presets", saved.filter { it.name != p.name }.joinToString("\n") { it.encode() }).apply()
+                refreshPresets()
+                log("preset deleted: ${p.name}")
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
 
     private fun start() {
         if (tx != null || saving) return
