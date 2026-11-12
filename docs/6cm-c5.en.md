@@ -17,7 +17,8 @@ ESP32-C5 (rx/c5rx: IQ estimator -> halfband -> cs4 250 / 333 / 400 ksps over USB
    -> Android: ATV RX/TX (detects the C5 itself)      or      PC: rx/c5_play.sh (espdr nb.py, leandvb, ffplay)
 ```
 
-**Status:** branch `c5-6cm`, not in the releases or the web flasher yet. 2026-11-10: the C5 beacon was decoded by a second
+**Status:** released in v0.19-beta (2026-11-11): both firmwares from the app and the web flasher, presets in the app.
+2026-11-10: the C5 beacon was decoded by a second
 C5 on a PC and on a phone (lock, picture, MER 11–17 dB). 2026-11-11: 250 kBd through 400 ksps on the PC and on the phone
 (3 m apart with the boards' stick-on antennas: MER 13–17 dB, 319 frames clean of 320, no USB packets lost).
 

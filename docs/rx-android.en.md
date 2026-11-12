@@ -2,15 +2,16 @@
 title: ATV RX/TX – guide (beta)
 ---
 
-**ATV RX/TX** is a DVB-S2 receiver (and transmitter) for amateur television on 13 cm. The radio is a **Seeed XIAO ESP32-S3** on USB-OTG;
+**ATV RX/TX** is a DVB-S2 receiver (and transmitter) for amateur television on 13 cm (and, experimentally, 6 cm). The radio is a **Seeed XIAO ESP32-S3** on USB-OTG;
 an **Android phone or tablet** demodulates (leandvb), decodes the LDPC (ldpc_tool) and shows the picture together
 with MER, constellation and stream information. Its counterpart is the stand-alone ESP32-C3 beacon
 ([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)) – and the same app also **transmits**: with a XIAO
 ESP32-C3 on USB-OTG it sends a test card, the phone's camera or a picture / video from the phone live as DVB-S2 (switch **RX | TX** at the top).
+On 6 cm two **ESP32-C5** boards take the S3's and the C3's place: a receiver for the same app and a stored beacon (section 6).
 
-> ⚠ **The transmitter works on the 13 cm amateur radio band (2.3–2.45 GHz). Transmitting requires an amateur radio
-> licence.** Transmit only with your own callsign, on frequencies and at power levels your licence and national band
-> plan allow (2345 MHz lies in the ATV segment of the IARU Region 1 band plan). The band around 2.4 GHz is shared with
+> ⚠ **The transmitter works on the 13 cm amateur radio band (2.3–2.45 GHz), the ESP32-C5 on 6 cm (5.65–5.85 GHz).
+> Transmitting requires an amateur radio licence.** Transmit only with your own callsign, on frequencies and at power levels your licence and national band
+> plan allow (2345 and 5715 MHz lie in the ATV segments of the IARU Region 1 band plan). The band around 2.4 GHz and 6 cm are shared with
 > Wi-Fi and other services – without a licence, transmitting is illegal and disturbs others. Receiving alone needs no
 > licence.
 
@@ -26,21 +27,23 @@ ESP32-C3 on USB-OTG it sends a test card, the phone's camera or a picture / vide
 | **USB-C OTG** cable or adapter | the phone must support USB host (OTG); the S3 is powered by the phone |
 | **Android 9+**, **ARM** CPU | tested: OnePlus 10 Pro (Android 16, arm64); 32-bit (armeabi-v7a) untested, may not keep up with the higher symbol rates |
 | for TX: **Seeed XIAO ESP32-C3** | with an antenna on U.FL; the firmware comes from the app or the web flasher |
+| for 6 cm: two **Waveshare ESP32-C5-Zero** | receiver and transmitter, with the antennas from the box (U.FL); experimental, section 6 |
 | a computer with **Chrome / Edge** | optional: the app writes the firmware into both boards itself |
 
 ## 1. Firmware into the boards (once)
 
 **From the app (no computer):** install the app first (section 2). Connect the board through OTG, open the menu **⋮ →
-Firmware (S3 / C3)** and tap **Write firmware into the connected board**. The app puts the board into its ROM loader,
-which tells the chip – **ESP32-S3 → receiver**, **ESP32-C3 → transmitter**, they cannot be mixed up – downloads the
+Firmware** and tap **Write firmware into the connected board**. The app puts the board into its ROM loader,
+which tells the chip – **ESP32-S3 → receiver**, **ESP32-C3 → transmitter**, they cannot be mixed up; for an
+**ESP32-C5** it asks: *6 cm receiver* or *6 cm transmitter* – downloads the
 current firmware from the web (kept for use without a network), writes it with a progress bar, checks it (MD5) and
 restarts the board. Android asks for USB access twice (the board appears again in its loader). A new firmware on the
 web needs no new app. **Check versions on the web** shows the current versions and which of your boards
 (the ones the app has written or talked to) have an older firmware.
 
 **From the browser:** the [web flasher](flasher/) in Chrome or Edge on a computer – connect the XIAO with a data cable,
-hold **BOOT**, tap **RESET**, release BOOT, click the button for the receiver (S3) or the transmitter (C3), choose the
-port and confirm. Tap **RESET** when it is done. (Erasing there also deletes the C3's carrier calibration, see
+hold **BOOT**, tap **RESET**, release BOOT, click the button for the receiver (S3), the transmitter (C3) or one of the
+6 cm C5 firmwares, choose the port and confirm. Tap **RESET** when it is done. (Erasing there also deletes the C3's carrier calibration, see
 section 4.)
 
 **From the command line** (this repository, Linux): S3 `third_party/ESP32-DATV-RX/tools/install.sh`, then
@@ -65,7 +68,7 @@ Automatic updates without the dialog: [Obtainium](https://github.com/ImranR98/Ob
 
 ## 3. Receiving
 
-1. Pick a **Preset…** at the top, e.g. *Beacon 50k QPSK 3/4* (2345.000 MHz, 50 kS/s). A preset sets frequency, symbol
+1. Pick a **Preset…** at the top, e.g. *2345.000 Beacon 50k QPSK 3/4* (2345.000 MHz, 50 kS/s); the name starts with the frequency. A preset sets frequency, symbol
    rate, modulation, code rate and frame size; **Save** stores your own settings. Avoid frequencies on a multiple of
    20 MHz (2320, 2340, 2360 …): the S3 has a spur of its own exactly there, inside the signal.
 2. **Gain**: 10 dB on a desk, 30 dB and more over a distance. A strong signal with a high gain overloads the receiver
@@ -130,7 +133,7 @@ you store a beacon with your callsign in it:
    card, camera, or your own picture / video – **File…**), **sound** (CW ID: the callsign in Morse once per loop; *from
    the video*; at 40–50 kS/s choose a kb/s, *auto* sends none there) and the length (10–60 s, or **video**: as long as
    the video file, none of it cut – up to what the flash holds at that rate).
-2. Tap **Save as beacon in the C3**. The phone records the picture for that long, encodes it as a loop and stores it in
+2. Tap **Save as beacon**. The phone records the picture for that long, encodes it as a loop and stores it in
    the C3's flash (progress bar: recording, encoding, storing – about half a minute for 20 s).
 3. Unplug the C3 and power it from anything – a power bank, a charger. It transmits the loop by itself after every
    power-up, at the stored frequency and level, without the phone. A new beacon replaces it.
@@ -160,7 +163,8 @@ beacon and starts the live mode.
 1. Connect the **XIAO ESP32-C3** through OTG instead of the S3 (one port: RX and TX take turns). Put the C3 and its
    antenna **away from the phone** – lying next to it the signal came 20 dB weaker and did not decode.
 2. Switch to **TX** at the top, allow USB access (and the camera when you use it).
-3. Set frequency (2300–2450 MHz, the firmware refuses anything else), symbol rate, **QPSK / 8PSK**, code rate,
+3. A **Preset…** sets the fields below at once (13 cm presets for the C3, 6 cm ones for the C5; **Save** / **Delete**
+   your own). Set frequency (2300–2450 MHz, the firmware refuses anything else; 5650–5900 MHz for the C5), symbol rate, **QPSK / 8PSK**, code rate,
    frame size (**short** gives the first picture 4× sooner at low rates), pilots, **callsign**, **AMP** (300 = 0 dB,
    a few mW; 13 = −27 dB; 8PSK up to 420), the **picture** (test card, back or front camera, or **picture / video
    file**) and the **sound**: off, microphone, CW ID (your callsign in Morse, 20 WPM, 700 Hz, every 30 s), mic + CW ID
@@ -216,6 +220,30 @@ best result calibrate just before transmitting and leave the C3 plugged in (the 
 calibration holds until the C3 loses power). A firmware upload from the app keeps the
 stored values. Details and measurements: [LO calibration](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-10-16-lo-calibration.en.md).
 
+## 6. 6 cm with the ESP32-C5 (experimental)
+
+![6 cm: the TX presets for the C5 and reception of the C5 beacon on 5715 MHz](img/atvrx-6cm.png)
+
+The **Waveshare ESP32-C5-Zero** (the only ESP32 with 5 GHz) works on **5715.000 MHz** without any other RF hardware: one
+as a receiver for this app, a second one as a stand-alone beacon. Transmitting needs a licence here too. Details and
+measurements: [6 cm with the ESP32-C5](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/6cm-c5.en.md).
+
+1. **Firmware:** connect the C5 through OTG, menu ⋮ → **Firmware** → *Write firmware…*; the app asks *6 cm receiver* or
+   *6 cm transmitter (stored beacon only)*. Or the [web flasher](flasher/) (a button for each).
+2. **Beacon:** the transmitter C5 on OTG, switch to **TX**, pick the preset *5715.000 6 cm beacon 250k QPSK 3/4 short
+   (C5)* or *… 125k QPSK 3/4 (C5)*, set your **callsign**, the picture and the length, then **Save as beacon** (as in
+   section 4). Unplugged and powered from a computer port or a charger it transmits the loop after every power-up.
+   Up to 250 kS/s (the C5 receiver's limit). AMP 300 = the level of our tests; **the output power has not been measured**.
+   **Start TX** (live) through the C5 is not there yet – the app says so.
+3. **Receiving:** the receiver C5 on OTG, **RX**, the preset *5715.000 Beacon 250k QPSK 3/4* (or 125k), **Start**. The
+   app recognises the C5 by itself (always cs4: 250 ksps up to 148 kS/s, 333 ksps up to 197 kS/s, 400 ksps up to
+   250 kS/s) and searches ±300 kHz – the two C5s' crystals differ by up to ~150 kHz at 5.7 GHz.
+4. **The gain:** the C5 overloads at short range (worse reception close by than further away) – on a desk start
+   low and go up. Tested: 3 m apart with the stick-on antennas, 250 kS/s, MER 13–17 dB.
+
+The **LED** of the C5-Zero: dim blue = waiting, green = receiving, red = transmitting, dark = the ROM loader (press RESET).
+The C5's carrier trim is set on a PC (`tx/c5_dccal.py`), not from the phone yet.
+
 ## Troubleshooting
 
 | symptom | try |
@@ -231,7 +259,10 @@ stored values. Details and measurements: [LO calibration](https://github.com/ok1
 | TX: received weak, MER low | move the C3 and its antenna away from the phone |
 | TX: no sound at 40–50 kS/s | *auto* sends none below 80 kb/s of TS – choose kb/s (12) next to *sound* |
 | RX: `audio … not supported` | AAC in LATM or AC-3: the picture plays, the sound not (AAC in ADTS, MP2 and MP3 do) |
-| the C3 transmits nothing on its own | no beacon stored yet: TX → Save as beacon in the C3 |
+| the C3 transmits nothing on its own | no beacon stored yet: TX → Save as beacon |
+| 6 cm: worse reception at short range | the C5 receiver overloads – turn the gain down |
+| 6 cm: Start TX with the C5 | live TX through the C5 is not there yet – *Save as beacon* only |
+| 6 cm: the C5 does not answer after plugging in | it stayed in its ROM loader (LED dark): press its RESET |
 | *this C3 firmware cannot store a loop* | write the current firmware: menu ⋮ → Firmware |
 | firmware: *no network and no saved firmware* | the first write needs the internet once; later the saved one works offline |
 | TX log: *C3 firmware …, on the web …* | a newer transmitter firmware: menu ⋮ → Firmware |

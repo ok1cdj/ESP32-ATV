@@ -16,7 +16,8 @@ ESP32-C5 (rx/c5rx: IQ estimátor -> halfband -> cs4 250 / 333 / 400 ksps přes U
    -> Android: ATV RX/TX (rozpozná C5 sám)      nebo      PC: rx/c5_play.sh (espdr nb.py, leandvb, ffplay)
 ```
 
-**Stav:** větev `c5-6cm`, zatím ne ve vydaných verzích ani ve webovém flasheru. 10. 11. 2026: maják z C5 dekódován druhým
+**Stav:** vydáno ve v0.19-beta (11. 11. 2026): oba firmwary z aplikace i webového flasheru, předvolby v aplikaci.
+10. 11. 2026: maják z C5 dekódován druhým
 C5 na PC i v telefonu (zámek, obraz, MER 11–17 dB). 11. 11. 2026: 250 kBd přes 400 ksps na PC i v telefonu (3 m od sebe,
 nalepovací antény z balení: MER 13–17 dB, 319 rámců z 320 bez chyb, žádné ztracené USB pakety).
 

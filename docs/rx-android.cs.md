@@ -2,15 +2,16 @@
 title: ATV RX/TX – návod (beta)
 ---
 
-**ATV RX/TX** je přijímač (i vysílač) DVB-S2 pro amatérskou televizi v pásmu 13 cm. Rádiem je **Seeed XIAO ESP32-S3** připojený přes
+**ATV RX/TX** je přijímač (i vysílač) DVB-S2 pro amatérskou televizi v pásmu 13 cm (a experimentálně 6 cm). Rádiem je **Seeed XIAO ESP32-S3** připojený přes
 USB-OTG, **telefon nebo tablet s Androidem** signál demoduluje (leandvb), dekóduje LDPC (ldpc_tool) a ukazuje obraz
 spolu s MER, konstelací a údaji o streamu. Protějškem je samostatný maják s ESP32-C3
 ([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)) – a stejná aplikace také **vysílá**: s XIAO ESP32-C3 na
 USB-OTG posílá živě testkartu, obraz z kamery nebo obrázek či video z telefonu jako DVB-S2 (přepínač **RX | TX** nahoře).
+Na 6 cm místo S3 a C3 slouží dvě desky **ESP32-C5**: přijímač pro tutéž aplikaci a uložený maják (kapitola 6).
 
-> ⚠ **Vysílá se v radioamatérském pásmu 13 cm (2,3–2,45 GHz). K vysílání je nutné platné oprávnění (koncese)
+> ⚠ **Vysílá se v radioamatérském pásmu 13 cm (2,3–2,45 GHz), s ESP32-C5 na 6 cm (5,65–5,85 GHz). K vysílání je nutné platné oprávnění (koncese)
 > radioamatéra.** Vysílej jen se svou značkou, na kmitočtech a s výkonem, které tvé oprávnění a národní kmitočtový
-> plán dovolují (2345 MHz leží v ATV segmentu band plánu IARU 1. oblasti). Část pásma kolem 2,4 GHz sdílí Wi-Fi a další
+> plán dovolují (2345 a 5715 MHz leží v ATV segmentech band plánu IARU 1. oblasti). Část pásma kolem 2,4 GHz i 6 cm sdílí Wi-Fi a další
 > služby – bez koncese je vysílání nezákonné a ruší ostatní. Samotný příjem koncesi nevyžaduje.
 
 > **Beta.** Aplikace je ke stažení zdarma pod GNU GPL v3.
@@ -25,20 +26,23 @@ USB-OTG posílá živě testkartu, obraz z kamery nebo obrázek či video z tele
 | **USB-C OTG** kabel nebo redukce | telefon musí umět USB host (OTG); S3 se napájí z telefonu |
 | **Android 9+**, procesor **ARM** | testováno: OnePlus 10 Pro (Android 16, arm64); 32bitový (armeabi-v7a) netestován, vyšší symbolové rychlosti nemusí stíhat |
 | pro TX: **Seeed XIAO ESP32-C3** | s anténou na U.FL; firmware nahraje aplikace nebo webový flasher |
+| pro 6 cm: dvě **Waveshare ESP32-C5-Zero** | přijímač a vysílač, s anténami z balení (U.FL); experimentální, kapitola 6 |
 | počítač s **Chrome / Edge** | volitelně: firmware do obou desek umí nahrát i aplikace sama |
 
 ## 1. Firmware do desek (jednou)
 
 **Z aplikace (bez počítače):** nejdřív nainstaluj aplikaci (kapitola 2). Připoj desku přes OTG, otevři menu **⋮ →
-Firmware (S3 / C3)** a klepni na **Write firmware into the connected board**. Aplikace přepne desku do zavaděče v ROM,
-ten prozradí čip – **ESP32-S3 → přijímač**, **ESP32-C3 → vysílač**, splést se nedají –, stáhne aktuální firmware z webu
+Firmware** a klepni na **Write firmware into the connected board**. Aplikace přepne desku do zavaděče v ROM,
+ten prozradí čip – **ESP32-S3 → přijímač**, **ESP32-C3 → vysílač**, splést se nedají; u **ESP32-C5** se zeptá:
+*6 cm receiver* nebo *6 cm transmitter* –, stáhne aktuální firmware z webu
 (uloží si ho i pro práci bez sítě), zapíše ho s ukazatelem průběhu, ověří (MD5) a desku restartuje. Android se na
 přístup k USB zeptá dvakrát (deska se v zavaděči objeví znovu). Nový firmware na webu nepotřebuje novou aplikaci.
 **Check versions on the web** ukáže aktuální verze a které tvoje desky (ty, do kterých aplikace zapisovala nebo s nimi
 mluvila) mají starší firmware.
 
 **Z prohlížeče:** [webový flasher](flasher/) v Chrome nebo Edge na počítači – připoj XIAO datovým kabelem, drž **BOOT**,
-ťukni **RESET**, pusť BOOT, klikni na tlačítko přijímače (S3) nebo vysílače (C3), vyber port a potvrď. Po dokončení
+ťukni **RESET**, pusť BOOT, klikni na tlačítko přijímače (S3), vysílače (C3) nebo jednoho
+z firmwarů C5 pro 6 cm, vyber port a potvrď. Po dokončení
 **RESET**. (Smazání tam smaže i kalibraci nosné v C3, viz kapitola 4.)
 
 **Z příkazové řádky** (tento repozitář, Linux): S3 `third_party/ESP32-DATV-RX/tools/install.sh`, pak
@@ -62,7 +66,7 @@ nastavení zůstane. Automatické aktualizace bez dialogu: [Obtainium](https://g
 
 ## 3. Příjem
 
-1. Nahoře zvol **Preset…** – např. *Beacon 50k QPSK 3/4* (kmitočet 2345.000 MHz, 50 kS/s). Předvolba nastaví kmitočet,
+1. Nahoře zvol **Preset…** – např. *2345.000 Beacon 50k QPSK 3/4* (kmitočet 2345.000 MHz, 50 kS/s); název začíná kmitočtem. Předvolba nastaví kmitočet,
    symbolovou rychlost, modulaci, kódový poměr a velikost rámců; vlastní nastavení ulož tlačítkem **Save**. Vyhni se kmitočtům na
    násobcích 20 MHz (2320, 2340, 2360 …): S3 má přesně tam vlastní parazitní čáru, uvnitř signálu.
 2. **Gain**: na stole 10 dB, na vzdálenost 30 dB a víc. Při silném signálu a velkém zisku se přijímač zahltí (MER klesá,
@@ -123,7 +127,7 @@ licence PolyForm Noncommercial) **sám nic nevysílá**, dokud do něj neuloží
    **AMP**, obraz (testkarta, kamera, nebo vlastní obrázek či video – **File…**), **zvuk** (CW ID: značka v Morseovce
    jednou za smyčku; *from the video*; při 40–50 kS/s zvol kb/s, *auto* tam zvuk neposílá) a délku (10–60 s, nebo
    **video**: celá délka videa, nic se neusekne – do toho, co se při dané rychlosti vejde do flash).
-2. Klepni na **Save as beacon in the C3**. Telefon po tu dobu nahrává obraz, zakóduje ho jako smyčku a uloží do flash C3
+2. Klepni na **Save as beacon**. Telefon po tu dobu nahrává obraz, zakóduje ho jako smyčku a uloží do flash C3
    (ukazatel průběhu: nahrávání, kódování, ukládání – pro 20 s asi půl minuty).
 3. Odpoj C3 a napájej ho čímkoli – powerbankou, nabíječkou. Po každém zapnutí vysílá smyčku sám, na uloženém kmitočtu
    a úrovni, bez telefonu. Nový maják ten starý nahradí.
@@ -152,7 +156,8 @@ s PC). C3 potřebuje firmware vysílače (kapitola 1); příkaz z USB zastaví b
 1. Připoj **XIAO ESP32-C3** přes OTG místo S3 (jeden port: RX a TX se střídají). C3 s anténou dej **dál od telefonu** –
    položený vedle něj dával signál o 20 dB slabší a nedekódoval se.
 2. Nahoře přepni na **TX**, povol přístup k USB (a ke kameře, když ji použiješ).
-3. Nastav kmitočet (2300–2450 MHz, jinak ho firmware odmítne), symbolovou rychlost, **QPSK / 8PSK**, kódový poměr,
+3. **Preset…** nastaví pole níže najednou (pro 13 cm předvolby C3, pro 6 cm předvolby C5; vlastní **Save** / **Delete**).
+   Nastav kmitočet (2300–2450 MHz, jinak ho firmware odmítne; 5650–5900 MHz pro C5), symbolovou rychlost, **QPSK / 8PSK**, kódový poměr,
    velikost rámců (**short** dá při nízkých rychlostech první obraz 4× dřív), piloty, **značku**, **AMP** (300 = 0 dB,
    pár mW; 13 = −27 dB; 8PSK až 420), **obraz** (testkarta, zadní nebo přední kamera, nebo **soubor s obrázkem či
    videem**) a **zvuk**: vypnutý, mikrofon, CW ID (tvoje značka v Morseovce, 20 WPM, 700 Hz, každých 30 s), mikrofon
@@ -204,6 +209,30 @@ posune (asi o 2 kódy DAC), takže uložená hodnota dá méně, asi 9 dB: nejle
 mezitím neodpojovat (aplikace ho neresetuje, kalibrace tedy platí, dokud C3 nepřijde o napájení). Nahrání firmwaru z aplikace uložené hodnoty zachová. Podrobnosti a měření:
 [kalibrace LO](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-10-16-lo-calibration.cs.md).
 
+## 6. 6 cm s ESP32-C5 (experimentální)
+
+![6 cm: předvolby TX pro C5 a příjem majáku z C5 na 5715 MHz](img/atvrx-6cm.png)
+
+**Waveshare ESP32-C5-Zero** (jediný ESP32 s 5 GHz) pracuje na **5715.000 MHz** bez dalšího RF hardwaru: jeden jako
+přijímač pro tuto aplikaci, druhý jako samostatný maják. I zde je k vysílání nutná koncese. Podrobnosti a měření:
+[6 cm s ESP32-C5](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/6cm-c5.cs.md).
+
+1. **Firmware:** připoj C5 přes OTG, menu ⋮ → **Firmware** → *Write firmware…*; aplikace se zeptá *6 cm receiver*, nebo
+   *6 cm transmitter (stored beacon only)*. Nebo [webový flasher](flasher/) (tlačítko pro každý).
+2. **Maják:** vysílací C5 na OTG, přepni na **TX**, zvol předvolbu *5715.000 6 cm beacon 250k QPSK 3/4 short (C5)* nebo
+   *… 125k QPSK 3/4 (C5)*, nastav **značku**, obraz a délku a klepni na **Save as beacon** (jako v kapitole 4). Odpojený
+   a napájený z portu počítače nebo nabíječky vysílá smyčku po každém zapnutí. Nejvýš 250 kS/s (hranice přijímače C5).
+   AMP 300 = úroveň našich testů; **výstupní výkon změřený není**. **Start TX** (živé vysílání) přes C5 zatím nejde –
+   aplikace to oznámí.
+3. **Příjem:** přijímací C5 na OTG, **RX**, předvolba *5715.000 Beacon 250k QPSK 3/4* (nebo 125k), **Start**. Aplikace C5
+   rozpozná sama (vždy cs4: 250 ksps do 148 kS/s, 333 ksps do 197 kS/s, 400 ksps do 250 kS/s) a hledá v ±300 kHz –
+   krystaly dvou C5 se na 5,7 GHz liší až o ~150 kHz.
+4. **Gain:** C5 se na krátkou vzdálenost zahlcuje (zblízka horší příjem než zdálky) – na stole začni nízko a přidávej.
+   Vyzkoušeno: 3 m od sebe s nalepovacími anténami, 250 kS/s, MER 13–17 dB.
+
+**LED** na C5-Zero: slabě modrá = čeká, zelená = přijímá, červená = vysílá, nesvítí = zavaděč ROM (stiskni RESET).
+Kompenzace nosné C5 se zatím nastavuje na PC (`tx/c5_dccal.py`), ne z telefonu.
+
 ## Řešení problémů
 
 | příznak | co zkusit |
@@ -219,7 +248,10 @@ mezitím neodpojovat (aplikace ho neresetuje, kalibrace tedy platí, dokud C3 ne
 | TX: příjem slabý, nízké MER | dej C3 s anténou dál od telefonu |
 | TX: při 40–50 kS/s není zvuk | *auto* pod 80 kb/s TS zvuk neposílá – vedle *sound* zvol kb/s (12) |
 | RX: `audio … not supported` | AAC v LATM nebo AC-3: obraz jde, zvuk ne (AAC v ADTS, MP2 a MP3 hrají) |
-| C3 sám nic nevysílá | ještě v něm není maják: TX → Save as beacon in the C3 |
+| C3 sám nic nevysílá | ještě v něm není maják: TX → Save as beacon |
+| 6 cm: na krátkou vzdálenost horší příjem | přijímač C5 se zahlcuje – snížit gain |
+| 6 cm: Start TX s C5 | živé vysílání přes C5 zatím nejde – jen *Save as beacon* |
+| 6 cm: C5 po připojení neodpovídá | zůstal v zavaděči ROM (LED nesvítí): stiskni jeho RESET |
 | *this C3 firmware cannot store a loop* | nahraj aktuální firmware: menu ⋮ → Firmware |
 | firmware: *no network and no saved firmware* | první zápis potřebuje jednou internet, pak funguje uložený i bez sítě |
 | TX log: *C3 firmware …, on the web …* | na webu je novější firmware vysílače: menu ⋮ → Firmware |

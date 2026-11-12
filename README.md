@@ -17,7 +17,7 @@
 > kmitočtový plán dovolují. Bez koncese je vysílání nezákonné a může rušit ostatní uživatele pásma (Wi-Fi apod.).
 > Samotný příjem koncesi nevyžaduje.
 
-DATV on 13 cm with ESP32 boards: a stand-alone **ESP32-C3 DVB-S2 beacon** and **ATV RX/TX**, a receiver made of a
+DATV on 13 cm (and 6 cm) with ESP32 boards: a stand-alone **ESP32-C3 DVB-S2 beacon** and **ATV RX/TX**, a receiver made of a
 **XIAO ESP32-S3** on USB-OTG and an **Android** phone or tablet (beta). The app also **transmits** through a XIAO
 ESP32-C3 on USB-OTG: test card, camera or a picture / video file, DVB-S2 QPSK / 8PSK encoded on the phone (`android/native/dvbs2enc`).
 Reception can be **recorded** as it is received (`.ts`, with MER / CNR as `.srt` subtitles).
@@ -181,8 +181,10 @@ Other tools: `rx/level_sweep.sh` (sensitivity sweep, `FRAME=short` for short fra
 
 ## 6 cm – ESP32-C5 (experimental)
 Two **Waveshare ESP32-C5-Zero** boards (ESP32-C5, the only Espressif chip with 5 GHz; U.FL antenna) on **5715.000 MHz**.
-**Transmitting needs an amateur radio licence here too.** Not in a release yet (master). Guide with the details:
+**Transmitting needs an amateur radio licence here too.** In the releases since v0.19-beta. Guide with the details:
 [English](docs/6cm-c5.en.md), [česky](docs/6cm-c5.cs.md).
+
+<p align="center"><img src="docs/img/atvrx-6cm.png" alt="6 cm: the TX presets for the ESP32-C5 and reception of the C5 beacon on 5715 MHz" width="640"></p>
 
 - **Firmware:** from the app (menu ⋮ → Firmware asks *6 cm receiver* or *6 cm transmitter* for an ESP32-C5) or the
   [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/); on a PC `rx/c5rx/flash.sh`, `tx/c5cw/flash.sh none`.
