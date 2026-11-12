@@ -2,6 +2,16 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## 0.19.1-beta – 2026-11-12
+
+### Fixes
+- **Start TX no longer crashes** after the app has written firmware into a C3 that had a carrier calibration: the
+  calibration it took over from the C3 was stored as "from the C3", and reading it back split the words (since
+  v0.10-beta).
+
+### Guide
+- 6 cm with the ESP32-C5 in the guide (section 6), the app's current menu and button names, new screenshots.
+
 ## 0.19-beta – 2026-11-11
 
 ### 6 cm with the ESP32-C5 (experimental)
