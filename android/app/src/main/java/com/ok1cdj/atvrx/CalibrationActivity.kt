@@ -36,8 +36,13 @@ object DcStore {
 
     fun all(ctx: Context, mac: String): List<Entry> = prefs(ctx).all.mapNotNull { (k, v) ->
         if (!k.startsWith("$mac@")) return@mapNotNull null
+        // "i q date suppression"; the date may hold spaces ("from the C3", FirmwareActivity), the suppression is the last word
         val p = (v as? String)?.split(' ') ?: return@mapNotNull null
-        Entry(k.substringAfter('@').toLong() / 1000.0, p[0].toDouble(), p[1].toDouble(), p.getOrElse(2) { "" }, p.getOrElse(3) { "0" }.toDouble())
+        val mhz = k.substringAfter('@').toLongOrNull() ?: return@mapNotNull null
+        val i = p.getOrNull(0)?.toDoubleOrNull() ?: return@mapNotNull null
+        val q = p.getOrNull(1)?.toDoubleOrNull() ?: return@mapNotNull null
+        val sup = if (p.size > 3) p.last().toDoubleOrNull() else null
+        Entry(mhz / 1000.0, i, q, p.drop(2).dropLast(if (sup != null) 1 else 0).joinToString(" "), sup ?: 0.0)
     }.sortedBy { it.mhz }
 
     /** The entry nearest to [mhz] within [withinMhz], or null. */
