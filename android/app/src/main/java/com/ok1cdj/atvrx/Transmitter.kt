@@ -60,19 +60,22 @@ class Transmitter(private val ctx: android.content.Context, private val usbManag
             Thread.sleep(1200)                                  // opening the port may reset the C3
             val (id, beacon) = link.info() ?: throw java.io.IOException("no ESP32-DATV answer: is this the C3? (the S3 receiver is the same 303a:1001)")
             log("C3: $id${beacon?.let { " · $it" } ?: ""}${if (link.booted) " (reset by opening the port)" else ""}")
-            if (link.c5) throw java.io.IOException("live TX through the ESP32-C5 (6 cm) is not there yet: Save as beacon stores a loop it transmits")
-            UpdateCheck.rememberC3(ctx, UsbBoards.serial(usbManager, device), link.fw)
-            val web = UpdateCheck.webVersion(ctx, "ESP32-C3")
-            link.fw?.split(' ')?.getOrNull(1)?.let { has -> if (web != null && has != web && link.fw!!.contains("no-builtin-beacon"))
-                log("C3 firmware $has, on the web $web: menu ⋮ → Firmware") }
+            if (link.c5 && !link.c5Live) throw java.io.IOException("this ESP32-C5 firmware has no live TX: write the current one (menu ⋮ → Firmware), or Save as beacon")
+            if (!link.c5) {
+                UpdateCheck.rememberC3(ctx, UsbBoards.serial(usbManager, device), link.fw)
+                val web = UpdateCheck.webVersion(ctx, "ESP32-C3")
+                link.fw?.split(' ')?.getOrNull(1)?.let { has -> if (web != null && has != web && link.fw!!.contains("no-builtin-beacon"))
+                    log("C3 firmware $has, on the web $web: menu ⋮ → Firmware") }
+            }
             val dc = link.dc(cfg.freqKhz / 1000.0) ?: (0.0 to 0.0)        // the C3's table at our frequency
             log("C3 DC correction %.3f %.3f".format(dc.first, dc.second))
             link.pa(false)
 
             val psk8 = cfg.const == "8PSK"
             enc = S2Encoder(cfg.const, cfg.rate, cfg.shortFrame, cfg.pilots)
-            val sps = if (psk8) C3Link.psk8Sps(cfg.baud) else C3Link.qpskSps(cfg.baud)
-            val baud = if (psk8) C3Link.psk8Baud(cfg.baud, sps) else C3Link.qpskBaud(cfg.baud, sps)
+            // the C5 takes any symbol rate as it is (deadlines from a fractional sample clock) and picks its own sps
+            val sps = if (link.c5) 16 else if (psk8) C3Link.psk8Sps(cfg.baud) else C3Link.qpskSps(cfg.baud)
+            val baud = if (link.c5) cfg.baud.toDouble() else if (psk8) C3Link.psk8Baud(cfg.baud, sps) else C3Link.qpskBaud(cfg.baud, sps)
             val tsRate = enc.tsRate(baud)
             status.baud = baud; status.tsRate = tsRate
             // video: what is left after tables, PCR, PES headers and the sound, with a margin for the encoder's overshoot; by

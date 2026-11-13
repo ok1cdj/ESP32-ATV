@@ -24,11 +24,14 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
     /** Runs on the caller's thread (minutes at most); throws with the reason on failure. */
     fun run() {
         if (cfg.const != "QPSK") throw IOException("the stand-alone loop is QPSK only")
-        val sper = Math.round(C3Link.CPU_HZ.toDouble() / cfg.baud)
-        if ((sper - 4) / 20 < 16) throw IOException("symbol rate too high for a stand-alone loop (about 333 kS/s at most)")
-        val baud = C3Link.CPU_HZ.toDouble() / sper                      // what the C3 sends
         val board = probe()
         if (board == "C3" && cfg.freqKhz > 2_450_000) throw IOException("the C3 transmits only in 2300..2450 MHz (6 cm: the ESP32-C5)")
+        if (board == "C5" && cfg.freqKhz < 5_650_000) throw IOException("the ESP32-C5 transmitter is for 6 cm (5650..5900 MHz)")
+        val sper = Math.round(C3Link.CPU_HZ.toDouble() / cfg.baud)
+        if ((board == "C3" && (sper - 4) / 20 < 16) || cfg.baud > C5_BAUD_MAX)
+            throw IOException("symbol rate too high for a stand-alone loop (about 333 kS/s at most)")
+        // what the transmitter sends: the C3 whole 160 MHz cycles per symbol, the C5 any rate (tx/c5cw sample clock)
+        val baud = if (board == "C5") cfg.baud.toDouble() else C3Link.CPU_HZ.toDouble() / sper
         val enc = S2Encoder("QPSK", cfg.rate, cfg.shortFrame, cfg.pilots)
         try {
             val fs = enc.frameSymbols
@@ -155,6 +158,7 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
 
     companion object {
         private const val HEADER = 4096
+        private const val C5_BAUD_MAX = 333_334                          // tx/c5cw VIDEO_BAUD_MAX (S 16 at 240 MHz)
         private const val TAIL = 64
         private const val PARTITION = 0x2F0000
         private val QCODE = intArrayOf(0, 3, 0, 2, 0, 0, 0, 1)

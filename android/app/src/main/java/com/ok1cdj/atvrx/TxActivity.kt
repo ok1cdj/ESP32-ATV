@@ -116,12 +116,15 @@ class TxActivity : Activity() {
             }
         }
     }
-    // 13 cm: the C3 (stand-alone loops up to ~333 kS/s); 6 cm: the ESP32-C5, a stored beacon up to 250 kS/s (its receiver's limit)
+    // 13 cm: the C3 (stand-alone loops up to ~333 kS/s); 6 cm: the ESP32-C5, live or stored, up to 250 kS/s (the C5 receiver's limit)
     private val builtIn = listOf(
         Preset("${MainActivity.DEFAULT_FREQ} beacon 40k QPSK 3/4 short", MainActivity.DEFAULT_FREQ, 40_000, "QPSK", "3/4", true, true, 300, 20),
         Preset("${MainActivity.DEFAULT_FREQ} beacon 125k QPSK 3/4", MainActivity.DEFAULT_FREQ, 125_000, "QPSK", "3/4", false, true, 300, 20),
         Preset("${MainActivity.DEFAULT_FREQ} 333k QPSK 3/4 short", MainActivity.DEFAULT_FREQ, 333_000, "QPSK", "3/4", true, true, 300, 20),
+        Preset("${MainActivity.FREQ_6CM} 6 cm beacon 40k QPSK 3/4 short (C5)", MainActivity.FREQ_6CM, 40_000, "QPSK", "3/4", true, true, 300, 20),
+        Preset("${MainActivity.FREQ_6CM} 6 cm beacon 66.7k QPSK 3/4 short (C5)", MainActivity.FREQ_6CM, 66_666, "QPSK", "3/4", true, true, 300, 20),
         Preset("${MainActivity.FREQ_6CM} 6 cm beacon 125k QPSK 3/4 (C5)", MainActivity.FREQ_6CM, 125_000, "QPSK", "3/4", false, true, 300, 20),
+        Preset("${MainActivity.FREQ_6CM} 6 cm live 250k 8PSK 2/3 short (C5)", MainActivity.FREQ_6CM, 250_000, "8PSK", "2/3", true, true, 300, 10),
         Preset("${MainActivity.FREQ_6CM} 6 cm beacon 250k QPSK 3/4 short (C5)", MainActivity.FREQ_6CM, 250_000, "QPSK", "3/4", true, true, 300, 10))
     private lateinit var presetSpinner: Spinner
     private fun userPresets() = (prefs.getString("presets", "") ?: "").lines().mapNotNull { Preset.decode(it) }
@@ -291,7 +294,7 @@ class TxActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFY)
         val mhz = freq.text.toString().replace(',', '.').toDoubleOrNull() ?: return null.also { log("frequency?") }
-        // the C3 on 13 cm; the ESP32-C5 on 6 cm, a stored beacon only (Save as beacon)
+        // the C3 on 13 cm; the ESP32-C5 on 6 cm
         if (mhz !in 2300.0..2450.0 && mhz !in 5650.0..5900.0) return null.also { log("the C3 transmits in 2300..2450 MHz, the C5 in 5650..5900 MHz") }
         UsbBoards.serial(usbManager, dev)?.let { mac ->
             if (DcStore.all(this, mac).isNotEmpty() && DcStore.near(this, mac, mhz, CAL_NEAR_MHZ) == null)

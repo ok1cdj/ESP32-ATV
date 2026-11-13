@@ -22,7 +22,7 @@ DATV on 13 cm (and 6 cm) with ESP32 boards: a stand-alone **ESP32-C3 DVB-S2 beac
 ESP32-C3 on USB-OTG: test card, camera or a picture / video file, DVB-S2 QPSK / 8PSK encoded on the phone (`android/native/dvbs2enc`).
 Reception can be **recorded** as it is received (`.ts`, with MER / CNR as `.srt` subtitles).
 **6 cm (experimental):** two **Waveshare ESP32-C5-Zero** boards on 5715 MHz – a receiver for the same app (up to 250 kS/s)
-and a stand-alone beacon stored from the phone (*Save as beacon*, as with the C3; live TX through the C5 is not there yet),
+and a transmitter that, as the C3, stores a beacon from the phone (*Save as beacon*) or sends live (Start TX: new, received from a PC, not yet tried from the phone),
 see [below](#6-cm--esp32-c5-experimental).
 
 - **Guide / návod:** <https://ok1cdj.github.io/ESP32-ATV/> ([English](docs/rx-android.en.md), [česky](docs/rx-android.cs.md))
@@ -37,7 +37,7 @@ XIAO ESP32-C3 (ESP32-DATV-SA beacon, DVB-S2 QPSK 3/4, 40–500 kS/s, 2345.000 MH
 XIAO ESP32-S3 (ESP32-DATV-RX firmware: radio dump 16 MS/s -> 500 ksps cs4 / 333 ksps cs8 over native USB; receives 40–400 kS/s)
    -> Android: ATV RX/TX (leandvb + ldpc_tool, MediaCodec)      or      PC: rx/rx.sh (rx_dvbs2.py, leandvb, ffplay)
 
-ESP32-C5-Zero (tx/c5cw: a loop stored from the app, DVB-S2 QPSK, up to 250 kS/s, 5715.000 MHz)
+ESP32-C5-Zero (tx/c5cw: a loop stored from the app or live TX, DVB-S2 QPSK / 8PSK, 5715.000 MHz)
    ~ 6 cm ~>
 ESP32-C5-Zero (rx/c5rx: IQ estimator -> cs4 250 / 333 / 400 ksps over USB, the S3's protocol)
    -> Android: ATV RX/TX (the same app)      or      PC: rx/c5_play.sh
@@ -157,8 +157,8 @@ cd android && ./gradlew assembleDebug
 Switch **RX | TX** in the app, the C3 on OTG instead of the S3: test card, camera or a picture / video
 file → H.264, microphone and / or the callsign in Morse or the video's sound → AAC (HE-AAC at low rates) → TS (time stamps from the capture clock) → our DVB-S2 encoder
 (`android/native/dvbs2enc`, C, GPL) → the C3's PC streaming mode. See the [guide](docs/rx-android.en.md#5-transmitting-from-the-phone-tx-beta).
-The TX screen has presets (13 cm C3, 6 cm C5; *Save* / *Delete* your own). Through the ESP32-C5 only *Save as beacon* works
-so far, not live TX.
+The TX screen has presets (13 cm C3, 6 cm C5; *Save* / *Delete* your own). The ESP32-C5 takes both *Save as beacon* and
+live TX.
 On a PC: `tx/tx_s2enc.py TS_FILE` streams a TS through the C3 with the same encoder; `rx/test_dvbs2enc.py` checks the
 encoder bit for bit against ESP32-DATV's encoders and decodes it with leandvb. `tx/mux_selftest.sh` (debug build)
 records the phone's TX mux without the C3 – a white flash and a beep every 2 s – and `tx/avsync.py` measures its lip sync.
@@ -191,9 +191,10 @@ Two **Waveshare ESP32-C5-Zero** boards (ESP32-C5, the only Espressif chip with 5
 - **Receiver** (`rx/c5rx`): the IQ estimator read on a fixed clock, a halfband FIR, cs4 at 250 / 333 / 400 ksps in the S3
   receiver's packets and protocol – the app and `espdr nb.py` drive it unchanged. Symbol rates up to 250 kS/s.
 - **Transmitter** (`tx/c5cw`): the TX DC register path of [esp32-C5-sdr-tx](https://github.com/fedaykinofdune/esp32-C5-sdr-tx)
-  with the C3's QPSK RRC tables. Like the C3 it stores a loop from the app's TX screen (*Save as beacon*, presets
-  "5715.000 6 cm beacon …") and transmits it by itself after power-up; **live TX from the phone through the C5 is not
-  there yet.** The carrier trim (`DC i q`) is set on a PC with `tx/c5_dccal.py`.
+  with the C3's QPSK / 8PSK RRC tables. Like the C3 it stores a loop from the app's TX screen (*Save as beacon*, presets
+  "5715.000 6 cm beacon …") and transmits it by itself after power-up, and it takes **live TX** from the phone (the C3's
+  `QPSKT` / `PSK8T` stream; new, received from a PC, not yet tried from the phone). The carrier trim per frequency (`BDC`
+  table, as the C3) is set on a PC with `tx/c5_dccal.py --save`.
 - **LED** of the C5-Zero: dim blue waiting, green receiving, red transmitting, dark = ROM loader.
 - **Tested 2026-11-11:** 250 kS/s through 400 ksps on a PC and on a phone, a loop saved on the phone received with MER
   ~17 dB, 3 m apart with the boards' stick-on antennas. **The output power has not been measured** (no cable to an

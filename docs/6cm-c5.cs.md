@@ -21,9 +21,9 @@ ESP32-C5 (rx/c5rx: IQ estimátor -> halfband -> cs4 250 / 333 / 400 ksps přes U
 C5 na PC i v telefonu (zámek, obraz, MER 11–17 dB). 11. 11. 2026: 250 kBd přes 400 ksps na PC i v telefonu (3 m od sebe,
 nalepovací antény z balení: MER 13–17 dB, 319 rámců z 320 bez chyb, žádné ztracené USB pakety).
 
-**Vysílač C5 je zatím jen samostatný maják.** Stejně jako C3 si uloží smyčku natočenou v telefonu (záložka TX → *Save as
-beacon*) a po zapnutí ji sám vysílá. **Živé vysílání z telefonu (kamera, testovací obrazec) přes C5 zatím nejde**: Start na
-záložce TX to oznámí.
+**Vysílač C5 umí totéž co C3:** uloží si smyčku natočenou v telefonu (záložka TX → *Save as beacon*) a po zapnutí ji sám
+vysílá, a **Start TX vysílá živě z telefonu** (kamera, testovací obrazec, soubor; QPSK nebo 8PSK) – novinka po v0.19.1-beta:
+přijato na vzduchu přijímačem C5 na PC, z telefonu zatím nezkoušeno.
 
 ## Vysílač – `tx/c5cw`
 
@@ -35,9 +35,17 @@ s maskovanými přerušeními. Maják používá tabulky modulátoru QPSK s RRC 
 **Maják z telefonu** (jako u C3): nahrajte firmware vysílače (aplikace: menu → Firmware, *6 cm transmitter*; nebo
 `tx/c5cw/flash.sh none`), připojte C5 do telefonu, na záložce TX zadejte 5715.000 MHz, symbolovou rychlost (do 250 kS/s pro
 přijímač C5) a značku a dejte *Save as beacon*. Smyčka (DATVVID1 jako u C3, až ~3 MB flash) se hned spustí a pak po každém
-zapnutí; libovolný bajt na jejím USB ji zastaví, `PLAY` ji spustí znovu. AMP z C3 se na C5 přepočítá jako AMP × 150 / 300
+zapnutí; libovolný bajt na jejím USB ji zastaví a stejně jako u C3 se po 5 s bez příkazu spustí znovu (po platném příkazu –
+např. z aplikace – ji vrátí jen `PLAY`, `BDC`, nová smyčka nebo reset). AMP z C3 se na C5 přepočítá jako AMP × 150 / 300
 (AMP 300 = úroveň použitá při těchto testech; výstupní výkon nebyl měřen). 11. 11. 2026: smyčka uložená z telefonu (250 kS/s, short rámce) přijatá
 přijímačem C5 v telefonu, MER ~17 dB, 1084 rámců bez chyby z 1088.
+
+**Živé vysílání** (Start na záložce TX, nebo na PC `third_party/ESP32-DATV-SA/host/tx_dvbs.py`): protokol `QPSKT` / `PSK8T`
+jako u C3, telefon kóduje DVB-S2 a posílá surové symboly. QPSK s 16 vzorky na symbol při libovolné rychlosti 2–333 kBd
+(stůl, vždy 8 s: 40k, 125k, 250k bez jediného pozdního vzorku; 333k 145 pozdních z 2,8 M symbolů); 8PSK s nejméně 100 cykly
+CPU na vzorek (S 60 při 40k, 19 při 125k, 9 při 250k, nejvýš 300 kBd), na stole bez pozdních vzorků. Přijímač C5 bere do 250 kS/s.
+13. 11. 2026: symboly z kodéru aplikace (`tx/tx_s2enc.py`, short rámce) poslané živě a přijaté přijímačem C5 na PC
+(`rx/c5_play.sh`): QPSK 3/4 při 40k, 125k a 250k a 8PSK 2/3 při 125k a 250k dekódováno, služba OK1CDJ, H.264 640×360.
 
 **Maják zabudovaný ve firmwaru** (PC, pro vývoj):
 
@@ -52,9 +60,11 @@ Příkazy na USB konzoli C5 (jeden na řádek):
 | Příkaz | Význam |
 |---|---|
 | `BEACON [amp] [S] [dci dcq]` | maják na kmitočtu `F`: amp = nejvyšší \|I\|, \|Q\| v kódech DAC (výchozí 150), S vzorků na symbol (výchozí 16: 2 MS/s při 125 kBd, 4 MS/s při 250 kBd), dci dcq = korekce úniku nosné; libovolný bajt ho zastaví |
-| `PLAY` | uložená smyčka (spustí se i sama po zapnutí); libovolný bajt ji zastaví |
+| `PLAY` | uložená smyčka, jinak vestavěný maják, jako po zapnutí |
 | `VIDW …`, `INFO` | uložení smyčky, identifikace desky: jako u C3 (*Save as beacon* v aplikaci) |
-| `DC [i q]` | korekce úniku nosné pro uloženou smyčku, uložená ve flash |
+| `QPSKT` / `PSK8T f_MHz baud sps …` | živé vysílání jako u C3 (surové symboly po USB, hlášení zaplnění `B7`); sps si volí C5 |
+| `BDC …` | korekce úniku nosné podle kmitočtu jako u C3: `GET [f]`, `i q`, `SAVE`, `PUT f i q`, `LIST`, `RESET`, `TEST on [f]` / `off` |
+| `DC [i q]` | jediná korekce úniku nosné, použije se tam, kde tabulka `BDC` nemá záznam; uložená ve flash |
 | `F 5715.000` | kmitočet v MHz (2300–5900) |
 | `CW [i q]` / `TONE kHz [amp]` | nosná / jeden tón pro spektrální analyzátor |
 | `SCALE n`, `ANT 1\|0`, `OFF`, `ST` | měřítko DAC (výchozí 15), U.FL / čipová anténa, vypnout, stav |
@@ -64,9 +74,11 @@ Korekci najde `tx/c5_dccal.py` (vysílač vysílá `CW i q`, přijímač měří
 
 ```sh
 third_party/ESP32-DATV-RX/.venv/bin/python tx/c5_dccal.py --beacon      # najde dci dcq a spustí BEACON 150 16 dci dcq
+third_party/ESP32-DATV-RX/.venv/bin/python tx/c5_dccal.py --save        # ... a uloží je pro ten kmitočet (BDC PUT)
 ```
 
-Pro uloženou smyčku pošlete nalezenou korekci příkazem `DC dci dcq` (uloží se do flash). Z telefonu C5 zatím kalibrovat nejde.
+Uložená smyčka, vestavěný maják i živé vysílání berou korekci pro svůj kmitočet z tabulky `BDC`. Z telefonu C5 zatím
+kalibrovat nejde (kalibrace v aplikaci je jen pro C3 a S3 na 13 cm).
 
 **Výstupní výkon nebyl měřen:** vysílač nikdy nebyl připojen ke spektrálnímu analyzátoru kabelem. Přes antény (tinySA
 Ultra s anténou u desky, úrovně jen hrubě orientační, nejde o výkon vysílače): nosná asi −8 dBm na vstupu analyzátoru na
@@ -115,6 +127,8 @@ do 197 kS/s a 400 ksps do 250 kS/s (s firmwarem, který to umí). Hledání sign
 - **Na krátkou vzdálenost horší příjem než na delší:** přebuzení přijímače (pevný zisk, 0 dB v aplikaci = index 30 z 0–89).
   Zatím pomůže snížit zisk; AGC se chystá.
 - Obě C5 po připojení k telefonu občas skončí v ROM bootloaderu (stačí reset).
-- Živé vysílání přes C5 zatím nejde (jen uložený maják) a korekce nosné C5 se nastavuje na PC (`tx/c5_dccal.py`, `DC i q`),
-  ne z telefonu.
+- Korekce nosné C5 se nastavuje na PC (`tx/c5_dccal.py --save`), ne z telefonu.
+- Živé vysílání přes C5 je přijaté zatím jen z PC, z telefonu nezkoušené.
+- Po mnoha bězích bez restartu jednou únik nosné vysílače znemožnil jakékoli dekódování (i uložené smyčky); pomohl restart
+  C5. Když příjem selže při čistém spektru, nastavte korekci `tx/c5_dccal.py --save`.
 - Drift krystalů: aplikace a `rx/c5_play.sh` ho dohledají, při ohřevu vysílače ale může signál ujet z okna.

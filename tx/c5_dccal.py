@@ -4,9 +4,10 @@
 The transmitter holds a constant DAC word (CW i q): its carrier is the leakage plus (i, q), so its power is a quadratic in
 (i, q) with the minimum at the DC trim. The receiver captures 16 ms at 2 Msps (CAP) for each word; the line is found once
 (the two crystals differ by up to ~150 kHz) and then measured within a few kHz of it. Parabolas through three points, in i then
-in q, with the step halved each round. The trims go to the beacon: BEACON amp S dci dcq (--beacon starts it).
+in q, with the step halved each round. The trims go to the beacon: BEACON amp S dci dcq (--beacon starts it); --save keeps
+them in the transmitter's DC table for this frequency (BDC PUT, as the C3's), for its stored loop and live TX.
 
-    third_party/ESP32-DATV-RX/.venv/bin/python tx/c5_dccal.py [--freq 5715] [--beacon] [--amp 150]
+    third_party/ESP32-DATV-RX/.venv/bin/python tx/c5_dccal.py [--freq 5715] [--save] [--beacon] [--amp 150]
 
 Ports: C5_PORT (transmitter) and C5RX_PORT (receiver) from boards.sh, or --tx / --rx.
 """
@@ -96,6 +97,7 @@ def main():
     ap.add_argument("--step", type=float, default=16, help="first step [DAC codes]")
     ap.add_argument("--rounds", type=int, default=4)
     ap.add_argument("--beacon", action="store_true", help="start the beacon with the trims")
+    ap.add_argument("--save", action="store_true", help="store the trims in the DC table for --freq (BDC PUT)")
     ap.add_argument("--amp", type=int, default=150)
     a = ap.parse_args()
 
@@ -131,6 +133,8 @@ def main():
         step = max(step / 2, 2)
     tx.cmd("OFF")
     print(f"DC trim: {i:.1f} {q:.1f}  ->  BEACON {a.amp} 16 {i:.1f} {q:.1f}")
+    if a.save:
+        print("TX", tx.cmd(f"BDC PUT {a.freq:.3f} {i:.3f} {q:.3f}"))
     if a.beacon:
         print("TX", tx.cmd(f"BEACON {a.amp} 16 {i:.1f} {q:.1f}", 0.5))
 

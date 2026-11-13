@@ -28,10 +28,17 @@
  *   PLAY              the loop stored with VIDW (also after power-up, by itself); any byte stops it
  *   VIDW ...          stores a loop in the "video" partition, as the C3 (the app's Save as beacon); INFO answers as the C3
  *   SPIT [dummy]      diagnostics: SPI1 reads of the stored loop (as its feed does them) against the mapped flash
- *   DC [i q]          DC of the stored loop in DAC codes (saved in NVS; tx/c5_dccal.py --save)
+ *   DC [i q]          the single DC correction in DAC codes, used without a BDC table (saved in NVS; tx/c5_dccal.py --save)
+ *   BDC ...           DC correction per frequency, as the C3: [GET [f_MHz] | i q | SAVE | PUT f_MHz i q | LIST | RESET | TEST on [f_MHz] | off]
+ *   QPSKT f_MHz baud sps [amp [secs [ifm [target [dcI dcQ]]]]]   live TX as the C3: raw symbols from USB (4 per byte), B7 fill
+ *                     reports, off after 0.5 s without data; sps, ifm and the C3's IQ arguments are ignored (QPSK: S 16, 2-333 kBd)
+ *   PSK8T ...         the same in 8PSK (a symbol per nibble, S from 8 to 64 for at least P8_MIN_PERIOD cycles per sample)
+ *   PA 0              answered as the C3 (no PA output on the C5-Zero)
  *   BENCH             diagnostics: CPU cycles of a TXDC store, a TXDC store + a DRAM load, rdcycle, a DRAM load (1000 each)
  *   OFF               transmitter off
  *   ST                state
+ * As on the C3, after power-up a stored loop (else the built-in beacon) transmits by itself; a byte from the host stops it, and it
+ * starts again after BEACON_IDLE_US without a command, until a valid command has come (then BDC, VIDW END / ERASE or PLAY start it).
  */
 #include <inttypes.h>
 #include <math.h>
@@ -94,6 +101,8 @@ static bool tx_on;
 static uint32_t txdc_orig;
 static uint32_t txdc_boot;           /* TXDC after the PHY's start, its I/Q cleared: written back after every run */
 static uint32_t tone_w[TONE_MAX];
+static bool host_seen;               /* a valid command came: the beacon stays off (as the C3) */
+static bool beacon_restart;          /* the command wants the beacon (again) at once */
 
 /* ------------------------------------------------------------ USB */
 
@@ -160,8 +169,8 @@ static void tx_chain_on(void) {
     led(LED_TX);
 }
 
-/* Plays one period of tone_w until a byte arrives from the host. */
-static uint32_t __attribute__((noinline)) IRAM_ATTR tone_run(uint32_t n, uint32_t step, uint32_t base) {
+/* Plays one period of tone_w until a byte arrives from the host, or for that many periods (0: no limit). */
+static uint32_t __attribute__((noinline)) IRAM_ATTR tone_run(uint32_t n, uint32_t step, uint32_t base, uint32_t periods) {
     uint32_t late = 0;
     const unsigned s = portSET_INTERRUPT_MASK_FROM_ISR();
     uint32_t t = esp_cpu_get_cycle_count() + step;
@@ -173,7 +182,7 @@ static uint32_t __attribute__((noinline)) IRAM_ATTR tone_run(uint32_t n, uint32_
             if (now - t > late) late = now - t;
             t += step;
         }
-        if (usb_serial_jtag_ll_rxfifo_data_available()) break;
+        if (usb_serial_jtag_ll_rxfifo_data_available() || (periods && !--periods)) break;
     }
     portCLEAR_INTERRUPT_MASK_FROM_ISR(s);
     return late;
@@ -191,11 +200,131 @@ static void tone(int32_t khz, int32_t amp) {
     tx_chain_on();
     const float f = (khz > 0 ? 1.0f : -1.0f) * TONE_RATE / 1000.0f / n;
     say("TONE %.3f MHz %+.3f kHz amp %ld scale %lu: any key stops\r\n", fkhz / 1000.0, f, (long)amp, (unsigned long)scale);
-    const uint32_t late = tone_run(n, CPU_HZ / TONE_RATE, (txdc_orig & ~TXDC_IQ) | TXDC_INJECT);
+    const uint32_t late = tone_run(n, CPU_HZ / TONE_RATE, (txdc_orig & ~TXDC_IQ) | TXDC_INJECT, 0);
     uint8_t c;
     while (usb_serial_jtag_ll_read_rxfifo(&c, 1)) {}
     tx_off();
     say("TONE off, worst lateness %lu cycles (%.1f us)\r\n", (unsigned long)late, late / (CPU_HZ / 1e6));
+}
+
+/* ------------------------------------------------------------ DC correction (BDC, as the C3)
+ * The carrier leakage of the DAC / mixer is a tone in the middle of the signal; it and its correction depend on the frequency, so
+ * "BDC PUT f i q" / "BDC SAVE" keep a table of up to DCT_MAX frequencies (NVS "c5cw"/"dct"), linearly interpolated, the nearest entry
+ * outside it. Without a table: the single value of "DC i q" (NVS "c5cw" dci/dcq, tx/c5_dccal.py), else none. "BDC i q" sets one by
+ * hand for every frequency until BDC SAVE / RESET or a reset. "BDC TEST on [f_MHz]": the leakage alone (dc_test_run). */
+#include "nvs.h"
+
+#define DCT_MAX 16
+#define DCT_TEST_US 120000000LL
+typedef struct { uint32_t fkhz; float i, q; } dct_entry_t;
+static dct_entry_t dct[DCT_MAX];                /* sorted by frequency */
+static uint32_t dct_n;
+static float dc_single[2];                      /* DC i q */
+static bool dc_single_saved;
+static float dc_hand[2];                        /* BDC i q */
+static bool dc_by_hand;
+static bool dc_test;                            /* BDC TEST on */
+static uint32_t dc_test_fkhz;                   /* 0: the beacon's frequency */
+static int64_t dc_test_until;                   /* esp_timer time */
+
+static bool dc_ok(float i, float q) { return fabsf(i) <= 512.0f && fabsf(q) <= 512.0f; }
+
+static void dc_load(void) {
+    nvs_handle_t h;
+    if (nvs_open("c5cw", NVS_READONLY, &h) != ESP_OK) return;
+    uint32_t i = 0, q = 0;
+    if (nvs_get_u32(h, "dci", &i) == ESP_OK && nvs_get_u32(h, "dcq", &q) == ESP_OK) {
+        memcpy(&dc_single[0], &i, 4);
+        memcpy(&dc_single[1], &q, 4);
+        dc_single_saved = dc_ok(dc_single[0], dc_single[1]);
+        if (!dc_single_saved) dc_single[0] = dc_single[1] = 0.0f;
+    }
+    size_t n = sizeof(dct);
+    if (nvs_get_blob(h, "dct", dct, &n) == ESP_OK && n % sizeof(dct_entry_t) == 0) {
+        dct_n = (uint32_t)(n / sizeof(dct_entry_t));
+        for (uint32_t k = 0; k < dct_n; ++k)
+            if (!dc_ok(dct[k].i, dct[k].q) || (k && dct[k].fkhz <= dct[k - 1].fkhz)) dct_n = 0;     /* damaged: ignore it */
+    }
+    nvs_close(h);
+}
+
+static void dc_save(void) {                     /* DC i q */
+    nvs_handle_t h;
+    if (nvs_open("c5cw", NVS_READWRITE, &h) != ESP_OK) return;
+    uint32_t i, q;
+    memcpy(&i, &dc_single[0], 4);
+    memcpy(&q, &dc_single[1], 4);
+    nvs_set_u32(h, "dci", i);
+    nvs_set_u32(h, "dcq", q);
+    nvs_commit(h);
+    nvs_close(h);
+    dc_single_saved = true;
+}
+
+/* The correction for fkhz: by hand, else the table, else the single value. *src: "hand", "table", "saved", "none". */
+static void dc_for(uint32_t f, float *i, float *q, const char **src) {
+    if (dc_by_hand) { *i = dc_hand[0]; *q = dc_hand[1]; *src = "hand"; return; }
+    if (!dct_n) { *i = dc_single[0]; *q = dc_single[1]; *src = dc_single_saved ? "saved" : "none"; return; }
+    *src = "table";
+    uint32_t k = 0;
+    while (k < dct_n && dct[k].fkhz < f) ++k;
+    if (k == 0 || k == dct_n) { const dct_entry_t *e = &dct[k ? k - 1 : 0]; *i = e->i; *q = e->q; return; }
+    const dct_entry_t *a = &dct[k - 1], *b = &dct[k];
+    const float t = (float)(f - a->fkhz) / (float)(b->fkhz - a->fkhz);
+    *i = a->i + t * (b->i - a->i);
+    *q = a->q + t * (b->q - a->q);
+}
+
+static bool dct_store(void) {
+    nvs_handle_t h;
+    if (nvs_open("c5cw", NVS_READWRITE, &h) != ESP_OK) return false;
+    const esp_err_t e = dct_n ? nvs_set_blob(h, "dct", dct, dct_n * sizeof(dct_entry_t)) : nvs_erase_key(h, "dct");
+    const bool ok = (e == ESP_OK || (!dct_n && e == ESP_ERR_NVS_NOT_FOUND)) && nvs_commit(h) == ESP_OK;
+    nvs_close(h);
+    return ok;
+}
+
+/* i q for f into the table (replaces an entry within 50 kHz; the table full: refused). */
+static bool dct_put(uint32_t f, float i, float q) {
+    uint32_t k = 0;
+    while (k < dct_n && dct[k].fkhz + 50u < f) ++k;
+    if (k < dct_n && dct[k].fkhz <= f + 50u) {
+        dct[k].fkhz = f;
+    } else {
+        if (dct_n == DCT_MAX) return false;
+        memmove(&dct[k + 1], &dct[k], (dct_n - k) * sizeof(dct_entry_t));
+        ++dct_n;
+        dct[k].fkhz = f;
+    }
+    dct[k].i = i;
+    dct[k].q = q;
+    return dct_store();
+}
+
+static bool dc_reset(void) {                    /* BDC RESET: the table and the single value gone */
+    dct_n = 0;
+    bool ok = dct_store();
+    nvs_handle_t h;
+    if (nvs_open("c5cw", NVS_READWRITE, &h) == ESP_OK) {
+        esp_err_t e = nvs_erase_key(h, "dci");
+        ok = ok && (e == ESP_OK || e == ESP_ERR_NVS_NOT_FOUND);
+        e = nvs_erase_key(h, "dcq");
+        ok = ok && (e == ESP_OK || e == ESP_ERR_NVS_NOT_FOUND) && nvs_commit(h) == ESP_OK;
+        nvs_close(h);
+    } else {
+        ok = false;
+    }
+    dc_single[0] = dc_single[1] = 0.0f;
+    dc_single_saved = false;
+    dc_by_hand = false;
+    return ok;
+}
+
+static void dc_say(uint32_t f) {
+    float i, q;
+    const char *src;
+    dc_for(f, &i, &q, &src);
+    say("BDC %.3f %.3f (%s) F %lu TEST %u\r\n", (double)i, (double)q, src, (unsigned long)f, (unsigned)dc_test);
 }
 
 /* ------------------------------------------------------------ beacon
@@ -419,10 +548,11 @@ static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop_16f(flash_feed_t
     return b16_body(NULL, 0, T, clk, xb, st, ff, true);
 }
 
-/* dci, dcq: DC added to the I and Q words [DAC codes, as CW i q] against the carrier leakage (tx/c5_dccal.py finds them) */
-static void beacon(int32_t amp, uint32_t S, float dci, float dcq) {
+/* dci, dcq: DC added to the I and Q words [DAC codes, as CW i q] against the carrier leakage (tx/c5_dccal.py finds them).
+ * drain: the bytes that stopped it are thrown away (BEACON typed by hand), else they are the start of the host's next line. */
+static void beacon(int32_t amp, uint32_t S, float dci, float dcq, bool drain) {
 #ifdef C5CW_NO_BEACON
-    (void)amp, (void)S, (void)dci, (void)dcq;
+    (void)amp, (void)S, (void)dci, (void)dcq, (void)drain;
     say("ERR no built-in beacon in this build: store a loop (the app's Save as beacon, VIDW)\r\n");
 }
 #else
@@ -461,7 +591,7 @@ static void beacon(int32_t amp, uint32_t S, float dci, float dcq) {
     else if (g4) beacon_loop_g(ring, BEACON_SYMBOLS, T, S, clk, xb, &st);
     else beacon_loop(ring, BEACON_SYMBOLS, T, S, clk, xb, &st);
     uint8_t c;
-    while (usb_serial_jtag_ll_read_rxfifo(&c, 1)) {}
+    while (drain && usb_serial_jtag_ll_read_rxfifo(&c, 1)) {}
     tx_off();
     free(ring);
     free(T);
@@ -500,7 +630,6 @@ static const video_hdr_t *video;
 static uint32_t video_addr;                                          /* flash address of the partition */
 static esp_partition_mmap_handle_t video_map;
 static bool video_checked;
-static float dc_i, dc_q;                                             /* DC i q */
 
 static uint32_t video_frame_syms(const video_hdr_t *v) {           /* a PLFRAME in QPSK: 360 slots normal, 90 short */
     const uint32_t slots = (v->flags & VIDEO_SHORT) ? 90u : 360u;
@@ -568,8 +697,8 @@ static void spi1_restore(const spi1_saved_t *sv) {                  /* the flash
     d->mosi_dlen.val = sv->mosi;
 }
 
-/* Plays the stored loop until a byte arrives; false if there is none. */
-static bool video_play(void) {
+/* Plays the stored loop until a byte arrives (drain: as beacon()); false if there is none. */
+static bool video_play(bool drain) {
     const video_hdr_t *v = video_find();
     if (!v) return false;
     const uint32_t S = 16u;
@@ -578,6 +707,9 @@ static bool video_play(void) {
     if (v->freq_khz >= FMIN_KHZ && v->freq_khz <= FMAX_KHZ) fkhz = v->freq_khz;
     int32_t *T = malloc(2u * 256u * S * sizeof(int32_t));
     uint32_t *ring = heap_caps_aligned_alloc(4, VIDEO_RING, MALLOC_CAP_INTERNAL);
+    float dc_i, dc_q;
+    const char *dc_src;
+    dc_for(fkhz, &dc_i, &dc_q, &dc_src);
     if (!T || !ring) {
         say("ERR no memory\r\n");
         free(T);
@@ -600,7 +732,7 @@ static bool video_play(void) {
     beacon_loop_16f(&ff, T, clk, ((txdc_orig & ~TXDC_IQ) | TXDC_INJECT) ^ LUT_XOR, &st);
     spi1_restore(&sv);
     uint8_t c;
-    while (usb_serial_jtag_ll_read_rxfifo(&c, 1)) {}
+    while (drain && usb_serial_jtag_ll_read_rxfifo(&c, 1)) {}
     tx_off();
     free(ring);
     free(T);
@@ -726,7 +858,8 @@ static void vidw(const char *a0, const char *a1s, const char *a2s, const char *a
         video_forget();
         const bool ok = video_find() != NULL;
         say("%s VIDW END %08lx\r\n", ok ? "OK" : "ERR", (unsigned long)crc);
-        if (ok) video_play();                                        /* as the C3: the new loop goes on air at once */
+        host_seen = false;                                           /* as the C3: the new loop goes on air at once */
+        beacon_restart = true;
     } else if (a0 && !strcmp(a0, "ERASE")) {
         video_forget();
         if (esp_partition_erase_range(part, 0, 4096) != ESP_OK) {
@@ -734,38 +867,427 @@ static void vidw(const char *a0, const char *a1s, const char *a2s, const char *a
             return;
         }
         say("OK VIDW ERASE\r\n");
+        host_seen = false;                                           /* the built-in beacon, if there is one */
+        beacon_restart = true;
     } else {
         say("ERR VIDW BEGIN bytes crc32hex | DATA offset n crc32hex + n bytes | END | ERASE\r\n");
     }
 }
 
-static void dc_load(void) {
-    nvs_handle_t h;
-    if (nvs_open("c5cw", NVS_READONLY, &h) != ESP_OK) return;
-    uint32_t i = 0, q = 0;
-    if (nvs_get_u32(h, "dci", &i) == ESP_OK && nvs_get_u32(h, "dcq", &q) == ESP_OK) {
-        memcpy(&dc_i, &i, 4);
-        memcpy(&dc_q, &q, 4);
-    }
-    nvs_close(h);
+/* ------------------------------------------------------------ BDC TEST, BDC */
+
+static bool parse_freq(const char *s, uint32_t *khz);
+
+/* The frequency the DC correction is for now: BDC TEST's, else the stored loop's, else F. */
+static uint32_t dc_fkhz(void) {
+    if (dc_test && dc_test_fkhz) return dc_test_fkhz;
+    const video_hdr_t *v = video_find();
+    return v && v->freq_khz >= FMIN_KHZ && v->freq_khz <= FMAX_KHZ ? v->freq_khz : fkhz;
 }
 
-static void dc_save(void) {
-    nvs_handle_t h;
-    if (nvs_open("c5cw", NVS_READWRITE, &h) != ESP_OK) return;
-    uint32_t i, q;
-    memcpy(&i, &dc_i, 4);
-    memcpy(&q, &dc_q, 4);
-    nvs_set_u32(h, "dci", i);
-    nvs_set_u32(h, "dcq", q);
-    nvs_commit(h);
-    nvs_close(h);
+/* BDC TEST: the leakage alone. The DC correction as 16 DAC words at TONE_RATE: the 10-bit fields take whole codes, so the fraction is
+ * spread over them by error feedback (the mean exact to 1/16 code, the rest lines at multiples of 125 kHz, away from the leakage). */
+static void dc_test_words(float dci, float dcq) {
+    float ei = 0.0f, eq = 0.0f;
+    for (uint32_t j = 0; j < 16u; ++j) {
+        const int32_t ri = (int32_t)lroundf(dci + ei), rq = (int32_t)lroundf(dcq + eq);
+        ei += dci - (float)ri;
+        eq += dcq - (float)rq;
+        tone_w[j] = iq10(ri, rq);
+    }
+}
+
+/* A command line read while the test transmits. "BDC i q", "BDC" and "BDC GET" are answered here: a new correction only rewrites the
+ * words, the PHY stays as it is (starting the transmitter again calibrates it afresh, which moves the leakage by tenths of a code).
+ * Any other line goes to dc_pending for the main loop. Returns true to go on transmitting. */
+static char dc_pending[128];
+
+static bool dc_test_line(void) {
+    char line[128];
+    size_t n = 0;
+    const int64_t t0 = esp_timer_get_time();
+    for (;;) {
+        uint8_t ch;
+        if (usb_serial_jtag_ll_read_rxfifo(&ch, 1)) {
+            if (ch == '\r') continue;
+            if (ch == '\n') break;
+            if (n < sizeof(line) - 1) line[n++] = (char)ch;
+        } else if (esp_timer_get_time() - t0 > 100000) {             /* no end of line within 0.1 s */
+            break;
+        }
+    }
+    line[n] = 0;
+    if (!n) return true;
+    const char *arg = line + 3;
+    while (*arg == ' ') ++arg;
+    if (!strncmp(line, "BDC", 3) && (line[3] == 0 || line[3] == ' ')) {
+        char *e1, *e2;
+        const float i = strtof(arg, &e1), q = strtof(e1, &e2);
+        if (!*arg || !strcmp(arg, "GET")) {
+            dc_test_until = esp_timer_get_time() + DCT_TEST_US;
+            dc_say(dc_fkhz());
+            return true;
+        }
+        if (e1 != arg && e2 != e1 && !*e2 && dc_ok(i, q)) {
+            dc_hand[0] = i;
+            dc_hand[1] = q;
+            dc_by_hand = true;
+            dc_test_words(i, q);
+            dc_test_until = esp_timer_get_time() + DCT_TEST_US;
+            dc_say(dc_fkhz());
+            return true;
+        }
+    }
+    strcpy(dc_pending, line);
+    return false;
+}
+
+/* Returns 3: a line for the main loop (in dc_pending) or bytes that were no line, 5: DCT_TEST_US without a BDC command. */
+static int dc_test_run(void) {
+    float i, q;
+    const char *src;
+    fkhz = dc_fkhz();
+    dc_for(fkhz, &i, &q, &src);
+    dc_test_words(i, q);
+    tx_chain_on();
+    say("BDC TEST %.3f MHz dc %.3f %.3f (%s): the leakage alone\r\n", fkhz / 1000.0, (double)i, (double)q, src);
+    const uint32_t step = CPU_HZ / TONE_RATE, base = (txdc_orig & ~TXDC_IQ) | TXDC_INJECT;
+    int why = 5;
+    for (;;) {
+        const int64_t left = dc_test_until - esp_timer_get_time();
+        if (left <= 0) break;
+        const uint64_t periods = (uint64_t)left * (TONE_RATE / 16u) / 1000000u + 1u;
+        tone_run(16, step, base, (uint32_t)periods);
+        if (!usb_serial_jtag_ll_rxfifo_data_available()) continue;   /* the time is up (checked above) */
+        if (!dc_test_line()) {
+            why = 3;
+            break;
+        }
+    }
+    tx_off();
+    return why;
+}
+
+/* BDC [GET [f_MHz] | i q | SAVE | PUT f_MHz i q | LIST | RESET | TEST on [f_MHz] | off], answered as the C3 (C3Link.dc, dcTable,
+ * dcPut, CalibrationActivity). A beacon command: the beacon keeps (or starts) running. */
+static void bdc(const char *arg) {
+    host_seen = false;
+    beacon_restart = true;
+    while (*arg == ' ') ++arg;
+    if (dc_test) dc_test_until = esp_timer_get_time() + DCT_TEST_US;    /* every BDC command keeps the test alive */
+    if (!strncmp(arg, "GET", 3) && (arg[3] == 0 || arg[3] == ' ')) {
+        const char *f = arg + 3;
+        while (*f == ' ') ++f;
+        char *e;
+        const double mhz = *f ? strtod(f, &e) : 0.0;
+        if (*f && (e == f || *e || mhz < FMIN_KHZ / 1000.0 || mhz > FMAX_KHZ / 1000.0)) {
+            say("ERR BDC GET [f_MHz %lu..%lu]\r\n", (unsigned long)(FMIN_KHZ / 1000), (unsigned long)(FMAX_KHZ / 1000));
+            return;
+        }
+        dc_say(*f ? (uint32_t)llround(mhz * 1000.0) : dc_fkhz());
+        return;
+    }
+    if (!strcmp(arg, "LIST")) {
+        say("BDCT %lu\r\n", (unsigned long)dct_n);
+        for (uint32_t k = 0; k < dct_n; ++k)
+            say("BDCT %lu %.3f %.3f\r\n", (unsigned long)dct[k].fkhz, (double)dct[k].i, (double)dct[k].q);
+        return;
+    }
+    if (!strncmp(arg, "TEST", 4) && (arg[4] == 0 || arg[4] == ' ')) {
+        const char *t = arg + 4;
+        while (*t == ' ') ++t;
+        if (!strcmp(t, "off")) {
+            dc_test = false;
+        } else if (!strncmp(t, "on", 2) && (t[2] == 0 || t[2] == ' ')) {
+            const char *f = t + 2;
+            while (*f == ' ') ++f;
+            char *e;
+            const double mhz = *f ? strtod(f, &e) : 0.0;
+            if (*f && (e == f || *e || mhz < FMIN_KHZ / 1000.0 || mhz > FMAX_KHZ / 1000.0)) {
+                say("ERR BDC TEST on [f_MHz %lu..%lu] | off\r\n", (unsigned long)(FMIN_KHZ / 1000), (unsigned long)(FMAX_KHZ / 1000));
+                return;
+            }
+            dc_test = true;
+            dc_test_fkhz = *f ? (uint32_t)llround(mhz * 1000.0) : 0;
+            dc_test_until = esp_timer_get_time() + DCT_TEST_US;
+        } else {
+            say("ERR BDC TEST on [f_MHz] | off\r\n");
+            return;
+        }
+    } else if (!strncmp(arg, "PUT ", 4)) {                       /* an entry of the table as it is, without transmitting */
+        char *e0, *e1, *e2;
+        const double mhz = strtod(arg + 4, &e0);
+        const float i = strtof(e0, &e1), q = strtof(e1, &e2);
+        if (e0 == arg + 4 || e1 == e0 || e2 == e1 || *e2 || mhz < FMIN_KHZ / 1000.0 || mhz > FMAX_KHZ / 1000.0 || !dc_ok(i, q)) {
+            say("ERR BDC PUT f_MHz i q\r\n");
+            return;
+        }
+        const uint32_t f = (uint32_t)llround(mhz * 1000.0);
+        if (!dct_put(f, i, q)) say("ERR BDC PUT%s\r\n", dct_n == DCT_MAX ? " (table full: BDC RESET)" : "");
+        dc_say(f);
+        return;
+    } else if (!strcmp(arg, "SAVE")) {
+        float i, q;
+        const char *src;
+        const uint32_t f = dc_fkhz();
+        dc_for(f, &i, &q, &src);
+        if (dct_put(f, i, q)) dc_by_hand = false;
+        else say("ERR BDC SAVE%s\r\n", dct_n == DCT_MAX ? " (table full: BDC RESET)" : "");
+    } else if (!strcmp(arg, "RESET")) {
+        if (!dc_reset()) say("ERR BDC RESET\r\n");
+    } else if (*arg) {
+        char *e1, *e2;
+        const float i = strtof(arg, &e1), q = strtof(e1, &e2);
+        if (e1 == arg || e2 == e1 || *e2 || !dc_ok(i, q)) {
+            say("ERR BDC i q (DAC codes, -512..512) | GET [f_MHz] | SAVE | PUT f_MHz i q | LIST | RESET | TEST on [f_MHz] | off\r\n");
+            return;
+        }
+        dc_hand[0] = i;
+        dc_hand[1] = q;
+        dc_by_hand = true;
+    }
+    dc_say(dc_fkhz());
+}
+
+/* ------------------------------------------------------------ live TX (QPSKT, PSK8T), as the C3's streaming mode
+ * The host (the app's Transmitter, ESP32-DATV-SA host/tx_dvbs.py) encodes DVB-S2 and sends raw symbols: QPSK 4 per byte, the first in
+ * the low bits (bit 0 = I > 0, bit 1 = Q > 0); 8PSK the phase index k (point e^(j pi k / 4)) in a nibble, the low one first. No frames
+ * and no parser. The loop reads at most one byte per symbol into a LIVE_RING byte ring, only while it has 64 bytes free (USB holds
+ * the host back meanwhile); an empty ring sends symbol 0 and counts an underrun. Every 2048 symbols it sends the 4 bytes
+ * B7 fill_lo fill_hi underruns (fill in pairs of bytes; underruns: 8-symbol blocks sent from an empty ring, up to 255), one byte per
+ * symbol, then the flush. It stops after
+ * 0.5 s without a new byte (3 s before the first one) or after secs; the app's A5 FF at the end is just data. */
+#define LIVE_RING 16384u
+#define P8_MIN_PERIOD 100u              /* cycles per sample of the 8PSK loop (4 loads, the clock, the symbol; 75 as on the C3 left late samples) */
+
+typedef struct {
+    uint32_t qw, qr, under, late_max, late, end_max, symbols;
+} live_stats_t;
+
+/* QPSK, S 16: b16_body's slots (two 4-symbol tables, lut_build_g) with the ring from USB instead of the loop's symbols. */
+static uint32_t __attribute__((noinline)) IRAM_ATTR live_qpsk(uint8_t *qb, const int32_t *T, sample_clock_t clk, uint32_t xb,
+                                                              uint32_t max_blk, live_stats_t *st) {
+    const uint32_t step = clk.period / 16u;                   /* the symbol's spare cycles go to its last sample */
+    const int32_t *const T1 = T + 256u * 16u;
+    uint32_t C = 0, phase = 0, late_max = 0, late = 0, end_max = 0, n = 0, under = 0, blk = 0;
+    uint32_t qw = 0, qr = 0, qs = 0, qw_seen = 0, b = 0, sym = 0, ok = 0, have = 0, t1 = 0, brk = 0, repw = 0, repn = 0;
+    const int32_t *p0 = T, *p1 = T1, *np0 = T, *np1 = T1;
+    const unsigned irq = portSET_INTERRUPT_MASK_FROM_ISR();
+    uint32_t t = esp_cpu_get_cycle_count() + 2000u, t_rx = t;
+    for (;;) {
+        uint32_t tj = t;
+        B16_SLOT(0, {
+            const uint32_t c = esp_cpu_get_cycle_count() - t;
+            if (c > late_max) late_max = c;
+            if (c >= step) ++late;
+        });
+        B16_SLOT(1, have = USB_SERIAL_JTAG.ep1_conf.serial_out_ep_data_avail);
+        B16_SLOT(2, { ok = qw != qr; b = qb[qr & (LIVE_RING - 1u)]; });
+        B16_SLOT(3, sym = ok ? b >> (qs * 2u) & 3u : 0u);
+        B16_SLOT(4, { qs += ok; qr += qs >> 2; qs &= 3u; under += !ok && !(n & 7u); });   /* per 8 symbols, as the C3 */
+        B16_SLOT(5, C = C << 2 | sym);
+        B16_SLOT(6, np0 = T + (C & 255u) * 16u);
+        B16_SLOT(7, np1 = T1 + (C >> 8 & 255u) * 16u);
+        B16_SLOT(8, if (have && qw - qr < LIVE_RING - 64u) {     /* ring full: USB holds the host back */
+            qb[qw & (LIVE_RING - 1u)] = (uint8_t)USB_SERIAL_JTAG.ep1.val;
+            ++qw;
+        });
+        B16_SLOT(9, t1 = t + sample_clock_next(clk, &phase));
+        B16_SLOT(10, if (!(++n & 255u)) {
+            const uint32_t c = esp_cpu_get_cycle_count();
+            if (qw != qw_seen) { qw_seen = qw; t_rx = c; }
+            else if (c - t_rx > (qw ? CPU_HZ / 2u : 3u * CPU_HZ)) brk = 1;
+            if (++blk >= max_blk) brk = 1;
+        });
+        B16_SLOT(11, if (!(n & 2047u) && USB_SERIAL_JTAG.ep1_conf.serial_in_ep_data_free) {
+            const uint32_t fill = (qw - qr) >> 1;
+            repw = 0xB7u | (fill & 255u) << 8 | (fill >> 8 & 255u) << 16 | (under > 255u ? 255u : under) << 24;
+            repn = 5u;
+        });
+        B16_SLOT(12, if (repn > 1u) {
+            USB_SERIAL_JTAG.ep1.val = repw & 255u;            /* the whole register (a bit-field store reads it first) */
+            repw >>= 8;
+            --repn;
+        });
+        B16_SLOT(13, if (repn == 1u) {
+            usb_serial_jtag_ll_txfifo_flush();
+            repn = 0;
+        });
+        B16_SLOT(14, );
+        B16_SLOT(15, {
+            const uint32_t c = esp_cpu_get_cycle_count() - tj;
+            if (c > end_max) end_max = c;
+        });
+        if (brk) break;
+        t = t1;
+        p0 = np0;
+        p1 = np1;
+    }
+    portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
+    *st = (live_stats_t){qw, qr, under, late_max, late, end_max, n};
+    return n;
+}
+
+/* 8PSK: the C3's narrowband loop (tx_p8_c) - lut_build_p8 tables (four groups of two symbols, 4 loads per sample, the row pointers
+ * 64 words further per sample), a deadline per sample from the sample clock; symbol work in slots 0-2, USB in 3, 5 and 7. */
+static uint32_t __attribute__((noinline)) IRAM_ATTR live_p8(uint8_t *qb, const int32_t *T, uint32_t S, sample_clock_t clk, uint32_t xb,
+                                                            uint32_t max_blk, live_stats_t *st) {
+    const uint32_t gs = 64u * S;                              /* words from one group's tables to the next */
+    const int32_t *r0 = T, *r1 = T + gs, *r2 = T + 2u * gs, *r3 = T + 3u * gs, *n0 = r0, *n1 = r1, *n2 = r2, *n3 = r3;
+    uint32_t C = 0, qw = 0, qr = 0, qh = 0, under = 0, late = 0, late_max = 0, n = 0, qw_seen = 0, phase = 0, blk = 0;
+    uint32_t repw = 0, repn = 0, brk = 0;
+    bool have = false;
+    uint32_t word = ((uint32_t)*r0 + (uint32_t)*r1 + (uint32_t)*r2 + (uint32_t)*r3) ^ xb;
+    const unsigned irq = portSET_INTERRUPT_MASK_FROM_ISR();
+    uint32_t tn = esp_cpu_get_cycle_count() + 20000u, t_rx = tn;
+    for (;;) {
+        const bool chk = (n & 255u) == 255u, rep = (n & 2047u) == 2047u;
+        for (uint32_t j = 0; j < S; ++j) {
+            uint32_t now;
+            while ((int32_t)((now = esp_cpu_get_cycle_count()) - tn) < 0) {}
+            REG_WRITE(TXDC_REG, word);
+            now -= tn;
+            if (now > late_max) late_max = now;
+            if (now >= clk.period) ++late;
+            tn += sample_clock_next(clk, &phase);
+            if (j == 0) {                                     /* the symbol that the next one's history needs */
+                uint32_t sym = 0;
+                if (qw != qr) {
+                    sym = qb[qr & (LIVE_RING - 1u)] >> (qh * 4u) & 7u;
+                    qh ^= 1u;
+                    qr += !qh;
+                } else {
+                    under += !(n & 7u);                       /* per 8 symbols, as the C3's QPSK */
+                }
+                C = (C << 3 | sym) & 0xFFFFFFu;
+            } else if (j == 1) {
+                n0 = T + (C & 63u);
+                n1 = T + gs + (C >> 6 & 63u);
+            } else if (j == 2) {
+                n2 = T + 2u * gs + (C >> 12 & 63u);
+                n3 = T + 3u * gs + (C >> 18 & 63u);
+            } else if (j == 3) {
+                have = USB_SERIAL_JTAG.ep1_conf.serial_out_ep_data_avail;   /* the USB registers are slow: look in one slot, read in another */
+            } else if (j == 4) {
+                if (chk) {
+                    const uint32_t c = esp_cpu_get_cycle_count();
+                    if (qw != qw_seen) { qw_seen = qw; t_rx = c; }
+                    else if (c - t_rx > (qw ? CPU_HZ / 2u : 3u * CPU_HZ)) brk = 1;
+                    if (++blk >= max_blk) brk = 1;
+                }
+                if (rep && USB_SERIAL_JTAG.ep1_conf.serial_in_ep_data_free) {
+                    const uint32_t fill = (qw - qr) >> 1;
+                    repw = 0xB7u | (fill & 255u) << 8 | (fill >> 8 & 255u) << 16 | (under > 255u ? 255u : under) << 24;
+                    repn = 5u;
+                }
+            } else if (j == 5) {
+                if (have && qw - qr < LIVE_RING - 64u) {      /* ring full: USB holds the host back */
+                    qb[qw & (LIVE_RING - 1u)] = (uint8_t)USB_SERIAL_JTAG.ep1.val;
+                    ++qw;
+                }
+            } else if (j == 7) {                              /* the report, a byte per symbol, then the flush */
+                if (repn > 1u) {
+                    USB_SERIAL_JTAG.ep1.val = repw & 255u;
+                    repw >>= 8;
+                    --repn;
+                } else if (repn == 1u) {
+                    usb_serial_jtag_ll_txfifo_flush();
+                    repn = 0;
+                }
+            }
+            if (j + 1u < S) { r0 += 64; r1 += 64; r2 += 64; r3 += 64; }
+            else { r0 = n0; r1 = n1; r2 = n2; r3 = n3; }
+            word = ((uint32_t)*r0 + (uint32_t)*r1 + (uint32_t)*r2 + (uint32_t)*r3) ^ xb;
+        }
+        ++n;
+        if (brk) break;
+    }
+    portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
+    *st = (live_stats_t){qw, qr, under, late_max, late, 0, n};
+    return n;
+}
+
+/* QPSKT / PSK8T f_MHz baud sps [amp [secs [ifm [target [dcI dcQ [g [phi]]]]]]] as the C3 takes them: dcI dcQ in 1/16 code (without
+ * them the BDC value for f), amp in the C3's DAC codes (300 = the app's default, here x 150 / 300 as a stored loop); sps, ifm, g, phi
+ * are ignored, target 0 (the C3's own PRBS) is refused. Answers "OK QPSKT ..." for both (the app waits for that), "TX END ..." at the end. */
+static void tx_live(const char *args, bool psk8) {
+    char fs[32];
+    uint32_t fk = 0;
+    long baud = 0, sps = 0, amp = 300, secs = 1800, ifm = 0, tgt = 1, dc4i = 0, dc4q = 0;
+    const int na = sscanf(args, "%31s %ld %ld %ld %ld %ld %ld %ld %ld", fs, &baud, &sps, &amp, &secs, &ifm, &tgt, &dc4i, &dc4q);
+    const char *mod = psk8 ? "PSK8T" : "QPSKT";
+    if (na < 3 || !parse_freq(fs, &fk) || baud < 2000 || baud > (long)VIDEO_BAUD_MAX || amp < 1 || amp > 480 || secs < 1 || secs > 86400 || tgt < 0) {
+        say("ERR %s f_MHz baud(2000..%lu) sps [amp 1..480 [seconds 1..86400 [ifm [target > 0 [dcI dcQ in 1/16 code]]]]]\r\n", mod,
+            (unsigned long)VIDEO_BAUD_MAX);
+        return;
+    }
+    if (tgt == 0) {
+        say("ERR %s needs the USB stream (target > 0): the ESP32-C5 has no PRBS of its own\r\n", mod);
+        return;
+    }
+    const double half_bw = baud * 1.35 / 2.0;
+    if (fk * 1000.0 - half_bw < FMIN_KHZ * 1000.0 || fk * 1000.0 + half_bw > FMAX_KHZ * 1000.0) {
+        say("ERR %s the signal must lie in %lu..%lu MHz\r\n", mod, (unsigned long)(FMIN_KHZ / 1000), (unsigned long)(FMAX_KHZ / 1000));
+        return;
+    }
+    uint32_t S = 16u;
+    if (psk8) {
+        S = CPU_HZ / ((uint32_t)baud * P8_MIN_PERIOD);
+        if (S > 64u) S = 64u;
+        if (S < 8u) {
+            say("ERR PSK8T at most %lu Bd (8 samples per symbol of %lu cycles)\r\n", (unsigned long)(CPU_HZ / (8u * P8_MIN_PERIOD)),
+                (unsigned long)P8_MIN_PERIOD);
+            return;
+        }
+    }
+    float dci = dc4i / 16.0f, dcq = dc4q / 16.0f;
+    if (na < 9) {
+        const char *src;
+        dc_for(fk, &dci, &dcq, &src);
+    }
+    int32_t a = (int32_t)(amp * 150 / 300);
+    a = a < 1 ? 1 : a;
+    uint8_t *ring = malloc(LIVE_RING);
+    int32_t *T = malloc(psk8 ? lutt8_bytes(S) : 2u * 256u * 16u * sizeof(int32_t));
+    float *hb = psk8 ? malloc(8u * S * sizeof(float)) : NULL;
+    if (!ring || !T || (psk8 && !hb)) {
+        say("ERR out of memory\r\n");
+        free(ring);
+        free(T);
+        free(hb);
+        return;
+    }
+    if (psk8) lut_build_p8(T, S, 0, 0.35f, (float)a, dci, dcq, 1.0f, 0.0f, hb);
+    else lut_build_g(T, 16u, 0, 0.35f, (float)a, dci, dcq, 1.0f, 0.0f, 2u);
+    free(hb);
+    const sample_clock_t clk = sample_clock_init(CPU_HZ, psk8 ? (uint32_t)baud * S : (uint32_t)baud);
+    const uint32_t max_blk = (uint32_t)((double)secs * baud / 256.0) + 1u;
+    fkhz = fk;
+    tx_chain_on();
+    uint8_t c;
+    while (usb_serial_jtag_ll_read_rxfifo(&c, 1)) {}
+    say("OK QPSKT LO %.0f BAUD %.3f OUT %.0f AMP %ld SPS %lu PERIOD %lu MOD %s DC %.2f %.2f\r\n", fk * 1000.0, (double)baud,
+        (double)baud * S, (long)a, (unsigned long)S, (unsigned long)(psk8 ? clk.period : clk.period / 16u), psk8 ? "8PSK" : "QPSK",
+        (double)dci, (double)dcq);
+    live_stats_t st;
+    const uint32_t xb = ((txdc_orig & ~TXDC_IQ) | TXDC_INJECT) ^ LUT_XOR;
+    if (psk8) live_p8(ring, T, S, clk, xb, max_blk, &st);
+    else live_qpsk(ring, T, clk, xb, max_blk, &st);
+    tx_off();
+    free(T);
+    free(ring);
+    vTaskDelay(pdMS_TO_TICKS(30));
+    while (usb_serial_jtag_ll_read_rxfifo(&c, 1)) {}
+    say("\r\nTX END symbols=%lu bytes_in=%lu underruns=%lu late_slots=%lu worst=%lu cycles%s buffer=%lu pairs (host silent or time over)\r\n",
+        (unsigned long)st.symbols, (unsigned long)st.qw, (unsigned long)st.under, (unsigned long)st.late, (unsigned long)st.late_max,
+        psk8 ? "" : " (symbol start)", (unsigned long)((st.qw - st.qr) / 2u));
+    if (!psk8) say("  last sample of a symbol: worst %lu cycles after its deadline\r\n", (unsigned long)st.end_max);
 }
 
 /* INFO as the C3 answers it (C3Link.info: the ESP32DATV line, FW, BEACON, VIDW); C5 marks this transmitter */
 static void info(void) {
     say("ESP32DATV 1 C5\r\n");
-    say("FW %s c5%s\r\n", esp_app_get_description()->version, BEACON_SYMBOLS ? "" : " no-builtin-beacon");
+    say("FW %s c5 live%s\r\n", esp_app_get_description()->version, BEACON_SYMBOLS ? "" : " no-builtin-beacon");   /* live: QPSKT / PSK8T */
     if (BEACON_SYMBOLS) say("BEACON %lu Bd QPSK %s, %.3f MHz (built-in, BEACON)\r\n", (unsigned long)BEACON_BAUD, BEACON_FEC, BEACON_FREQ_KHZ / 1000.0);
     else say("BEACON none (no built-in beacon)\r\n");          /* the C3 always has this line; C3Link.info waits for it */
     const video_hdr_t *v = video_find();
@@ -829,6 +1351,16 @@ static void state(void) {
 }
 
 static void handle(char *line) {
+    const bool seen = host_seen;
+    host_seen = true;                                /* a valid command: the host has taken over */
+    if (!strncmp(line, "QPSKT ", 6) || !strncmp(line, "PSK8T ", 6)) {
+        tx_live(line + 6, line[0] == 'P');
+        return;
+    }
+    if (!strncmp(line, "BDC", 3) && (line[3] == 0 || line[3] == ' ')) {
+        bdc(line + 3);
+        return;
+    }
     char *cmd = strtok(line, " "), *a1 = strtok(NULL, " "), *a2 = strtok(NULL, " "), *a3 = strtok(NULL, " "), *a4 = strtok(NULL, " ");
     if (!cmd) return;
     for (char *p = cmd; *p; ++p)
@@ -893,10 +1425,18 @@ static void handle(char *line) {
         esp_phy_rftest_init();
         say("RFT done\r\n");
     } else if (!strcmp(cmd, "BEACON")) {
-        beacon(a1 ? atoi(a1) : 150, a2 ? (uint32_t)atoi(a2) : 16u, a3 ? strtof(a3, NULL) : 0.0f, a4 ? strtof(a4, NULL) : 0.0f);
+        float i, q;
+        const char *src;
+        dc_for(fkhz, &i, &q, &src);
+        beacon(a1 ? atoi(a1) : 150, a2 ? (uint32_t)atoi(a2) : 16u, a3 ? strtof(a3, NULL) : i, a4 ? strtof(a4, NULL) : q, true);
         return;
-    } else if (!strcmp(cmd, "PLAY")) {
-        if (!video_play()) say("ERR no stored loop (VIDW)\r\n");
+    } else if (!strcmp(cmd, "PLAY")) {               /* the stored loop (else the built-in beacon) as after power-up */
+        if (!video_find() && !BEACON_SYMBOLS) {
+            say("ERR no stored loop (VIDW)\r\n");
+            return;
+        }
+        host_seen = false;
+        beacon_restart = true;
         return;
     } else if (!strcmp(cmd, "LED")) {
         led_level = a1 ? (uint32_t)atoi(a1) : 12u;
@@ -915,17 +1455,28 @@ static void handle(char *line) {
         return;
     } else if (!strcmp(cmd, "DC")) {
         if (a1 && a2) {
-            dc_i = strtof(a1, NULL);
-            dc_q = strtof(a2, NULL);
+            const float i = strtof(a1, NULL), q = strtof(a2, NULL);
+            if (!dc_ok(i, q)) {
+                say("ERR DC i q (DAC codes, -512..512)\r\n");
+                return;
+            }
+            dc_single[0] = i;
+            dc_single[1] = q;
             dc_save();
         }
-        say("DC %.2f %.2f (stored loop; saved)\r\n", (double)dc_i, (double)dc_q);
+        say("DC %.2f %.2f (%s; used where there is no BDC table)\r\n", (double)dc_single[0], (double)dc_single[1],
+            dc_single_saved ? "saved" : "none");
         return;
     } else if (!strcmp(cmd, "QPSKT") || !strcmp(cmd, "PSK8T") || !strcmp(cmd, "A16T") || !strcmp(cmd, "A32T")) {
-        say("ERR live TX is not supported on the ESP32-C5 yet: store a loop (Save as beacon)\r\n");
+        say("ERR %s: the ESP32-C5 takes QPSKT f_MHz baud sps ... and PSK8T (no 16APSK / 32APSK)\r\n", cmd);
         return;
-    } else if (!strcmp(cmd, "BDC") || !strcmp(cmd, "PA") || !strcmp(cmd, "HEAP")) {
-        say("ERR %s: not on the ESP32-C5 (DC i q)\r\n", cmd);
+    } else if (!strcmp(cmd, "PA")) {                 /* the app switches the C3's PA off before a transmission */
+        if (a1 && !strcmp(a1, "0")) say("OK PA 0 GPIO none\r\n");
+        else say("ERR PA: no PA output on the ESP32-C5\r\n");
+        return;
+    } else if (!strcmp(cmd, "HEAP")) {
+        say("HEAP free %u largest %u\r\n", (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+            (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         return;
     } else if (!strcmp(cmd, "BENCH")) {
         bench();
@@ -933,10 +1484,28 @@ static void handle(char *line) {
     } else if (!strcmp(cmd, "OFF")) {
         tx_off();
     } else if (strcmp(cmd, "ST")) {
-        say("ERR commands: F CW TONE BEACON PLAY VIDW DC INFO SCALE BO ANT VT RFT OFF ST\r\n");
+        host_seen = seen;                            /* e.g. a modem probe: does not stop the beacon for good */
+        say("ERR commands: F CW TONE BEACON PLAY VIDW DC BDC QPSKT PSK8T INFO SCALE BO ANT VT RFT OFF ST\r\n");
         return;
     }
     state();
+}
+
+/* The stored loop, else the built-in beacon at its frequency, until a byte from the host: 3; 0 if there is nothing to transmit. */
+#define BEACON_IDLE_US 5000000
+static int beacon_auto(void) {
+    if (video_play(false)) return 3;
+#ifndef C5CW_NO_BEACON
+    if (BEACON_SYMBOLS) {
+        float i, q;
+        const char *src;
+        fkhz = BEACON_FREQ_KHZ >= FMIN_KHZ && BEACON_FREQ_KHZ <= FMAX_KHZ ? BEACON_FREQ_KHZ : fkhz;
+        dc_for(fkhz, &i, &q, &src);
+        beacon(150, 16u, i, q, false);
+        return 3;
+    }
+#endif
+    return 0;
 }
 
 void app_main(void) {
@@ -966,13 +1535,37 @@ void app_main(void) {
     say("c5cw ready, TX off\r\n");
     state();
     dc_load();
-    video_play();                                /* a stored loop starts by itself (any byte stops it) */
 
-    char line[64];
+    char line[128];
     size_t used = 0;
+    int64_t resume_at = 0;                       /* the beacon may (re)start from this time on */
+    bool failed = false;                         /* nothing to transmit: wait for a command */
     for (;;) {
+        if (!host_seen && !failed && esp_timer_get_time() >= resume_at) {
+            const int why = dc_test ? dc_test_run() : beacon_auto();
+            if (why == 3) {                      /* the host: it gets BEACON_IDLE_US to send a command */
+                used = 0;
+                resume_at = esp_timer_get_time() + BEACON_IDLE_US;
+                if (dc_pending[0]) {             /* a line BDC TEST read already */
+                    handle(dc_pending);
+                    dc_pending[0] = 0;
+                    if (beacon_restart) {
+                        beacon_restart = false;
+                        resume_at = 0;
+                    }
+                }
+            } else if (why == 5) {               /* BDC TEST forgotten: off, as after INFO, until a command or a reset */
+                dc_test = false;
+                host_seen = true;
+                say("BDC TEST timeout: TX off\r\n");
+            } else {
+                failed = true;
+            }
+            continue;
+        }
         uint8_t c;
         if (usb_serial_jtag_ll_read_rxfifo(&c, 1)) {
+            resume_at = esp_timer_get_time() + BEACON_IDLE_US;
             if (c == '\r') continue;
             if (c != '\n') {
                 if (used < sizeof(line) - 1) line[used++] = (char)c;
@@ -981,6 +1574,11 @@ void app_main(void) {
             line[used] = 0;
             used = 0;
             if (line[0]) handle(line);
+            if (beacon_restart) {                /* BDC, VIDW END, PLAY: the beacon again, now */
+                beacon_restart = false;
+                failed = false;
+                resume_at = 0;
+            }
             continue;
         }
         vTaskDelay(1);

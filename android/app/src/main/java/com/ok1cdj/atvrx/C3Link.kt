@@ -91,8 +91,10 @@ class C3Link(private val usb: UsbCdc) : AutoCloseable {
         }
     }
 
-    /** after info(): the transmitter is the ESP32-C5 (tx/c5cw: "ESP32DATV 1 C5"; a stored beacon only, no live TX yet) */
+    /** after info(): the transmitter is the ESP32-C5 (tx/c5cw: "ESP32DATV 1 C5") */
     @Volatile var c5 = false; private set
+    /** after info(): the C5's firmware takes QPSKT / PSK8T (its FW line has "live"; older ones only play a stored loop) */
+    val c5Live get() = c5 && fw?.trim()?.split(' ')?.contains("live") == true
     /** after info(): the firmware's VIDW line ("VIDW 1 VIDEO ..."; null: no VIDW command) and FW line */
     @Volatile var vidw: String? = null; private set
     @Volatile var fw: String? = null; private set

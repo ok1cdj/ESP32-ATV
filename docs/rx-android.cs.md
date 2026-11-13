@@ -7,7 +7,7 @@ USB-OTG, **telefon nebo tablet s Androidem** signál demoduluje (leandvb), dekó
 spolu s MER, konstelací a údaji o streamu. Protějškem je samostatný maják s ESP32-C3
 ([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)) – a stejná aplikace také **vysílá**: s XIAO ESP32-C3 na
 USB-OTG posílá živě testkartu, obraz z kamery nebo obrázek či video z telefonu jako DVB-S2 (přepínač **RX | TX** nahoře).
-Na 6 cm místo S3 a C3 slouží dvě desky **ESP32-C5**: přijímač pro tutéž aplikaci a uložený maják (kapitola 6).
+Na 6 cm místo S3 a C3 slouží dvě desky **ESP32-C5**: přijímač pro tutéž aplikaci a vysílač (uložený maják i živé vysílání, kapitola 6).
 
 > ⚠ **Vysílá se v radioamatérském pásmu 13 cm (2,3–2,45 GHz), s ESP32-C5 na 6 cm (5,65–5,85 GHz). K vysílání je nutné platné oprávnění (koncese)
 > radioamatéra.** Vysílej jen se svou značkou, na kmitočtech a s výkonem, které tvé oprávnění a národní kmitočtový
@@ -214,16 +214,17 @@ mezitím neodpojovat (aplikace ho neresetuje, kalibrace tedy platí, dokud C3 ne
 ![6 cm: předvolby TX pro C5 a příjem majáku z C5 na 5715 MHz](img/atvrx-6cm.png)
 
 **Waveshare ESP32-C5-Zero** (jediný ESP32 s 5 GHz) pracuje na **5715.000 MHz** bez dalšího RF hardwaru: jeden jako
-přijímač pro tuto aplikaci, druhý jako samostatný maják. I zde je k vysílání nutná koncese. Podrobnosti a měření:
+přijímač pro tuto aplikaci, druhý jako vysílač (maják i živé vysílání). I zde je k vysílání nutná koncese. Podrobnosti a měření:
 [6 cm s ESP32-C5](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/6cm-c5.cs.md).
 
 1. **Firmware:** připoj C5 přes OTG, menu ⋮ → **Firmware** → *Write firmware…*; aplikace se zeptá *6 cm receiver*, nebo
-   *6 cm transmitter (stored beacon only)*. Nebo [webový flasher](flasher/) (tlačítko pro každý).
+   *6 cm transmitter*. Nebo [webový flasher](flasher/) (tlačítko pro každý).
 2. **Maják:** vysílací C5 na OTG, přepni na **TX**, zvol předvolbu *5715.000 6 cm beacon 250k QPSK 3/4 short (C5)* nebo
    *… 125k QPSK 3/4 (C5)*, nastav **značku**, obraz a délku a klepni na **Save as beacon** (jako v kapitole 4). Odpojený
    a napájený z portu počítače nebo nabíječky vysílá smyčku po každém zapnutí. Nejvýš 250 kS/s (hranice přijímače C5).
-   AMP 300 = úroveň našich testů; **výstupní výkon změřený není**. **Start TX** (živé vysílání) přes C5 zatím nejde –
-   aplikace to oznámí.
+   AMP 300 = úroveň našich testů; **výstupní výkon změřený není**. **Start TX** (živé vysílání) jde přes C5 také
+   (firmware po v0.19.1-beta, jinak aplikace řekne, ať nahrajete aktuální), QPSK nebo 8PSK do 250 kS/s pro přijímač C5 –
+   novinka, zatím přijatá z PC, z telefonu nezkoušená.
 3. **Příjem:** přijímací C5 na OTG, **RX**, předvolba *5715.000 Beacon 250k QPSK 3/4* (nebo 125k), **Start**. Aplikace C5
    rozpozná sama (vždy cs4: 250 ksps do 148 kS/s, 333 ksps do 197 kS/s, 400 ksps do 250 kS/s) a hledá v ±300 kHz –
    krystaly dvou C5 se na 5,7 GHz liší až o ~150 kHz.
@@ -250,7 +251,7 @@ Kompenzace nosné C5 se zatím nastavuje na PC (`tx/c5_dccal.py`), ne z telefonu
 | RX: `audio … not supported` | AAC v LATM nebo AC-3: obraz jde, zvuk ne (AAC v ADTS, MP2 a MP3 hrají) |
 | C3 sám nic nevysílá | ještě v něm není maják: TX → Save as beacon |
 | 6 cm: na krátkou vzdálenost horší příjem | přijímač C5 se zahlcuje – snížit gain |
-| 6 cm: Start TX s C5 | živé vysílání přes C5 zatím nejde – jen *Save as beacon* |
+| 6 cm: Start TX hlásí, že firmware C5 neumí živé vysílání | nahrajte aktuální: menu ⋮ → Firmware → *6 cm transmitter* |
 | 6 cm: C5 po připojení neodpovídá | zůstal v zavaděči ROM (LED nesvítí): stiskni jeho RESET |
 | *this C3 firmware cannot store a loop* | nahraj aktuální firmware: menu ⋮ → Firmware |
 | firmware: *no network and no saved firmware* | první zápis potřebuje jednou internet, pak funguje uložený i bez sítě |

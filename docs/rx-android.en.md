@@ -7,7 +7,7 @@ an **Android phone or tablet** demodulates (leandvb), decodes the LDPC (ldpc_too
 with MER, constellation and stream information. Its counterpart is the stand-alone ESP32-C3 beacon
 ([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)) – and the same app also **transmits**: with a XIAO
 ESP32-C3 on USB-OTG it sends a test card, the phone's camera or a picture / video from the phone live as DVB-S2 (switch **RX | TX** at the top).
-On 6 cm two **ESP32-C5** boards take the S3's and the C3's place: a receiver for the same app and a stored beacon (section 6).
+On 6 cm two **ESP32-C5** boards take the S3's and the C3's place: a receiver for the same app and a transmitter (stored beacon or live, section 6).
 
 > ⚠ **The transmitter works on the 13 cm amateur radio band (2.3–2.45 GHz), the ESP32-C5 on 6 cm (5.65–5.85 GHz).
 > Transmitting requires an amateur radio licence.** Transmit only with your own callsign, on frequencies and at power levels your licence and national band
@@ -225,16 +225,17 @@ stored values. Details and measurements: [LO calibration](https://github.com/ok1
 ![6 cm: the TX presets for the C5 and reception of the C5 beacon on 5715 MHz](img/atvrx-6cm.png)
 
 The **Waveshare ESP32-C5-Zero** (the only ESP32 with 5 GHz) works on **5715.000 MHz** without any other RF hardware: one
-as a receiver for this app, a second one as a stand-alone beacon. Transmitting needs a licence here too. Details and
+as a receiver for this app, a second one as a transmitter (beacon or live). Transmitting needs a licence here too. Details and
 measurements: [6 cm with the ESP32-C5](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/6cm-c5.en.md).
 
 1. **Firmware:** connect the C5 through OTG, menu ⋮ → **Firmware** → *Write firmware…*; the app asks *6 cm receiver* or
-   *6 cm transmitter (stored beacon only)*. Or the [web flasher](flasher/) (a button for each).
+   *6 cm transmitter*. Or the [web flasher](flasher/) (a button for each).
 2. **Beacon:** the transmitter C5 on OTG, switch to **TX**, pick the preset *5715.000 6 cm beacon 250k QPSK 3/4 short
    (C5)* or *… 125k QPSK 3/4 (C5)*, set your **callsign**, the picture and the length, then **Save as beacon** (as in
    section 4). Unplugged and powered from a computer port or a charger it transmits the loop after every power-up.
    Up to 250 kS/s (the C5 receiver's limit). AMP 300 = the level of our tests; **the output power has not been measured**.
-   **Start TX** (live) through the C5 is not there yet – the app says so.
+   **Start TX** (live) works through the C5 too (firmware after v0.19.1-beta; the app asks for the current one otherwise),
+   QPSK or 8PSK up to 250 kS/s for the C5 receiver – new, received from a PC so far, not yet tried from the phone.
 3. **Receiving:** the receiver C5 on OTG, **RX**, the preset *5715.000 Beacon 250k QPSK 3/4* (or 125k), **Start**. The
    app recognises the C5 by itself (always cs4: 250 ksps up to 148 kS/s, 333 ksps up to 197 kS/s, 400 ksps up to
    250 kS/s) and searches ±300 kHz – the two C5s' crystals differ by up to ~150 kHz at 5.7 GHz.
@@ -261,7 +262,7 @@ The C5's carrier trim is set on a PC (`tx/c5_dccal.py`), not from the phone yet.
 | RX: `audio … not supported` | AAC in LATM or AC-3: the picture plays, the sound not (AAC in ADTS, MP2 and MP3 do) |
 | the C3 transmits nothing on its own | no beacon stored yet: TX → Save as beacon |
 | 6 cm: worse reception at short range | the C5 receiver overloads – turn the gain down |
-| 6 cm: Start TX with the C5 | live TX through the C5 is not there yet – *Save as beacon* only |
+| 6 cm: Start TX says the C5 firmware has no live TX | write the current one: menu ⋮ → Firmware → *6 cm transmitter* |
 | 6 cm: the C5 does not answer after plugging in | it stayed in its ROM loader (LED dark): press its RESET |
 | *this C3 firmware cannot store a loop* | write the current firmware: menu ⋮ → Firmware |
 | firmware: *no network and no saved firmware* | the first write needs the internet once; later the saved one works offline |

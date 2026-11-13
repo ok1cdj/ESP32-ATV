@@ -56,7 +56,7 @@ class FirmwareActivity : Activity() {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(TextView(this).apply {
             text = "Firmware for the board on USB, the current version from the web:\n" +
-                "• ESP32-S3 → receiver\n• ESP32-C5 → 6 cm receiver or transmitter (asked; the transmitter: stored beacon only)\n• ESP32-C3 → transmitter (no built-in beacon: then store a loop with your callsign on the TX screen)\n" +
+                "• ESP32-S3 → receiver\n• ESP32-C5 → 6 cm receiver or transmitter (asked)\n• ESP32-C3 → transmitter (no built-in beacon: then store a loop with your callsign on the TX screen)\n" +
                 "The board is put into its ROM loader, which tells the chip; it then appears on USB again (allow access if asked)."
             textSize = 13f
         })
@@ -251,7 +251,7 @@ class FirmwareActivity : Activity() {
         val answer = java.util.concurrent.LinkedBlockingQueue<Int>()
         runOnUiThread {
             android.app.AlertDialog.Builder(this).setTitle("ESP32-C5: which firmware?")
-                .setItems(arrayOf("6 cm receiver", "6 cm transmitter (stored beacon only)")) { _, k -> answer.put(k) }
+                .setItems(arrayOf("6 cm receiver", "6 cm transmitter")) { _, k -> answer.put(k) }
                 .setOnCancelListener { answer.put(-1) }.show()
         }
         return when (answer.take()) { 0 -> false; 1 -> true; else -> throw IOException("cancelled") }
