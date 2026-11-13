@@ -971,8 +971,7 @@ static int dc_test_run(void) {
 /* BDC [GET [f_MHz] | i q | SAVE | PUT f_MHz i q | LIST | RESET | TEST on [f_MHz] | off], answered as the C3 (C3Link.dc, dcTable,
  * dcPut, CalibrationActivity). A beacon command: the beacon keeps (or starts) running. */
 static void bdc(const char *arg) {
-    host_seen = false;
-    beacon_restart = true;
+    host_seen = false;                          /* a beacon command, as on the C3: the beacon keeps (or starts) running - unless refused */
     while (*arg == ' ') ++arg;
     if (dc_test) dc_test_until = esp_timer_get_time() + DCT_TEST_US;    /* every BDC command keeps the test alive */
     if (!strncmp(arg, "GET", 3) && (arg[3] == 0 || arg[3] == ' ')) {
@@ -985,12 +984,14 @@ static void bdc(const char *arg) {
             return;
         }
         dc_say(*f ? (uint32_t)llround(mhz * 1000.0) : dc_fkhz());
+        beacon_restart = true;
         return;
     }
     if (!strcmp(arg, "LIST")) {
         say("BDCT %lu\r\n", (unsigned long)dct_n);
         for (uint32_t k = 0; k < dct_n; ++k)
             say("BDCT %lu %.3f %.3f\r\n", (unsigned long)dct[k].fkhz, (double)dct[k].i, (double)dct[k].q);
+        beacon_restart = true;
         return;
     }
     if (!strncmp(arg, "TEST", 4) && (arg[4] == 0 || arg[4] == ' ')) {
@@ -1025,6 +1026,7 @@ static void bdc(const char *arg) {
         const uint32_t f = (uint32_t)llround(mhz * 1000.0);
         if (!dct_put(f, i, q)) say("ERR BDC PUT%s\r\n", dct_n == DCT_MAX ? " (table full: BDC RESET)" : "");
         dc_say(f);
+        beacon_restart = true;
         return;
     } else if (!strcmp(arg, "SAVE")) {
         float i, q;
@@ -1047,6 +1049,7 @@ static void bdc(const char *arg) {
         dc_by_hand = true;
     }
     dc_say(dc_fkhz());
+    beacon_restart = true;
 }
 
 /* ------------------------------------------------------------ live TX (QPSKT, PSK8T), as the C3's streaming mode

@@ -28,7 +28,7 @@ class LoopMaker(private val ctx: Context, private val usbManager: UsbManager, pr
         if (board == "C3" && cfg.freqKhz > 2_450_000) throw IOException("the C3 transmits only in 2300..2450 MHz (6 cm: the ESP32-C5)")
         if (board == "C5" && cfg.freqKhz < 5_650_000) throw IOException("the ESP32-C5 transmitter is for 6 cm (5650..5900 MHz)")
         val sper = Math.round(C3Link.CPU_HZ.toDouble() / cfg.baud)
-        if ((board == "C3" && (sper - 4) / 20 < 16) || cfg.baud > C5_BAUD_MAX)
+        if ((board == "C3" && (sper - 4) / 20 < 16) || (board == "C5" && cfg.baud > C5_BAUD_MAX))
             throw IOException("symbol rate too high for a stand-alone loop (about 333 kS/s at most)")
         // what the transmitter sends: the C3 whole 160 MHz cycles per symbol, the C5 any rate (tx/c5cw sample clock)
         val baud = if (board == "C5") cfg.baud.toDouble() else C3Link.CPU_HZ.toDouble() / sper
