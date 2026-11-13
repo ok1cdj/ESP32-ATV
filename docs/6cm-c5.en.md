@@ -119,6 +119,8 @@ the centre of the strongest signal within ±500 kHz.
 **The LED** of the C5-Zero: dim blue = firmware running and waiting, green = receiving, red = transmitting, dark = the ROM
 loader (reset it).
 
+The C5 has **no PA output** (`PA 0` is answered as on the C3, `PA 1` refused – the C3's PA enable is GPIO3).
+
 ## Android
 
 Both firmwares can be written from the phone: menu → Firmware asks, for an ESP32-C5, whether it becomes the 6 cm receiver or

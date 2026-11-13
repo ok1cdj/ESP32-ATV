@@ -230,20 +230,24 @@ measurements: [6 cm with the ESP32-C5](https://github.com/ok1cdj/ESP32-ATV/blob/
 
 1. **Firmware:** connect the C5 through OTG, menu ⋮ → **Firmware** → *Write firmware…*; the app asks *6 cm receiver* or
    *6 cm transmitter*. Or the [web flasher](flasher/) (a button for each).
-2. **Beacon:** the transmitter C5 on OTG, switch to **TX**, pick the preset *5715.000 6 cm beacon 250k QPSK 3/4 short
-   (C5)* or *… 125k QPSK 3/4 (C5)*, set your **callsign**, the picture and the length, then **Save as beacon** (as in
-   section 4). Unplugged and powered from a computer port or a charger it transmits the loop after every power-up.
+2. **Beacon:** the transmitter C5 on OTG, switch to **TX**, pick a preset *5715.000 6 cm beacon … (C5)* (40k, 66.7k
+   short, 125k, 250k short), set your **callsign**, the picture and the length, then **Save as beacon** (as in
+   section 4). Unplugged and powered from a computer port or a charger it transmits the loop after every power-up;
+   interrupted (e.g. a computer opening its port) it starts again after 5 s, as the C3 (tested: 40k from a charger).
    Up to 250 kS/s (the C5 receiver's limit). AMP 300 = the level of our tests; **the output power has not been measured**.
    **Start TX** (live) works through the C5 too (firmware after v0.19.1-beta; the app asks for the current one otherwise),
-   QPSK or 8PSK up to 250 kS/s for the C5 receiver.
+   QPSK or 8PSK up to 250 kS/s for the C5 receiver (preset *… live 250k 8PSK 2/3 short (C5)*). Tested: 40k and 66.7k
+   QPSK with sound, 250k 8PSK with camera and microphone, 3 min with the screen off without a TS error.
 3. **Receiving:** the receiver C5 on OTG, **RX**, the preset *5715.000 Beacon 250k QPSK 3/4* (or 125k), **Start**. The
    app recognises the C5 by itself (always cs4: 250 ksps up to 148 kS/s, 333 ksps up to 197 kS/s, 400 ksps up to
-   250 kS/s) and searches ±300 kHz – the two C5s' crystals differ by up to ~150 kHz at 5.7 GHz.
+   250 kS/s) and searches ±300 kHz – the two C5s' crystals differ by up to ~150 kHz at 5.7 GHz. The C5 receiver
+   starts only on 6 cm (5650–5900 MHz), the S3 only on 13 cm. Code rate and frames must match the transmitter.
 4. **The gain:** the C5 overloads at short range (worse reception close by than further away) – on a desk start
    low and go up. Tested: 3 m apart with the stick-on antennas, 250 kS/s, MER 13–17 dB.
 
 The **LED** of the C5-Zero: dim blue = waiting, green = receiving, red = transmitting, dark = the ROM loader (press RESET).
-The C5's carrier trim is set on a PC (`tx/c5_dccal.py`), not from the phone yet.
+The C5 has no PA output (the C3's is GPIO3, see the README). The C5's carrier trim is set on a PC
+(`tx/c5_dccal.py --save`, kept per frequency in the C5), not from the phone yet.
 
 ## Troubleshooting
 
@@ -263,6 +267,8 @@ The C5's carrier trim is set on a PC (`tx/c5_dccal.py`), not from the phone yet.
 | the C3 transmits nothing on its own | no beacon stored yet: TX → Save as beacon |
 | 6 cm: worse reception at short range | the C5 receiver overloads – turn the gain down |
 | 6 cm: Start TX says the C5 firmware has no live TX | write the current one: menu ⋮ → Firmware → *6 cm transmitter* |
+| RX: *the ESP32-C5 receiver is for 6 cm* | a C5 on 13 cm: 5715.000 MHz, or the S3 for 13 cm (and *6 cm needs the ESP32-C5 receiver* the other way round) |
+| 6 cm: beacon on air (spectrum) but no frames | code rate / frames of the RX preset differ from the beacon's (e.g. stored with 2/3) |
 | 6 cm: the C5 does not answer after plugging in | it stayed in its ROM loader (LED dark): press its RESET |
 | *this C3 firmware cannot store a loop* | write the current firmware: menu ⋮ → Firmware |
 | firmware: *no network and no saved firmware* | the first write needs the internet once; later the saved one works offline |

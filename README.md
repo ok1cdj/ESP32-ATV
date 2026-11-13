@@ -43,6 +43,14 @@ ESP32-C5-Zero (rx/c5rx: IQ estimator -> cs4 250 / 333 / 400 ksps over USB, the S
    -> Android: ATV RX/TX (the same app)      or      PC: rx/c5_play.sh
 ```
 
+### PA output
+
+- **XIAO ESP32-C3 (13 cm): PA enable on GPIO3.** Low after power-up (pull-down), high while transmitting when armed,
+  5 ms before the RF starts: the beacon with the front panel's PA setting (off by default), a PC transmission after
+  `PA 1` (one shot) or `tx_dvbs.py --pa-enable`. The app keeps it off (`PA 0`); BDC TEST never sets it. `INFO` answers
+  `ESP32DATV 1 PA_GPIO 3`.
+- **ESP32-C5-Zero (6 cm): no PA output** (`PA 0` is answered as on the C3, `PA 1` refused).
+
 | Part | Project | Licence |
 |---|---|---|
 | TX firmware | [ok1cdj/ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA), fork of [barisdinc/ESP32-DATV-SA](https://github.com/barisdinc/ESP32-DATV-SA) (`third_party/`) | PolyForm Noncommercial |
@@ -196,6 +204,7 @@ Two **Waveshare ESP32-C5-Zero** boards (ESP32-C5, the only Espressif chip with 5
   `QPSKT` / `PSK8T` stream, QPSK and 8PSK). The carrier trim per frequency (`BDC`
   table, as the C3) is set on a PC with `tx/c5_dccal.py --save`.
 - **LED** of the C5-Zero: dim blue waiting, green receiving, red transmitting, dark = ROM loader.
+- No PA output on the C5 (the C3's is GPIO3, see [PA output](#pa-output)).
 - **Tested 2026-11-11:** 250 kS/s through 400 ksps on a PC and on a phone, a loop saved on the phone received with MER
   ~17 dB, 3 m apart with the boards' stick-on antennas. **The output power has not been measured** (no cable to an
   analyser yet; over the air only).

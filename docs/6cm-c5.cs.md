@@ -112,6 +112,8 @@ rx/c5_play.sh 125000                   # PC: SR (do 250000), volitelně kmitoče
 Krystaly dvou C5 se na 5,7 GHz liší až o ~150 kHz, proto `rx/c5_play.sh` nejdřív zachytí 16 ms při 2 MS/s a naladí se na
 střed nejsilnějšího signálu v ±500 kHz.
 
+C5 **nemá výstup pro PA** (`PA 0` odpoví jako C3, `PA 1` odmítne – PA enable C3 je GPIO3).
+
 **LED** na C5-Zero: tlumeně modrá = firmware běží a čeká, zelená = příjem, červená = vysílání, zhasnutá = ROM bootloader
 (resetujte).
 

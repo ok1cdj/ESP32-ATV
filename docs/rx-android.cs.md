@@ -219,19 +219,23 @@ přijímač pro tuto aplikaci, druhý jako vysílač (maják i živé vysílán�
 
 1. **Firmware:** připoj C5 přes OTG, menu ⋮ → **Firmware** → *Write firmware…*; aplikace se zeptá *6 cm receiver*, nebo
    *6 cm transmitter*. Nebo [webový flasher](flasher/) (tlačítko pro každý).
-2. **Maják:** vysílací C5 na OTG, přepni na **TX**, zvol předvolbu *5715.000 6 cm beacon 250k QPSK 3/4 short (C5)* nebo
-   *… 125k QPSK 3/4 (C5)*, nastav **značku**, obraz a délku a klepni na **Save as beacon** (jako v kapitole 4). Odpojený
-   a napájený z portu počítače nebo nabíječky vysílá smyčku po každém zapnutí. Nejvýš 250 kS/s (hranice přijímače C5).
+2. **Maják:** vysílací C5 na OTG, přepni na **TX**, zvol předvolbu *5715.000 6 cm beacon … (C5)* (40k, 66,7k short,
+   125k, 250k short), nastav **značku**, obraz a délku a klepni na **Save as beacon** (jako v kapitole 4). Odpojený
+   a napájený z portu počítače nebo nabíječky vysílá smyčku po každém zapnutí; po přerušení (např. když počítač otevře
+   jeho port) se po 5 s spustí znovu, jako C3 (vyzkoušeno: 40k z nabíječky). Nejvýš 250 kS/s (hranice přijímače C5).
    AMP 300 = úroveň našich testů; **výstupní výkon změřený není**. **Start TX** (živé vysílání) jde přes C5 také
-   (firmware po v0.19.1-beta, jinak aplikace řekne, ať nahrajete aktuální), QPSK nebo 8PSK do 250 kS/s pro přijímač C5.
+   (firmware po v0.19.1-beta, jinak aplikace řekne, ať nahrajete aktuální), QPSK nebo 8PSK do 250 kS/s pro přijímač C5 (předvolba *… live 250k 8PSK 2/3 short (C5)*).
+   Vyzkoušeno: 40k a 66,7k QPSK se zvukem, 250k 8PSK s kamerou a mikrofonem, 3 min se zhasnutým displejem bez chyby TS.
 3. **Příjem:** přijímací C5 na OTG, **RX**, předvolba *5715.000 Beacon 250k QPSK 3/4* (nebo 125k), **Start**. Aplikace C5
    rozpozná sama (vždy cs4: 250 ksps do 148 kS/s, 333 ksps do 197 kS/s, 400 ksps do 250 kS/s) a hledá v ±300 kHz –
-   krystaly dvou C5 se na 5,7 GHz liší až o ~150 kHz.
+   krystaly dvou C5 se na 5,7 GHz liší až o ~150 kHz. Přijímač C5 se spustí jen na 6 cm (5650–5900 MHz), S3 jen
+   na 13 cm. Kódový poměr a rámce musí odpovídat vysílači.
 4. **Gain:** C5 se na krátkou vzdálenost zahlcuje (zblízka horší příjem než zdálky) – na stole začni nízko a přidávej.
    Vyzkoušeno: 3 m od sebe s nalepovacími anténami, 250 kS/s, MER 13–17 dB.
 
 **LED** na C5-Zero: slabě modrá = čeká, zelená = přijímá, červená = vysílá, nesvítí = zavaděč ROM (stiskni RESET).
-Kompenzace nosné C5 se zatím nastavuje na PC (`tx/c5_dccal.py`), ne z telefonu.
+C5 nemá výstup pro PA (C3 má GPIO3, viz README). Kompenzace nosné C5 se zatím nastavuje na PC
+(`tx/c5_dccal.py --save`, v C5 uložená pro kmitočet), ne z telefonu.
 
 ## Řešení problémů
 
@@ -251,6 +255,8 @@ Kompenzace nosné C5 se zatím nastavuje na PC (`tx/c5_dccal.py`), ne z telefonu
 | C3 sám nic nevysílá | ještě v něm není maják: TX → Save as beacon |
 | 6 cm: na krátkou vzdálenost horší příjem | přijímač C5 se zahlcuje – snížit gain |
 | 6 cm: Start TX hlásí, že firmware C5 neumí živé vysílání | nahrajte aktuální: menu ⋮ → Firmware → *6 cm transmitter* |
+| RX: *the ESP32-C5 receiver is for 6 cm* | C5 na 13 cm: 5715.000 MHz, nebo pro 13 cm S3 (a obráceně *6 cm needs the ESP32-C5 receiver*) |
+| 6 cm: maják ve spektru je, rámce ne | kódový poměr / rámce RX předvolby se liší od majáku (např. uložen s 2/3) |
 | 6 cm: C5 po připojení neodpovídá | zůstal v zavaděči ROM (LED nesvítí): stiskni jeho RESET |
 | *this C3 firmware cannot store a loop* | nahraj aktuální firmware: menu ⋮ → Firmware |
 | firmware: *no network and no saved firmware* | první zápis potřebuje jednou internet, pak funguje uložený i bez sítě |

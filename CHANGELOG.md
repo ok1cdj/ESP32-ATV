@@ -18,6 +18,9 @@ ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the
   beacon and live TX take it for their frequency; `tx/c5_dccal.py --save` stores it. `DC i q` stays as the value without
   a table.
 - RX: the app no longer starts the ESP32-C5 receiver on 13 cm (or the S3 on 6 cm); it says which board the band needs.
+- C3 regression after the change: a 333k loop stored from the phone decodes on the S3 (MER 14–15 dB).
+- Guides: the C3's **PA enable on GPIO3** (when it goes high) and no PA output on the C5 (README); section 6 of the app
+  guide with the new presets, live TX, the beacon restart and the RX band check.
 - TX presets for 6 cm: 40k and 66.7k QPSK short beacons, live 250k 8PSK 2/3 short. *Save as beacon* on the C5 keeps the
   exact symbol rate (the C3's 160 MHz rounding is not applied).
 
