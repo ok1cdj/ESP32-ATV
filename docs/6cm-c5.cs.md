@@ -22,8 +22,8 @@ C5 na PC i v telefonu (zámek, obraz, MER 11–17 dB). 11. 11. 2026: 250 kBd př
 nalepovací antény z balení: MER 13–17 dB, 319 rámců z 320 bez chyb, žádné ztracené USB pakety).
 
 **Vysílač C5 umí totéž co C3:** uloží si smyčku natočenou v telefonu (záložka TX → *Save as beacon*) a po zapnutí ji sám
-vysílá, a **Start TX vysílá živě z telefonu** (kamera, testovací obrazec, soubor; QPSK nebo 8PSK) – novinka po v0.19.1-beta:
-přijato na vzduchu přijímačem C5 na PC, z telefonu zatím nezkoušeno.
+vysílá, a **Start TX vysílá živě z telefonu** (kamera, testovací obrazec, soubor; QPSK nebo 8PSK) – novinka po v0.19.1-beta,
+přijato na vzduchu přijímačem C5 (z PC i z telefonu).
 
 ## Vysílač – `tx/c5cw`
 
@@ -46,6 +46,8 @@ jako u C3, telefon kóduje DVB-S2 a posílá surové symboly. QPSK s 16 vzorky n
 CPU na vzorek (S 60 při 40k, 19 při 125k, 9 při 250k, nejvýš 300 kBd), na stole bez pozdních vzorků. Přijímač C5 bere do 250 kS/s.
 13. 11. 2026: symboly z kodéru aplikace (`tx/tx_s2enc.py`, short rámce) poslané živě a přijaté přijímačem C5 na PC
 (`rx/c5_play.sh`): QPSK 3/4 při 40k, 125k a 250k a 8PSK 2/3 při 125k a 250k dekódováno, služba OK1CDJ, H.264 640×360.
+14. 11. 2026 z telefonu (Start TX): 40k a 66,7k QPSK se zvukem, 250k 8PSK 2/3 s kamerou a mikrofonem (3 min se zhasnutým
+displejem: 56127 TS paketů, žádné přerušení kontinuity); smyčka 40k uložená přes *Save as beacon* se spustí i z nabíječky.
 
 **Maják zabudovaný ve firmwaru** (PC, pro vývoj):
 
@@ -128,7 +130,6 @@ do 197 kS/s a 400 ksps do 250 kS/s (s firmwarem, který to umí). Hledání sign
   Zatím pomůže snížit zisk; AGC se chystá.
 - Obě C5 po připojení k telefonu občas skončí v ROM bootloaderu (stačí reset).
 - Korekce nosné C5 se nastavuje na PC (`tx/c5_dccal.py --save`), ne z telefonu.
-- Živé vysílání přes C5 je přijaté zatím jen z PC, z telefonu nezkoušené.
 - Po mnoha bězích bez restartu jednou únik nosné vysílače znemožnil jakékoli dekódování (i uložené smyčky); pomohl restart
   C5. Když příjem selže při čistém spektru, nastavte korekci `tx/c5_dccal.py --save`.
 - Drift krystalů: aplikace a `rx/c5_play.sh` ho dohledají, při ohřevu vysílače ale může signál ujet z okna.

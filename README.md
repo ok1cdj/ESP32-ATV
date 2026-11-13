@@ -22,7 +22,7 @@ DATV on 13 cm (and 6 cm) with ESP32 boards: a stand-alone **ESP32-C3 DVB-S2 beac
 ESP32-C3 on USB-OTG: test card, camera or a picture / video file, DVB-S2 QPSK / 8PSK encoded on the phone (`android/native/dvbs2enc`).
 Reception can be **recorded** as it is received (`.ts`, with MER / CNR as `.srt` subtitles).
 **6 cm (experimental):** two **Waveshare ESP32-C5-Zero** boards on 5715 MHz – a receiver for the same app (up to 250 kS/s)
-and a transmitter that, as the C3, stores a beacon from the phone (*Save as beacon*) or sends live (Start TX: new, received from a PC, not yet tried from the phone),
+and a transmitter that, as the C3, stores a beacon from the phone (*Save as beacon*) or sends live (Start TX),
 see [below](#6-cm--esp32-c5-experimental).
 
 - **Guide / návod:** <https://ok1cdj.github.io/ESP32-ATV/> ([English](docs/rx-android.en.md), [česky](docs/rx-android.cs.md))
@@ -193,7 +193,7 @@ Two **Waveshare ESP32-C5-Zero** boards (ESP32-C5, the only Espressif chip with 5
 - **Transmitter** (`tx/c5cw`): the TX DC register path of [esp32-C5-sdr-tx](https://github.com/fedaykinofdune/esp32-C5-sdr-tx)
   with the C3's QPSK / 8PSK RRC tables. Like the C3 it stores a loop from the app's TX screen (*Save as beacon*, presets
   "5715.000 6 cm beacon …") and transmits it by itself after power-up, and it takes **live TX** from the phone (the C3's
-  `QPSKT` / `PSK8T` stream; new, received from a PC, not yet tried from the phone). The carrier trim per frequency (`BDC`
+  `QPSKT` / `PSK8T` stream, QPSK and 8PSK). The carrier trim per frequency (`BDC`
   table, as the C3) is set on a PC with `tx/c5_dccal.py --save`.
 - **LED** of the C5-Zero: dim blue waiting, green receiving, red transmitting, dark = ROM loader.
 - **Tested 2026-11-11:** 250 kS/s through 400 ksps on a PC and on a phone, a loop saved on the phone received with MER

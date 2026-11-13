@@ -235,7 +235,7 @@ measurements: [6 cm with the ESP32-C5](https://github.com/ok1cdj/ESP32-ATV/blob/
    section 4). Unplugged and powered from a computer port or a charger it transmits the loop after every power-up.
    Up to 250 kS/s (the C5 receiver's limit). AMP 300 = the level of our tests; **the output power has not been measured**.
    **Start TX** (live) works through the C5 too (firmware after v0.19.1-beta; the app asks for the current one otherwise),
-   QPSK or 8PSK up to 250 kS/s for the C5 receiver – new, received from a PC so far, not yet tried from the phone.
+   QPSK or 8PSK up to 250 kS/s for the C5 receiver.
 3. **Receiving:** the receiver C5 on OTG, **RX**, the preset *5715.000 Beacon 250k QPSK 3/4* (or 125k), **Start**. The
    app recognises the C5 by itself (always cs4: 250 ksps up to 148 kS/s, 333 ksps up to 197 kS/s, 400 ksps up to
    250 kS/s) and searches ±300 kHz – the two C5s' crystals differ by up to ~150 kHz at 5.7 GHz.

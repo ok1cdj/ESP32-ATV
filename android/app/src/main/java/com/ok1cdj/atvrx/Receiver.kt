@@ -138,6 +138,10 @@ class Receiver(
                     boardIs(c5)
                     throw IOException(if (c5) "the board is the ESP32-C5 receiver: Start again" else "the board is an ESP32-S3: Start again")
                 }
+                // the C5 receiver is for 6 cm, the S3 for 13 cm (each tunes the other band too, but hears nothing useful there)
+                if (c5 && cfg.freqHz !in 5_650_000_000L..5_900_000_000L)
+                    throw IOException("the ESP32-C5 receiver is for 6 cm: 5650..5900 MHz (13 cm: the ESP32-S3)")
+                if (!c5 && cfg.freqHz > 2_500_000_000L) throw IOException("6 cm needs the ESP32-C5 receiver (the ESP32-S3 is for 13 cm)")
                 if (c5 && cfg.sr > 250_000) throw IOException("the ESP32-C5 receiver takes up to 250 kS/s (cs4 at 400 ksps)")
                 if (c5 && decim == EspLink.DECIM_400K && (l.buildFlags() and EspLink.CTL_BUILD_400K) == 0L)
                     throw IOException("this ESP32-C5 firmware takes up to 197 kS/s (cs4 at 333 ksps): update rx/c5rx for 400 ksps")

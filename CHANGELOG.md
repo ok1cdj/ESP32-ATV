@@ -9,13 +9,15 @@ ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the
   (16 samples per symbol), 8PSK up to 300 kBd (at least 100 CPU cycles per sample). On the bench (8 s each, from a PC):
   QPSK 40k / 125k / 250k and 8PSK 40k / 125k / 250k without a late sample, QPSK 333k with 145 late of 2.8 M symbols.
   Received on air by the C5 receiver on a PC (the app's encoder, short frames): QPSK 3/4 at 40k, 125k and 250k, 8PSK 2/3
-  at 125k and 250k, service OK1CDJ with H.264. Not yet tried from the phone. Older C5 firmware: the app asks for the
-  current one.
+  at 125k and 250k, service OK1CDJ with H.264. From the phone: 40k and 66.7k QPSK with sound, 250k 8PSK with camera and
+  microphone (3 min with the screen off: no TS continuity break), a 40k loop stored with *Save as beacon*. Older C5
+  firmware: the app asks for the current one.
 - **The beacon comes back** 5 s after an interruption, as on the C3 (after a valid command only with `PLAY`, `BDC`, a new
   loop or a reset); without a stored loop a firmware with a built-in beacon transmits that one after power-up.
 - **Carrier trim per frequency** (`BDC GET / PUT / SAVE / LIST / RESET / TEST`, as the C3): the stored loop, the built-in
   beacon and live TX take it for their frequency; `tx/c5_dccal.py --save` stores it. `DC i q` stays as the value without
   a table.
+- RX: the app no longer starts the ESP32-C5 receiver on 13 cm (or the S3 on 6 cm); it says which board the band needs.
 - TX presets for 6 cm: 40k and 66.7k QPSK short beacons, live 250k 8PSK 2/3 short. *Save as beacon* on the C5 keeps the
   exact symbol rate (the C3's 160 MHz rounding is not applied).
 

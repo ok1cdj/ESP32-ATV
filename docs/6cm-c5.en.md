@@ -24,7 +24,7 @@ C5 on a PC and on a phone (lock, picture, MER 11–17 dB). 2026-11-11: 250 kBd t
 
 **The C5 transmitter does what the C3 does:** it stores a loop recorded on the phone (TX screen → *Save as beacon*) and
 transmits it by itself after power-up, and **Start TX sends live from the phone** (camera, test card, file; QPSK or 8PSK)
-— new after v0.19.1-beta: received on air by the C5 receiver on a PC, not yet tried from the phone.
+— new after v0.19.1-beta, received on air by the C5 receiver (from a PC and from the phone).
 
 ## Transmitter – `tx/c5cw`
 
@@ -47,6 +47,8 @@ streaming protocol, the phone encodes DVB-S2 and sends raw symbols. QPSK with 16
 sample (S 60 at 40k, 19 at 125k, 9 at 250k, up to 300 kBd), no late sample on the bench. The C5 receiver takes up to 250 kS/s.
 2026-11-13, symbols from the app's encoder (`tx/tx_s2enc.py`, short frames) sent live, received by the C5 receiver on a PC
 (`rx/c5_play.sh`): QPSK 3/4 at 40k, 125k and 250k and 8PSK 2/3 at 125k and 250k decoded, service OK1CDJ, H.264 640×360.
+2026-11-14 from the phone (Start TX): 40k and 66.7k QPSK with sound, 250k 8PSK 2/3 with camera and microphone (3 min with the
+screen off: 56127 TS packets, no continuity break); a 40k loop stored with *Save as beacon* starts from a charger too.
 
 **A beacon built into the firmware** (PC, for development):
 
@@ -133,7 +135,6 @@ Enter 5715.000 MHz.
 - Both C5s sometimes end up in the ROM bootloader after being connected to the phone (a reset helps).
 - The C5's carrier trim is set on the PC (`tx/c5_dccal.py --save`); the app's transmitter calibration is for the C3 and
   the S3 on 13 cm only.
-- Live TX through the C5 has been received from a PC only, not yet tried from the phone.
 - After many runs without a restart the transmitter's carrier leakage once stopped all decoding (also of the stored loop);
   a restart of the C5 cured it. Trim it with `tx/c5_dccal.py --save` when reception fails with a clean spectrum.
 - Crystal drift: the app and `rx/c5_play.sh` follow it, but a warming transmitter can still walk out of the window.

@@ -223,8 +223,7 @@ přijímač pro tuto aplikaci, druhý jako vysílač (maják i živé vysílán�
    *… 125k QPSK 3/4 (C5)*, nastav **značku**, obraz a délku a klepni na **Save as beacon** (jako v kapitole 4). Odpojený
    a napájený z portu počítače nebo nabíječky vysílá smyčku po každém zapnutí. Nejvýš 250 kS/s (hranice přijímače C5).
    AMP 300 = úroveň našich testů; **výstupní výkon změřený není**. **Start TX** (živé vysílání) jde přes C5 také
-   (firmware po v0.19.1-beta, jinak aplikace řekne, ať nahrajete aktuální), QPSK nebo 8PSK do 250 kS/s pro přijímač C5 –
-   novinka, zatím přijatá z PC, z telefonu nezkoušená.
+   (firmware po v0.19.1-beta, jinak aplikace řekne, ať nahrajete aktuální), QPSK nebo 8PSK do 250 kS/s pro přijímač C5.
 3. **Příjem:** přijímací C5 na OTG, **RX**, předvolba *5715.000 Beacon 250k QPSK 3/4* (nebo 125k), **Start**. Aplikace C5
    rozpozná sama (vždy cs4: 250 ksps do 148 kS/s, 333 ksps do 197 kS/s, 400 ksps do 250 kS/s) a hledá v ±300 kHz –
    krystaly dvou C5 se na 5,7 GHz liší až o ~150 kHz.
