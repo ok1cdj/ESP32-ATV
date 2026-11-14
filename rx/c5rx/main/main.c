@@ -43,6 +43,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "esp_cpu.h"
 #include "esp_event.h"
@@ -91,6 +92,7 @@ extern unsigned char phy_param[];
 #define IQE_REARM 512u               /* samples per estimator run: 256 us of its 409.6 us */
 
 static uint32_t fkhz = 5715000, gain = 50, ant = 1, ctrl1;   /* boards.sh ATV6_FREQ */
+static bool rx_ready;                /* the radio is set up for receiving (the transceiver's TX takes it over: C5_TRX) */
 static uint8_t *fifo;                /* stream output (STREAM_FIFO bytes), from the heap at boot */
 
 /* ------------------------------------------------------------ USB */
@@ -138,6 +140,7 @@ static void rx_prepare(void) {
             IQE_CTRL1_COUNT;
     REG_WRITE(IQE_CTRL1_REG, ctrl1);
     esp_rom_delay_us(3000);          /* PLL and front end settle */
+    rx_ready = true;
 }
 
 static inline void IRAM_ATTR iqe_start(void) {
@@ -722,6 +725,7 @@ static void control(const uint8_t *q) {
     case ESP_STOP: respond(op, CTL_OK, seq, 0); return;             /* STOP outside a run: nothing to stop */
     case ESP_RUN: {
         /* Packets until the time is up or any byte arrives (the host's STOP, answered after the RUN reply). */
+        if (!rx_ready) rx_prepare();
         force_rx_gain(1, gain, 0);
         stream(nb.decim, nb.format, nb.format == 2u ? 0u : nb.outshift, arg & 0xFFFFu, &nb.last);
         /* the bytes that ended the run, read now: they are answered after the RUN reply, as on the S3 */
@@ -787,17 +791,22 @@ static void handle(char *line) {
         ant = a1 && atoi(a1) ? 1 : 0;
         gpio_set_level(ANT_GPIO, ant);
     } else if (!strcmp(cmd, "CAP")) {
-        const uint32_t n = a1 ? (uint32_t)atoi(a1) : 0;
+        uint32_t n = a1 ? (uint32_t)atoi(a1) : 0;
         if (n < 1 || n > CAP_MAX) {
             say("ERR CAP 1-%u\r\n", (unsigned)CAP_MAX);
             return;
         }
         int16_t *buf = malloc(4u * n);
+        while (!buf && n > 1024u) {                   /* the transceiver image has a smaller largest block: fewer samples */
+            n = n / 4u * 3u;                          /* (CAPD says how many; rx/c5_play.sh and tx/c5_dccal.py read it) */
+            buf = malloc(4u * n);
+        }
         if (!buf) {
             say("ERR no memory\r\n");
             return;
         }
         cap_stats_t st;
+        if (!rx_ready) rx_prepare();
         force_rx_gain(1, gain, 0);
         capture(buf, n, &st);
         say("CAPD %lu %lu %lu %lu\n", (unsigned long)n, (unsigned long)CAP_RATE, (unsigned long)st.late_max, (unsigned long)st.rearms);
@@ -815,6 +824,7 @@ static void handle(char *line) {
             return;
         }
         stream_stats_t st;
+        if (!rx_ready) rx_prepare();
         force_rx_gain(1, gain, 0);
         stream(r2, fmt, sh, secs, &st);
         uint8_t c;
@@ -849,6 +859,62 @@ static void handle(char *line) {
     state();
 }
 
+#ifdef C5_TRX
+/* ------------------------------------------------------------ inside the transceiver image (c5rx_trx.h) */
+#include "c5rx_trx.h"
+
+static uint8_t trx_req[10];
+static size_t trx_got;                                        /* bytes of a binary request (0: none in progress) */
+static int64_t trx_req_t;
+static uint32_t trx_pend_i;
+
+void c5rx_setup(void) {
+    const wifi_promiscuous_filter_t none = {.filter_mask = 0};
+    ESP_ERROR_CHECK(esp_wifi_set_promiscuous_filter(&none));   /* no frames: the driver task stays quiet */
+    fifo = malloc(STREAM_FIFO);
+}
+
+int c5rx_byte(uint8_t c, bool line_idle) {
+    if (trx_got && esp_timer_get_time() - trx_req_t > 100000) trx_got = 0;   /* a partial request is dropped after 100 ms */
+    if (!trx_got && !(c == 0xB4 && line_idle)) return 0;
+    if (!trx_got) trx_req_t = esp_timer_get_time();
+    trx_req[trx_got++] = c;
+    if (trx_got < sizeof(trx_req)) return 1;
+    trx_got = 0;
+    const uint32_t crc = esp_rom_crc32_le(0, trx_req, 6);
+    if ((uint32_t)(trx_req[6] | trx_req[7] << 8 | trx_req[8] << 16 | (uint32_t)trx_req[9] << 24) != crc) return 1;
+    control(trx_req);
+    return 2;
+}
+
+int c5rx_pending(void) {
+    if (trx_pend_i < nb.npend) return nb.pend[trx_pend_i++];
+    trx_pend_i = nb.npend = 0;
+    return -1;
+}
+
+bool c5rx_text(char *line) {
+    static const char *const own[] = {"G", "CAP", "STREAM", "NOUSB", "USBC", "USBT"};
+    size_t n = 0;
+    while (line[n] && line[n] != ' ') ++n;
+    for (size_t k = 0; k < sizeof(own) / sizeof(own[0]); ++k)
+        if (strlen(own[k]) == n && !strncasecmp(line, own[k], n)) {
+            handle(line);
+            return true;
+        }
+    return false;
+}
+
+void c5rx_set_freq(uint32_t khz) {
+    fkhz = khz;
+    rx_ready = false;
+}
+
+void c5rx_set_ant(uint32_t a) { ant = a ? 1u : 0u; }
+
+void c5rx_radio_lost(void) { rx_ready = false; }
+
+#else
 void app_main(void) {
     gpio_reset_pin(ANT_GPIO);
     gpio_set_direction(ANT_GPIO, GPIO_MODE_INPUT_OUTPUT);
@@ -916,3 +982,4 @@ void app_main(void) {
         vTaskDelay(1);
     }
 }
+#endif

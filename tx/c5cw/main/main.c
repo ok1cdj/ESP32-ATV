@@ -39,6 +39,10 @@
  *   ST                state
  * As on the C3, after power-up a stored loop (else the built-in beacon) transmits by itself; a byte from the host stops it, and it
  * starts again after BEACON_IDLE_US without a command, until a valid command has come (then BDC, VIDW END / ERASE or PLAY start it).
+ *
+ * The receiver (rx/c5rx) is in the same image (a transceiver): its binary requests as the S3's (0xB4 at the start of a line: the
+ * app's receiver, espdr nb.py) and its text commands G, CAP, STREAM, NOUSB, USBC, USBT share the port with the commands above; F
+ * and ANT set both. After any transmission the receiver sets the radio up again before its next run. INFO says "C5 RXTX".
  */
 #include <inttypes.h>
 #include <math.h>
@@ -72,6 +76,7 @@
 #include "beacon_cfg.h"              /* of the beacon directory (flash.sh) */
 #endif
 #include "frac_clock.h"              /* tx/common */
+#include "c5rx_trx.h"                /* rx/c5rx/main: the receiver in the same image */
 
 extern void esp_phy_wifi_tx_tone(uint32_t start, uint32_t mhz, uint32_t backoff);
 extern void esp_phy_rftest_config(uint8_t conf);
@@ -100,7 +105,8 @@ static uint32_t tone_arg;            /* the argument the vendor CW was started w
 static bool tx_on;
 static uint32_t txdc_orig;
 static uint32_t txdc_boot;           /* TXDC after the PHY's start, its I/Q cleared: written back after every run */
-static uint32_t tone_w[TONE_MAX];
+static uint32_t *tone_w;             /* TONE's period (from the heap while it plays: the receiver's CAP wants a big block) */
+static uint32_t dc_w[16];            /* BDC TEST's words */
 static bool host_seen;               /* a valid command came: the beacon stays off (as the C3) */
 static bool beacon_restart;          /* the command wants the beacon (again) at once */
 
@@ -152,6 +158,7 @@ static void tx_off(void) {
     esp_phy_wifi_tx_tone(0, tone_arg, backoff);
     tx_on = false;
     led(LED_IDLE);
+    c5rx_radio_lost();               /* the receiver sets the radio up again before its next run */
 }
 
 /* The vendor CW on the MHz turns the chain on, its tone stop hands the DAC to TXDC, then only the PLL takes the kHz. */
@@ -169,8 +176,8 @@ static void tx_chain_on(void) {
     led(LED_TX);
 }
 
-/* Plays one period of tone_w until a byte arrives from the host, or for that many periods (0: no limit). */
-static uint32_t __attribute__((noinline)) IRAM_ATTR tone_run(uint32_t n, uint32_t step, uint32_t base, uint32_t periods) {
+/* Plays the n words of w over and over until a byte arrives from the host, or for that many periods (0: no limit). */
+static uint32_t __attribute__((noinline)) IRAM_ATTR tone_run(const uint32_t *w, uint32_t n, uint32_t step, uint32_t base, uint32_t periods) {
     uint32_t late = 0;
     const unsigned s = portSET_INTERRUPT_MASK_FROM_ISR();
     uint32_t t = esp_cpu_get_cycle_count() + step;
@@ -178,7 +185,7 @@ static uint32_t __attribute__((noinline)) IRAM_ATTR tone_run(uint32_t n, uint32_
         for (uint32_t k = 0; k < n; ++k) {
             uint32_t now;
             while ((int32_t)((now = esp_cpu_get_cycle_count()) - t) < 0) {}
-            REG_WRITE(TXDC_REG, base | tone_w[k]);
+            REG_WRITE(TXDC_REG, base | w[k]);
             if (now - t > late) late = now - t;
             t += step;
         }
@@ -194,13 +201,20 @@ static void tone(int32_t khz, int32_t amp) {
         say("ERR TONE: 0.5-500 kHz either side\r\n");
         return;
     }
+    tone_w = malloc(n * sizeof(uint32_t));
+    if (!tone_w) {
+        say("ERR no memory\r\n");
+        return;
+    }
     const float w = (khz > 0 ? 2.0f : -2.0f) * (float)M_PI / (float)n;
     for (uint32_t k = 0; k < n; ++k)
         tone_w[k] = iq10(lroundf(amp * cosf(w * k)), lroundf(amp * sinf(w * k)));
     tx_chain_on();
     const float f = (khz > 0 ? 1.0f : -1.0f) * TONE_RATE / 1000.0f / n;
     say("TONE %.3f MHz %+.3f kHz amp %ld scale %lu: any key stops\r\n", fkhz / 1000.0, f, (long)amp, (unsigned long)scale);
-    const uint32_t late = tone_run(n, CPU_HZ / TONE_RATE, (txdc_orig & ~TXDC_IQ) | TXDC_INJECT, 0);
+    const uint32_t late = tone_run(tone_w, n, CPU_HZ / TONE_RATE, (txdc_orig & ~TXDC_IQ) | TXDC_INJECT, 0);
+    free(tone_w);
+    tone_w = NULL;
     uint8_t c;
     while (usb_serial_jtag_ll_read_rxfifo(&c, 1)) {}
     tx_off();
@@ -775,6 +789,7 @@ static bool usb_read_exact(uint8_t *b, uint32_t n, int64_t timeout_us) {
  * VIDW END                 CRC32 of all against BEGIN's, the loop checked: OK VIDW END crc (VIDEO ... before it), then it plays
  * VIDW ERASE               erase the header: nothing is transmitted after power-up */
 static uint32_t vidw_total, vidw_crc, vidw_written;
+static uint8_t vidw_buf[4096];       /* a DATA block, or the read-back at END */
 static bool vidw_open;
 
 static void vidw(const char *a0, const char *a1s, const char *a2s, const char *a3s) {
@@ -801,7 +816,7 @@ static void vidw(const char *a0, const char *a1s, const char *a2s, const char *a
         vidw_open = true;
         say("OK VIDW BEGIN %lu\r\n", (unsigned long)vidw_total);
     } else if (a0 && !strcmp(a0, "DATA")) {
-        static uint8_t buf[4096];
+        uint8_t *const buf = vidw_buf;
         if (!vidw_open || a2 == 0 || a2 > 4096u || a1 + a2 > vidw_total) {
             say("ERR VIDW DATA out of order\r\n");
             return;
@@ -826,10 +841,10 @@ static void vidw(const char *a0, const char *a1s, const char *a2s, const char *a
             return;
         }
         vidw_open = false;
-        static uint8_t buf[4096];
+        uint8_t *const buf = vidw_buf;
         uint32_t crc = 0;
-        for (uint32_t o = 0; o < vidw_total; o += sizeof(buf)) {
-            const uint32_t n = vidw_total - o < sizeof(buf) ? vidw_total - o : sizeof(buf);
+        for (uint32_t o = 0; o < vidw_total; o += sizeof(vidw_buf)) {
+            const uint32_t n = vidw_total - o < sizeof(vidw_buf) ? vidw_total - o : sizeof(vidw_buf);
             if (esp_partition_read(part, o, buf, n) != ESP_OK) {
                 say("ERR VIDW read\r\n");
                 return;
@@ -879,7 +894,7 @@ static void dc_test_words(float dci, float dcq) {
         const int32_t ri = (int32_t)lroundf(dci + ei), rq = (int32_t)lroundf(dcq + eq);
         ei += dci - (float)ri;
         eq += dcq - (float)rq;
-        tone_w[j] = iq10(ri, rq);
+        dc_w[j] = iq10(ri, rq);
     }
 }
 
@@ -943,7 +958,7 @@ static int dc_test_run(void) {
         const int64_t left = dc_test_until - esp_timer_get_time();
         if (left <= 0) break;
         const uint64_t periods = (uint64_t)left * (TONE_RATE / 16u) / 1000000u + 1u;
-        tone_run(16, step, base, (uint32_t)periods);
+        tone_run(dc_w, 16, step, base, (uint32_t)periods);
         if (!usb_serial_jtag_ll_rxfifo_data_available()) continue;   /* the time is up (checked above) */
         if (!dc_test_line()) {
             why = 3;
@@ -1292,8 +1307,8 @@ static void tx_live(const char *args, bool psk8) {
 
 /* INFO as the C3 answers it (C3Link.info: the ESP32DATV line, FW, BEACON, VIDW); C5 marks this transmitter */
 static void info(void) {
-    say("ESP32DATV 1 C5\r\n");
-    say("FW %s c5 live%s\r\n", esp_app_get_description()->version, BEACON_SYMBOLS ? "" : " no-builtin-beacon");   /* live: QPSKT / PSK8T */
+    say("ESP32DATV 1 C5 RXTX\r\n");                  /* RXTX: the receiver's binary protocol on the same port */
+    say("FW %s c5 live rx%s\r\n", esp_app_get_description()->version, BEACON_SYMBOLS ? "" : " no-builtin-beacon");   /* live: QPSKT / PSK8T */
     if (BEACON_SYMBOLS) say("BEACON %lu Bd QPSK %s, %.3f MHz (built-in, BEACON)\r\n", (unsigned long)BEACON_BAUD, BEACON_FEC, BEACON_FREQ_KHZ / 1000.0);
     else say("BEACON none (no built-in beacon)\r\n");          /* the C3 always has this line; C3Link.info waits for it */
     const video_hdr_t *v = video_find();
@@ -1367,6 +1382,7 @@ static void handle(char *line) {
         bdc(line + 3);
         return;
     }
+    if (c5rx_text(line)) return;                     /* the receiver's G CAP STREAM ... */
     char *cmd = strtok(line, " "), *a1 = strtok(NULL, " "), *a2 = strtok(NULL, " "), *a3 = strtok(NULL, " "), *a4 = strtok(NULL, " ");
     if (!cmd) return;
     for (char *p = cmd; *p; ++p)
@@ -1378,6 +1394,7 @@ static void handle(char *line) {
             return;
         }
         fkhz = k;
+        c5rx_set_freq(k);                            /* the receiver's too (rx/c5_play.sh, tx/c5_dccal.py tune it with F) */
         if (tx_on) {
             tx_chain_on();
             dac_word(iq10(cw_i, cw_q));
@@ -1414,6 +1431,7 @@ static void handle(char *line) {
     } else if (!strcmp(cmd, "ANT")) {
         ant = a1 && atoi(a1) ? 1 : 0;
         gpio_set_level(ANT_GPIO, ant);
+        c5rx_set_ant(ant);
     } else if (!strcmp(cmd, "VT")) {
         if (!a1) {
             say("ERR VT n\r\n");
@@ -1537,6 +1555,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_wifi_start());           /* brings the PHY up and calibrates it */
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous(true));
+    c5rx_setup();
     txdc_boot = txdc_orig = REG_READ(TXDC_REG) & ~TXDC_IQ;
     say("c5cw ready, TX off\r\n");
     state();
@@ -1570,8 +1589,15 @@ void app_main(void) {
             continue;
         }
         uint8_t c;
-        if (usb_serial_jtag_ll_read_rxfifo(&c, 1)) {
+        const int pc = c5rx_pending();               /* first what ended a receiver run (the host's STOP) */
+        if (pc >= 0 || usb_serial_jtag_ll_read_rxfifo(&c, 1)) {
+            if (pc >= 0) c = (uint8_t)pc;
             resume_at = esp_timer_get_time() + BEACON_IDLE_US;
+            const int rx = c5rx_byte(c, used == 0);  /* a binary request of the receiver (0xB4 at the start of a line) */
+            if (rx) {
+                if (rx == 2) host_seen = true;       /* the host receives: the beacon stays off */
+                continue;
+            }
             if (c == '\r') continue;
             if (c != '\n') {
                 if (used < sizeof(line) - 1) line[used++] = (char)c;
