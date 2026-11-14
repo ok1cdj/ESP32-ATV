@@ -247,8 +247,8 @@ licence. Details and measurements: [the ESP32-C5 guide](https://github.com/ok1cd
 5. **The gain:** the C5 overloads at short range (worse reception close by than further away) – on a desk start low and
    go up. Tested: 3 m apart with the stick-on antennas, 250 kS/s, MER 13–17 dB.
 
-A QSO with the IZ7PDX parrot worked with one C5, so far from a PC: the call transmitted, then the reply received on the
-same board. In the app that is Start TX, then the RX screen with the same symbol rate and frames (the parrot answers at
+A QSO with the IZ7PDX parrot works with one C5 (tested from the phone and from a PC): Start TX in the parrot's listening
+pause, then the RX screen with the same frequency, symbol rate, code rate and frames (the parrot answers at
 the call's symbol rate and frame size; at 125 kS/s call with short frames)
 ([test report](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-11-14-c5-transceiver.en.md)).
 

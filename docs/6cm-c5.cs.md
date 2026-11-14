@@ -47,8 +47,8 @@ přijímače drží uložený maják vypnutý.
 
 Vyzkoušeno 14. 11. 2026 s oběma C5 s obrazem transceiveru (z PC): deska A vysílá, deska B přijímá a obráceně, na 2345
 i 5715 MHz, QPSK 125k / 250k a 8PSK 250k, každá deska přepínala TX → RX i RX → TX bez resetu – vše dekódováno bez chyby TS.
-Samotnou jednou C5 se podařilo spojení s parrotem IZ7PDX (OK1KCI, 2345 MHz) při 40–250 kBd: výzva odvysílána, odpověď
-přijata na téže desce ([testovací zpráva](2026-11-14-c5-transceiver.cs.md)).
+Samotnou jednou C5 se podařilo spojení s parrotem IZ7PDX (OK1KCI, 2345 MHz) při 40–250 kBd z PC a při 250 kBd z telefonu
+(Start TX, pak obrazovka RX): výzva odvysílána, odpověď přijata na téže desce ([testovací zpráva](2026-11-14-c5-transceiver.cs.md)).
 
 ## Vysílač
 

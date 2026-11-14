@@ -128,10 +128,13 @@ Findings:
   range (at the higher rates it reported a strong signal and lowered its gain).
 - 333k works towards the parrot only; its reply needs a receiver above 250k.
 
-## Not tested yet
+**From the phone (10:22, app 0.20.1-trx, one C5 transceiver on OTG):** the parrot set to a 250 kS/s beacon; the call sent
+with Start TX (2345.000 MHz, 250k QPSK 3/4 normal, service OK1CDJ, provider "OK1CDJ JO70UB ESP32-ATV", video and sound),
+then the RX screen on the same board. The parrot: first capture not decoded (the signal still settling), the second
+17 dB over the noise, callsign read, **MER 15.7 dB, D 11.7, LDPC 59/59**, 455 TS packets without an error (QSO 9); its
+30 s reply was received on the phone.
 
-- The QSO from the phone (Start TX, then the RX screen on the same transceiver) – the app has the transceiver role, not
-  tried on the phone with it yet.
+## Not tested yet
 - 13 cm reception of the C3 beacon and of the S3 against the C5 (only C5 ↔ C5 and the parrot so far).
 - The output power (no cable to an analyser).
 

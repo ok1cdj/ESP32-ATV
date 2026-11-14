@@ -236,8 +236,8 @@ používá tutéž C5, přepínáš mezi nimi bez přepojování. K vysílání 
 5. **Gain:** C5 se na krátkou vzdálenost zahlcuje (zblízka horší příjem než zdálky) – na stole začni nízko a přidávej.
    Vyzkoušeno: 3 m od sebe s nalepovacími anténami, 250 kS/s, MER 13–17 dB.
 
-Spojení s parrotem IZ7PDX se podařilo jednou C5, zatím z PC: výzva odvysílána, pak odpověď přijatá na téže desce.
-V aplikaci je to Start TX a pak obrazovka RX se stejnou symbolovou rychlostí a rámci (parrot odpovídá symbolovou rychlostí
+Spojení s parrotem IZ7PDX jde jednou C5 (vyzkoušeno z telefonu i z PC): Start TX v pauze, kdy parrot poslouchá, pak
+obrazovka RX se stejným kmitočtem, symbolovou rychlostí, kódovým poměrem a rámci (parrot odpovídá symbolovou rychlostí
 a typem rámců výzvy; při 125 kS/s volej se short rámci)
 ([testovací zpráva](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-11-14-c5-transceiver.cs.md)).
 

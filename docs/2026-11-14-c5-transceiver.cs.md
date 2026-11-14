@@ -126,10 +126,12 @@ Zjištění:
   vyšších rychlostech hlásil silný signál a snižoval zisk).
 - 333k funguje jen směrem k parrotu; jeho odpověď by potřebovala přijímač nad 250k.
 
-## Zatím neotestováno
+**Z telefonu (10:22, aplikace 0.20.1-trx, jedna C5 transceiver na OTG):** parrot přepnutý na maják 250 kS/s; výzva přes
+Start TX (2345.000 MHz, 250k QPSK 3/4 normal, služba OK1CDJ, poskytovatel „OK1CDJ JO70UB ESP32-ATV“, obraz i zvuk), pak
+obrazovka RX na téže desce. Parrot: první záznam nedekódoval (signál se ještě ustaloval), druhý 17 dB nad šumem, značka
+přečtena, **MER 15,7 dB, D 11,7, LDPC 59/59**, 455 TS paketů bez chyby (QSO 9); jeho odpověď (30 s) přijata v telefonu.
 
-- Spojení z telefonu (Start TX a pak obrazovka RX na tomtéž transceiveru) – aplikace roli transceiveru má, v telefonu s ní
-  ještě nezkoušeno.
+## Zatím neotestováno
 - Příjem majáku C3 a S3 proti C5 na 13 cm (zatím jen C5 ↔ C5 a parrot).
 - Výstupní výkon (chybí kabel k analyzátoru).
 

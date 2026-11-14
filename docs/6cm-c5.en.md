@@ -50,8 +50,8 @@ up again before its next run. A request of the receiver keeps the stored beacon 
 
 Tested 2026-11-14 with both C5s on the transceiver image (from a PC): board A transmits, board B receives and the other way
 round, on 2345 and 5715 MHz, QPSK 125k / 250k and 8PSK 250k, each board switching TX → RX and RX → TX without a reset – all
-decoded without a TS error. With one C5 alone a QSO with the IZ7PDX parrot (OK1KCI, 2345 MHz) worked at 40–250 kBd: the
-call transmitted, then the reply received on the same board
+decoded without a TS error. With one C5 alone a QSO with the IZ7PDX parrot (OK1KCI, 2345 MHz) worked at 40–250 kBd from a PC and at 250 kBd from the
+phone (Start TX, then the RX screen): the call transmitted, then the reply received on the same board
 ([test report](2026-11-14-c5-transceiver.en.md)).
 
 ## Transmitter

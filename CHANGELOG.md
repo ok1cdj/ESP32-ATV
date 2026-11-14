@@ -10,8 +10,8 @@ ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the
   switched TX → RX and RX → TX without a reset, all decoded. Firmware menu and web flasher: *receiver* or *transceiver (RX + TX)*.
 - **13 cm on the C5:** C5 → C5 on 2345 MHz decoded at 40k–250k QPSK and 250k 8PSK without a TS error; the app takes the C5 on
   2300–2450 MHz as well as 5650–5900 MHz (RX, TX, Save as beacon).
-- **QSO with the IZ7PDX parrot with one C5** (2345 MHz, 40k–250k): the call transmitted, the reply received on the same
-  board; the parrot answers at the call's symbol rate and frame size (at 125k call with short frames).
+- **QSO with the IZ7PDX parrot with one C5** (2345 MHz, 40k–250k from a PC, 250k from the phone): the call transmitted, the
+  reply received on the same board; the parrot answers at the call's symbol rate and frame size (at 125k call with short frames).
   [Test report](docs/2026-11-14-c5-transceiver.en.md).
 - **Guides revised for the C5 on 13 and 6 cm as one board for RX and TX** (the C5 guide, README, section 6 of the app guide).
 - **Own GPL-3 modulator tables** (`tx/common/rrc_tables.h`, `tx/common/frac_clock.h`) and 8PSK loop: the C5 firmware no longer
