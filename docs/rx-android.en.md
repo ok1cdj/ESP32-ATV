@@ -235,7 +235,7 @@ measurements: [6 cm with the ESP32-C5](https://github.com/ok1cdj/ESP32-ATV/blob/
    section 4). Unplugged and powered from a computer port or a charger it transmits the loop after every power-up;
    interrupted (e.g. a computer opening its port) it starts again after 5 s, as the C3 (tested: 40k from a charger).
    Up to 250 kS/s (the C5 receiver's limit). AMP 300 = the level of our tests; **the output power has not been measured**.
-   **Start TX** (live) works through the C5 too (firmware after v0.19.1-beta; the app asks for the current one otherwise),
+   **Start TX** (live) works through the C5 too (firmware from v0.20-beta; the app asks for the current one otherwise),
    QPSK or 8PSK up to 250 kS/s for the C5 receiver (preset *… live 250k 8PSK 2/3 short (C5)*). Tested: 40k and 66.7k
    QPSK with sound, 250k 8PSK with camera and microphone, 3 min with the screen off without a TS error.
 3. **Receiving:** the receiver C5 on OTG, **RX**, the preset *5715.000 Beacon 250k QPSK 3/4* (or 125k), **Start**. The

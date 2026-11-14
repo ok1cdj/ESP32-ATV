@@ -2,7 +2,7 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
-## Unreleased
+## 0.20-beta – 2026-11-14
 
 ### 6 cm: the ESP32-C5 transmitter does what the C3 does
 - **Live TX through the C5** (Start on the TX screen): the C3's `QPSKT` / `PSK8T` stream, QPSK at any rate of 2–333 kBd

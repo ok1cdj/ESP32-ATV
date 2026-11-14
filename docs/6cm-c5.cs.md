@@ -16,13 +16,13 @@ ESP32-C5 (rx/c5rx: IQ estimátor -> halfband -> cs4 250 / 333 / 400 ksps přes U
    -> Android: ATV RX/TX (rozpozná C5 sám)      nebo      PC: rx/c5_play.sh (espdr nb.py, leandvb, ffplay)
 ```
 
-**Stav:** vydáno ve v0.19-beta (11. 11. 2026): oba firmwary z aplikace i webového flasheru, předvolby v aplikaci.
+**Stav:** vydáno ve v0.19-beta (11. 11. 2026): oba firmwary z aplikace i webového flasheru, předvolby v aplikaci; v0.20-beta (14. 11. 2026): živé vysílání přes C5, korekce nosné podle kmitočtu, návrat majáku.
 10. 11. 2026: maják z C5 dekódován druhým
 C5 na PC i v telefonu (zámek, obraz, MER 11–17 dB). 11. 11. 2026: 250 kBd přes 400 ksps na PC i v telefonu (3 m od sebe,
 nalepovací antény z balení: MER 13–17 dB, 319 rámců z 320 bez chyb, žádné ztracené USB pakety).
 
 **Vysílač C5 umí totéž co C3:** uloží si smyčku natočenou v telefonu (záložka TX → *Save as beacon*) a po zapnutí ji sám
-vysílá, a **Start TX vysílá živě z telefonu** (kamera, testovací obrazec, soubor; QPSK nebo 8PSK) – novinka po v0.19.1-beta,
+vysílá, a **Start TX vysílá živě z telefonu** (kamera, testovací obrazec, soubor; QPSK nebo 8PSK) – novinka ve v0.20-beta,
 přijato na vzduchu přijímačem C5 (z PC i z telefonu).
 
 ## Vysílač – `tx/c5cw`

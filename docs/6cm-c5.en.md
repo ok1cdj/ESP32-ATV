@@ -17,14 +17,14 @@ ESP32-C5 (rx/c5rx: IQ estimator -> halfband -> cs4 250 / 333 / 400 ksps over USB
    -> Android: ATV RX/TX (detects the C5 itself)      or      PC: rx/c5_play.sh (espdr nb.py, leandvb, ffplay)
 ```
 
-**Status:** released in v0.19-beta (2026-11-11): both firmwares from the app and the web flasher, presets in the app.
+**Status:** released in v0.19-beta (2026-11-11): both firmwares from the app and the web flasher, presets in the app; v0.20-beta (2026-11-14): live TX through the C5, per-frequency carrier trim, beacon restart.
 2026-11-10: the C5 beacon was decoded by a second
 C5 on a PC and on a phone (lock, picture, MER 11–17 dB). 2026-11-11: 250 kBd through 400 ksps on the PC and on the phone
 (3 m apart with the boards' stick-on antennas: MER 13–17 dB, 319 frames clean of 320, no USB packets lost).
 
 **The C5 transmitter does what the C3 does:** it stores a loop recorded on the phone (TX screen → *Save as beacon*) and
 transmits it by itself after power-up, and **Start TX sends live from the phone** (camera, test card, file; QPSK or 8PSK)
-— new after v0.19.1-beta, received on air by the C5 receiver (from a PC and from the phone).
+— new in v0.20-beta, received on air by the C5 receiver (from a PC and from the phone).
 
 ## Transmitter – `tx/c5cw`
 

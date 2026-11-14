@@ -224,7 +224,7 @@ přijímač pro tuto aplikaci, druhý jako vysílač (maják i živé vysílán�
    a napájený z portu počítače nebo nabíječky vysílá smyčku po každém zapnutí; po přerušení (např. když počítač otevře
    jeho port) se po 5 s spustí znovu, jako C3 (vyzkoušeno: 40k z nabíječky). Nejvýš 250 kS/s (hranice přijímače C5).
    AMP 300 = úroveň našich testů; **výstupní výkon změřený není**. **Start TX** (živé vysílání) jde přes C5 také
-   (firmware po v0.19.1-beta, jinak aplikace řekne, ať nahrajete aktuální), QPSK nebo 8PSK do 250 kS/s pro přijímač C5 (předvolba *… live 250k 8PSK 2/3 short (C5)*).
+   (firmware od v0.20-beta, jinak aplikace řekne, ať nahrajete aktuální), QPSK nebo 8PSK do 250 kS/s pro přijímač C5 (předvolba *… live 250k 8PSK 2/3 short (C5)*).
    Vyzkoušeno: 40k a 66,7k QPSK se zvukem, 250k 8PSK s kamerou a mikrofonem, 3 min se zhasnutým displejem bez chyby TS.
 3. **Příjem:** přijímací C5 na OTG, **RX**, předvolba *5715.000 Beacon 250k QPSK 3/4* (nebo 125k), **Start**. Aplikace C5
    rozpozná sama (vždy cs4: 250 ksps do 148 kS/s, 333 ksps do 197 kS/s, 400 ksps do 250 kS/s) a hledá v ±300 kHz –
