@@ -7,7 +7,7 @@ USB-OTG, **telefon nebo tablet s Androidem** signál demoduluje (leandvb), dekó
 spolu s MER, konstelací a údaji o streamu. Protějškem je samostatný maják s ESP32-C3
 ([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)) – a stejná aplikace také **vysílá**: s XIAO ESP32-C3 na
 USB-OTG posílá živě testkartu, obraz z kamery nebo obrázek či video z telefonu jako DVB-S2 (přepínač **RX | TX** nahoře).
-Na 6 cm místo S3 a C3 slouží dvě desky **ESP32-C5**: přijímač pro tutéž aplikaci a vysílač (uložený maják i živé vysílání, kapitola 6).
+**ESP32-C5** zastoupí S3 i C3 na 13 i 6 cm: s firmwarem transceiveru **jedna deska přijímá i vysílá** (kapitola 6).
 
 > ⚠ **Vysílá se v radioamatérském pásmu 13 cm (2,3–2,45 GHz), s ESP32-C5 na 6 cm (5,65–5,85 GHz). K vysílání je nutné platné oprávnění (koncese)
 > radioamatéra.** Vysílej jen se svou značkou, na kmitočtech a s výkonem, které tvé oprávnění a národní kmitočtový
@@ -209,30 +209,37 @@ posune (asi o 2 kódy DAC), takže uložená hodnota dá méně, asi 9 dB: nejle
 mezitím neodpojovat (aplikace ho neresetuje, kalibrace tedy platí, dokud C3 nepřijde o napájení). Nahrání firmwaru z aplikace uložené hodnoty zachová. Podrobnosti a měření:
 [kalibrace LO](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-10-16-lo-calibration.cs.md).
 
-## 6. 6 cm s ESP32-C5 (experimentální)
+## 6. ESP32-C5: jedna deska pro příjem i vysílání, 13 a 6 cm (experimentální)
 
 ![6 cm: předvolby TX pro C5 a příjem majáku z C5 na 5715 MHz](img/atvrx-6cm.png)
 
-**Waveshare ESP32-C5-Zero** (jediný ESP32 s 5 GHz) pracuje na **5715.000 MHz** bez dalšího RF hardwaru: jeden jako
-přijímač pro tuto aplikaci, druhý jako vysílač (maják i živé vysílání). I zde je k vysílání nutná koncese. Podrobnosti a měření:
-[6 cm s ESP32-C5](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/6cm-c5.cs.md).
+**Waveshare ESP32-C5-Zero** (jediný ESP32 s 5 GHz, má i 2,4 GHz) vysílá a přijímá na **13 cm (2300–2450 MHz) i 6 cm
+(5650–5900 MHz)** bez dalšího RF hardwaru. S firmwarem **transceiveru** zvládne jedna deska obojí: obrazovka RX i TX
+používá tutéž C5, přepínáš mezi nimi bez přepojování. K vysílání je nutná koncese. Podrobnosti a měření:
+[návod k ESP32-C5](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/6cm-c5.cs.md).
 
 1. **Firmware:** připoj C5 přes OTG, menu ⋮ → **Firmware** → *Write firmware…*; aplikace se zeptá *receiver*, nebo
-   *transceiver (RX + TX)*. Nebo [webový flasher](flasher/) (tlačítko pro každý). Transceiver je jedna deska pro RX i TX
-   obrazovku (aplikace ho pozná, i na hubu) a funguje i na 13 cm (2300–2450 MHz).
-2. **Maják:** vysílací C5 na OTG, přepni na **TX**, zvol předvolbu *5715.000 6 cm beacon … (C5)* (40k, 66,7k short,
-   125k, 250k short), nastav **značku**, obraz a délku a klepni na **Save as beacon** (jako v kapitole 4). Odpojený
-   a napájený z portu počítače nebo nabíječky vysílá smyčku po každém zapnutí; po přerušení (např. když počítač otevře
-   jeho port) se po 5 s spustí znovu, jako C3 (vyzkoušeno: 40k z nabíječky). Nejvýš 250 kS/s (hranice přijímače C5).
-   AMP 300 = úroveň našich testů; **výstupní výkon změřený není**. **Start TX** (živé vysílání) jde přes C5 také
-   (firmware od v0.20-beta, jinak aplikace řekne, ať nahrajete aktuální), QPSK nebo 8PSK do 250 kS/s pro přijímač C5 (předvolba *… live 250k 8PSK 2/3 short (C5)*).
-   Vyzkoušeno: 40k a 66,7k QPSK se zvukem, 250k 8PSK s kamerou a mikrofonem, 3 min se zhasnutým displejem bez chyby TS.
-3. **Příjem:** přijímací C5 na OTG, **RX**, předvolba *5715.000 Beacon 250k QPSK 3/4* (nebo 125k), **Start**. Aplikace C5
-   rozpozná sama (vždy cs4: 250 ksps do 148 kS/s, 333 ksps do 197 kS/s, 400 ksps do 250 kS/s) a hledá v ±300 kHz –
-   krystaly dvou C5 se na 5,7 GHz liší až o ~150 kHz. Přijímač C5 bere 2300–2450 i 5650–5900 MHz, S3 jen
-   13 cm. Kódový poměr a rámce musí odpovídat vysílači.
-4. **Gain:** C5 se na krátkou vzdálenost zahlcuje (zblízka horší příjem než zdálky) – na stole začni nízko a přidávej.
+   *transceiver (RX + TX)* – ber transceiver, pokud deska nemá jen přijímat. Nebo [webový flasher](flasher/). Aplikace
+   transceiver pozná pro obě obrazovky, i na hubu.
+2. **Příjem:** **RX**, předvolba nebo vlastní nastavení (např. 2345.000 MHz na 13 cm, *5715.000 Beacon 250k QPSK 3/4* na
+   6 cm), **Start**. Do 250 kS/s; aplikace C5 rozpozná sama (vždy cs4: 250 ksps do 148 kS/s, 333 ksps do 197 kS/s,
+   400 ksps do 250 kS/s) a hledá v ±300 kHz – krystaly dvou C5 se na 5,7 GHz liší až o ~150 kHz. Kódový poměr a rámce
+   musí odpovídat vysílači. S3 je jen pro 13 cm.
+3. **Živé vysílání:** **TX**, kmitočet, symbolová rychlost, QPSK nebo 8PSK, **značka**, obraz a zvuk, **Start TX**
+   (firmware od v0.20-beta, jinak aplikace řekne, ať nahraješ aktuální). Na 6 cm předvolby *… (C5)* (např. *… live 250k
+   8PSK 2/3 short (C5)*), na 13 cm předvolby pro 2345 MHz. Vyzkoušeno: 40k a 66,7k QPSK se zvukem, 250k 8PSK s kamerou
+   a mikrofonem, 3 min se zhasnutým displejem bez chyby TS.
+4. **Uložený maják:** nastav jako pro živé vysílání (předvolby *5715.000 6 cm beacon … (C5)*: 40k, 66,7k short, 125k,
+   250k short) a klepni na **Save as beacon** (jako v kapitole 4). Odpojený a napájený z portu počítače nebo nabíječky
+   vysílá smyčku po každém zapnutí; po přerušení se po 5 s spustí znovu, jako C3. AMP 300 = úroveň našich testů;
+   **výstupní výkon změřený není**.
+5. **Gain:** C5 se na krátkou vzdálenost zahlcuje (zblízka horší příjem než zdálky) – na stole začni nízko a přidávej.
    Vyzkoušeno: 3 m od sebe s nalepovacími anténami, 250 kS/s, MER 13–17 dB.
+
+Spojení s parrotem IZ7PDX se podařilo jednou C5, zatím z PC: výzva odvysílána, pak odpověď přijatá na téže desce.
+V aplikaci je to Start TX a pak obrazovka RX se stejnou symbolovou rychlostí a rámci (parrot odpovídá symbolovou rychlostí
+a typem rámců výzvy; při 125 kS/s volej se short rámci)
+([testovací zpráva](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-11-14-c5-transceiver.cs.md)).
 
 **LED** na C5-Zero: slabě modrá = čeká, zelená = přijímá, červená = vysílá, nesvítí = zavaděč ROM (stiskni RESET).
 C5 nemá výstup pro PA (C3 má GPIO3, viz README). Kompenzace nosné C5 se zatím nastavuje na PC

@@ -7,7 +7,7 @@ an **Android phone or tablet** demodulates (leandvb), decodes the LDPC (ldpc_too
 with MER, constellation and stream information. Its counterpart is the stand-alone ESP32-C3 beacon
 ([ESP32-DATV-SA](https://github.com/ok1cdj/ESP32-DATV-SA)) – and the same app also **transmits**: with a XIAO
 ESP32-C3 on USB-OTG it sends a test card, the phone's camera or a picture / video from the phone live as DVB-S2 (switch **RX | TX** at the top).
-On 6 cm two **ESP32-C5** boards take the S3's and the C3's place: a receiver for the same app and a transmitter (stored beacon or live, section 6).
+The **ESP32-C5** can take both places on 13 and 6 cm: with the transceiver firmware **one board receives and transmits** (section 6).
 
 > ⚠ **The transmitter works on the 13 cm amateur radio band (2.3–2.45 GHz), the ESP32-C5 on 6 cm (5.65–5.85 GHz).
 > Transmitting requires an amateur radio licence.** Transmit only with your own callsign, on frequencies and at power levels your licence and national band
@@ -220,31 +220,37 @@ best result calibrate just before transmitting and leave the C3 plugged in (the 
 calibration holds until the C3 loses power). A firmware upload from the app keeps the
 stored values. Details and measurements: [LO calibration](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-10-16-lo-calibration.en.md).
 
-## 6. 6 cm with the ESP32-C5 (experimental)
+## 6. The ESP32-C5: one board for RX and TX, 13 and 6 cm (experimental)
 
 ![6 cm: the TX presets for the C5 and reception of the C5 beacon on 5715 MHz](img/atvrx-6cm.png)
 
-The **Waveshare ESP32-C5-Zero** (the only ESP32 with 5 GHz) works on **5715.000 MHz** without any other RF hardware: one
-as a receiver for this app, a second one as a transmitter (beacon or live). Transmitting needs a licence here too. Details and
-measurements: [6 cm with the ESP32-C5](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/6cm-c5.en.md).
+The **Waveshare ESP32-C5-Zero** (the only ESP32 with 5 GHz, and 2.4 GHz too) transmits and receives on **13 cm
+(2300–2450 MHz) and 6 cm (5650–5900 MHz)** without any other RF hardware. With the **transceiver** firmware one board
+does both: the RX and the TX screen use the same C5, switch between them without replugging. Transmitting needs a
+licence. Details and measurements: [the ESP32-C5 guide](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/6cm-c5.en.md).
 
 1. **Firmware:** connect the C5 through OTG, menu ⋮ → **Firmware** → *Write firmware…*; the app asks *receiver* or
-   *transceiver (RX + TX)*. Or the [web flasher](flasher/) (a button for each). The transceiver is one board for both the
-   RX and the TX screen (the app recognises it, also on a hub); it works on 13 cm (2300–2450 MHz) too.
-2. **Beacon:** the transmitter C5 on OTG, switch to **TX**, pick a preset *5715.000 6 cm beacon … (C5)* (40k, 66.7k
-   short, 125k, 250k short), set your **callsign**, the picture and the length, then **Save as beacon** (as in
-   section 4). Unplugged and powered from a computer port or a charger it transmits the loop after every power-up;
-   interrupted (e.g. a computer opening its port) it starts again after 5 s, as the C3 (tested: 40k from a charger).
-   Up to 250 kS/s (the C5 receiver's limit). AMP 300 = the level of our tests; **the output power has not been measured**.
-   **Start TX** (live) works through the C5 too (firmware from v0.20-beta; the app asks for the current one otherwise),
-   QPSK or 8PSK up to 250 kS/s for the C5 receiver (preset *… live 250k 8PSK 2/3 short (C5)*). Tested: 40k and 66.7k
-   QPSK with sound, 250k 8PSK with camera and microphone, 3 min with the screen off without a TS error.
-3. **Receiving:** the receiver C5 on OTG, **RX**, the preset *5715.000 Beacon 250k QPSK 3/4* (or 125k), **Start**. The
-   app recognises the C5 by itself (always cs4: 250 ksps up to 148 kS/s, 333 ksps up to 197 kS/s, 400 ksps up to
-   250 kS/s) and searches ±300 kHz – the two C5s' crystals differ by up to ~150 kHz at 5.7 GHz. The C5 receiver
-   takes 2300–2450 and 5650–5900 MHz, the S3 only 13 cm. Code rate and frames must match the transmitter.
-4. **The gain:** the C5 overloads at short range (worse reception close by than further away) – on a desk start
-   low and go up. Tested: 3 m apart with the stick-on antennas, 250 kS/s, MER 13–17 dB.
+   *transceiver (RX + TX)* – take the transceiver unless the board only receives. Or the [web flasher](flasher/). The app
+   recognises the transceiver for both screens, also on a hub.
+2. **Receiving:** **RX**, a preset or your own settings (e.g. 2345.000 MHz on 13 cm, *5715.000 Beacon 250k QPSK 3/4* on
+   6 cm), **Start**. Up to 250 kS/s; the app recognises the C5 by itself (always cs4: 250 ksps up to 148 kS/s, 333 ksps up
+   to 197 kS/s, 400 ksps up to 250 kS/s) and searches ±300 kHz – two C5s' crystals differ by up to ~150 kHz at 5.7 GHz.
+   Code rate and frames must match the transmitter. The S3 is for 13 cm only.
+3. **Live TX:** **TX**, frequency, symbol rate, QPSK or 8PSK, your **callsign**, picture and sound, **Start TX** (firmware
+   from v0.20-beta; the app asks for the current one otherwise). On 6 cm the presets *… (C5)* (e.g. *… live 250k 8PSK 2/3
+   short (C5)*), on 13 cm the 2345 MHz presets. Tested: 40k and 66.7k QPSK with sound, 250k 8PSK with camera and
+   microphone, 3 min with the screen off without a TS error.
+4. **Stored beacon:** set it up as for live TX (presets *5715.000 6 cm beacon … (C5)*: 40k, 66.7k short, 125k, 250k short),
+   then **Save as beacon** (as in section 4). Unplugged and powered from a computer port or a charger it transmits the loop
+   after every power-up; interrupted it starts again after 5 s, as the C3. AMP 300 = the level of our tests; **the output
+   power has not been measured**.
+5. **The gain:** the C5 overloads at short range (worse reception close by than further away) – on a desk start low and
+   go up. Tested: 3 m apart with the stick-on antennas, 250 kS/s, MER 13–17 dB.
+
+A QSO with the IZ7PDX parrot worked with one C5, so far from a PC: the call transmitted, then the reply received on the
+same board. In the app that is Start TX, then the RX screen with the same symbol rate and frames (the parrot answers at
+the call's symbol rate and frame size; at 125 kS/s call with short frames)
+([test report](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/2026-11-14-c5-transceiver.en.md)).
 
 The **LED** of the C5-Zero: dim blue = waiting, green = receiving, red = transmitting, dark = the ROM loader (press RESET).
 The C5 has no PA output (the C3's is GPIO3, see the README). The C5's carrier trim is set on a PC

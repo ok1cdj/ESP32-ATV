@@ -21,9 +21,9 @@ DATV on 13 cm (and 6 cm) with ESP32 boards: a stand-alone **ESP32-C3 DVB-S2 beac
 **XIAO ESP32-S3** on USB-OTG and an **Android** phone or tablet (beta). The app also **transmits** through a XIAO
 ESP32-C3 on USB-OTG: test card, camera or a picture / video file, DVB-S2 QPSK / 8PSK encoded on the phone (`android/native/dvbs2enc`).
 Reception can be **recorded** as it is received (`.ts`, with MER / CNR as `.srt` subtitles).
-**6 cm (experimental):** two **Waveshare ESP32-C5-Zero** boards on 5715 MHz – a receiver for the same app (up to 250 kS/s)
-and a transmitter that, as the C3, stores a beacon from the phone (*Save as beacon*) or sends live (Start TX),
-see [below](#6-cm--esp32-c5-experimental).
+**ESP32-C5, 13 and 6 cm (experimental):** a **Waveshare ESP32-C5-Zero** with the transceiver firmware is **one board for
+RX and TX** – the same app receives (up to 250 kS/s) and transmits (live or a stored beacon) through it, on 2300–2450 and
+5650–5900 MHz; see [below](#esp32-c5-13-and-6-cm-experimental).
 
 - **Guide / návod:** <https://ok1cdj.github.io/ESP32-ATV/> ([English](docs/rx-android.en.md), [česky](docs/rx-android.cs.md))
 - **APK:** [Releases](https://github.com/ok1cdj/ESP32-ATV/releases) ([changelog](CHANGELOG.md)) · **Firmware S3 (RX) + C3 (TX) + C5 (6 cm RX / TX):** from the app (menu ⋮ → Firmware) or the [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/)
@@ -187,33 +187,37 @@ records the phone's TX mux without the C3 – a white flash and a beep every 2 s
 
 Other tools: `rx/level_sweep.sh` (sensitivity sweep, `FRAME=short` for short frames), `rx/sim_frames.py` (normal vs short frames simulated end to end), `rx/raw2cf32.py` (raw packets recorded by the app -> cf32, decode), `rx/make_replay.py` (a recording for the app's *Replay* from any TS, no radio needed: our DVB-S2 encoder, offset, noise), `rx/avsync_rx.py` (the app's lip sync on such a replay, debug build).
 
-## 6 cm – ESP32-C5 (experimental)
-Two **Waveshare ESP32-C5-Zero** boards (ESP32-C5, the only Espressif chip with 5 GHz; U.FL antenna) on **5715.000 MHz**.
-**Transmitting needs an amateur radio licence here too.** In the releases since v0.19-beta. Guide with the details:
-[English](docs/6cm-c5.en.md), [česky](docs/6cm-c5.cs.md).
+## ESP32-C5: 13 and 6 cm (experimental)
+The **Waveshare ESP32-C5-Zero** (ESP32-C5, the only Espressif chip with 5 GHz, and 2.4 GHz too; U.FL antenna) transmits and
+receives DVB-S2 on **13 cm (2300–2450 MHz) and 6 cm (5650–5900 MHz)**, e.g. 2345.000 and 5715.000 MHz.
+**Transmitting needs an amateur radio licence.** 6 cm since v0.19-beta, live TX since v0.20-beta; the transceiver and 13 cm
+in the next version (branch `trx`). Guide with the details: [English](docs/6cm-c5.en.md), [česky](docs/6cm-c5.cs.md);
+[test report 2026-11-14](docs/2026-11-14-c5-transceiver.en.md).
 
 <p align="center"><img src="docs/img/atvrx-6cm.png" alt="6 cm: the TX presets for the ESP32-C5 and reception of the C5 beacon on 5715 MHz" width="640"></p>
 
+- **One board for RX and TX (transceiver, `tx/c5cw` with the receiver in it):** the app's RX and TX screens take the same
+  board; switch between them without replugging. With one C5 alone a QSO with the IZ7PDX parrot worked at 40–250 kS/s (the
+  call transmitted, the reply received on the same board).
 - **Firmware:** from the app (menu ⋮ → Firmware asks *receiver* or *transceiver (RX + TX)* for an ESP32-C5) or the
-  [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/); on a PC `rx/c5rx/flash.sh`, `tx/c5cw/flash.sh none`.
-- **Receiver** (`rx/c5rx`): the IQ estimator read on a fixed clock, a halfband FIR, cs4 at 250 / 333 / 400 ksps in the S3
-  receiver's packets and protocol – the app and `espdr nb.py` drive it unchanged. Symbol rates up to 250 kS/s.
-- **Transmitter** (`tx/c5cw`): the TX DC register path of [esp32-C5-sdr-tx](https://github.com/fedaykinofdune/esp32-C5-sdr-tx)
-  with the C3's QPSK / 8PSK RRC tables. Like the C3 it stores a loop from the app's TX screen (*Save as beacon*, presets
-  "5715.000 6 cm beacon …") and transmits it by itself after power-up, and it takes **live TX** from the phone (the C3's
-  `QPSKT` / `PSK8T` stream, QPSK and 8PSK). The carrier trim per frequency (`BDC`
-  table, as the C3) is set on a PC with `tx/c5_dccal.py --save`.
-- **LED** of the C5-Zero: dim blue waiting, green receiving, red transmitting, dark = ROM loader.
-- No PA output on the C5 (the C3's is GPIO3, see [PA output](#pa-output)).
-- **Tested 2026-11-11:** 250 kS/s through 400 ksps on a PC and on a phone, a loop saved on the phone received with MER
-  ~17 dB, 3 m apart with the boards' stick-on antennas. **The output power has not been measured** (no cable to an
-  analyser yet; over the air only).
+  [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/); on a PC `tx/c5cw/flash.sh none` (transceiver),
+  `rx/c5rx/flash.sh` (receiver only).
+- **Receiver:** the IQ estimator read on a fixed clock, a halfband FIR, cs4 at 250 / 333 / 400 ksps in the S3 receiver's
+  packets and protocol – the app and `espdr nb.py` drive it unchanged. Symbol rates up to 250 kS/s.
+- **Transmitter:** the TX DC register path of [esp32-C5-sdr-tx](https://github.com/fedaykinofdune/esp32-C5-sdr-tx) with our
+  own GPL-3 RRC tables (`tx/common`). Live TX from the phone (the C3's `QPSKT` / `PSK8T` stream, QPSK 2–333 kBd, 8PSK up to
+  300 kBd) or a loop stored with *Save as beacon* that it transmits by itself after power-up. The carrier trim per frequency
+  (`BDC` table, as the C3) is set on a PC with `tx/c5_dccal.py --save`.
+- **LED** of the C5-Zero: dim blue waiting, green receiving, red transmitting, dark = ROM loader. No PA output on the C5
+  (the C3's is GPIO3, see [PA output](#pa-output)).
+- **Tested 2026-11-14:** C5 → C5 on 2345 MHz at 40k–250k QPSK and 250k 8PSK (from a PC) and on 5715 MHz (from a PC and
+  from the phone), without a TS error. **The output power has not been measured** (no cable to an analyser yet; over the air only).
 
 ```sh
 . ~/esp/esp-idf-v6.1/export.sh
-rx/c5rx/flash.sh && rx/c5_play.sh 250000                                                           # RX on the PC (SR up to 250000)
-tx/c5cw/flash.sh none                                                                              # TX without a built-in beacon (as the web build)
-CALL=YOURCALL BAND=6cm tx/make_beacons.sh 125000 && tx/c5cw/flash.sh tx/beacons/yourcall-125k-6cm   # or a built-in one: BEACON on its USB
+tx/c5cw/flash.sh none                                                                              # transceiver (RX + TX) without a built-in beacon (as the web build)
+rx/c5_play.sh 250000 2345.000                                                                      # RX on the PC (SR up to 250000; 5715.000 for 6 cm)
+CALL=YOURCALL BAND=6cm tx/make_beacons.sh 125000 && tx/c5cw/flash.sh tx/beacons/yourcall-125k-6cm   # or with a built-in beacon: BEACON on its USB
 ```
 
 ## Test without hardware
