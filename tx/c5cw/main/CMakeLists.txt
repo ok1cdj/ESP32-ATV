@@ -1,7 +1,7 @@
 # C5CW_BEACON (environment): the beacon directory (beacon.bin, beacon_cfg.h from tx/make_beacons.sh), set by flash.sh; empty: no
 # built-in beacon (the web build, tx/c5cw/build_web.sh) - the transmitter then plays only a loop stored with VIDW
 set(beacon "$ENV{C5CW_BEACON}")
-set(inc "${CMAKE_CURRENT_LIST_DIR}/../../../third_party/ESP32-DATV-SA/firmware/main"
+set(inc "${CMAKE_CURRENT_LIST_DIR}/../../common"                    # rrc_tables.h, frac_clock.h
         "${CMAKE_CURRENT_LIST_DIR}/../../../rx/c5rx/main")   # c5_led.h
 if(beacon)
     idf_component_register(SRCS "main.c"

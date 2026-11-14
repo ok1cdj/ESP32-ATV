@@ -71,7 +71,7 @@
 #else
 #include "beacon_cfg.h"              /* of the beacon directory (flash.sh) */
 #endif
-#include "sample_clock.h"            /* third_party/ESP32-DATV-SA/firmware/main */
+#include "frac_clock.h"              /* tx/common */
 
 extern void esp_phy_wifi_tx_tone(uint32_t start, uint32_t mhz, uint32_t backoff);
 extern void esp_phy_rftest_config(uint8_t conf);
@@ -328,25 +328,14 @@ static void dc_say(uint32_t f) {
 }
 
 /* ------------------------------------------------------------ beacon
- * The C3's tables (qpsk_lut.h lut_build_t: 4 groups of 2 symbols, RRC span 8, entry T[(g * S + j) * 16 + idx], the sum of the four
- * entries xor LUT_XOR is the word). The C3's loops are cycle-exact for its core; here the loop is paced on the cycle counter instead
- * (absolute deadlines: a stall becomes jitter, not a lost sample): each sample slot stores the word of this symbol and computes the
- * same sample of the next one. Symbols: 2 bits each in beacon.bin, symbol n in byte n / 4 at bits 2 (n % 4) (bit 0 = I, 1 = Q).
+ * Tables of tx/common/rrc_tables.h (RRC span 8): rrc_qpsk2 - 4 groups of 2 symbols, entry T[(g * S + j) * 16 + idx], the sum of
+ * the four entries xor RRC_XOR is the word. The loop is paced on the cycle counter (absolute deadlines: a stall becomes jitter,
+ * not a lost sample): each sample slot stores the word of this symbol and computes the same sample of the next one. Symbols:
+ * 2 bits each in beacon.bin, symbol n in byte n / 4 at bits 2 (n % 4) (bit 0 = I, 1 = Q).
  * With four tables a sample costs about 30 instructions plus the 15-cycle store: 60 cycles (S 12 at 333 kBd) keep up, 45 (S 16) not.
- * S 8 and 16 use qpsk_lut.h lut_build_g with two groups of 4 symbols instead (same span 8, entry T[(k * 256 + idx) * S + j]):
- * two loads and one add per sample. */
-
-static float rrc_pulse(float t, float b) {
-    const float pi = 3.14159265f;
-    if (fabsf(t) < 1e-6f) return 1.0f - b + 4.0f * b / pi;
-    if (fabsf(fabsf(t) - 1.0f / (4.0f * b)) < 1e-4f)
-        return b / 1.41421356f * ((1.0f + 2.0f / pi) * sinf(pi / (4.0f * b)) + (1.0f - 2.0f / pi) * cosf(pi / (4.0f * b)));
-    const float num = sinf(pi * t * (1.0f - b)) + 4.0f * b * t * cosf(pi * t * (1.0f + b));
-    const float den = pi * t * (1.0f - (4.0f * b * t) * (4.0f * b * t));
-    return num / den;
-}
-
-#include "qpsk_lut.h"
+ * S 8 and 16 use rrc_qpsk4 with two groups of 4 symbols instead (entry T[(g * 256 + idx) * S + j]): two loads and one add per
+ * sample. */
+#include "rrc_tables.h"                /* tx/common */
 
 #ifndef C5CW_NO_BEACON
 extern const uint8_t beacon_bin_start[] asm("_binary_beacon_bin_start");
@@ -361,7 +350,7 @@ typedef struct {
     uint64_t symbols;
 } beacon_stats_t;
 
-static uint32_t __attribute__((noinline, unused)) IRAM_ATTR beacon_loop(const uint8_t *ring, uint32_t nsym, const int32_t *T, uint32_t S, sample_clock_t clk,
+static uint32_t __attribute__((noinline, unused)) IRAM_ATTR beacon_loop(const uint8_t *ring, uint32_t nsym, const int32_t *T, uint32_t S, frac_clock_t clk,
                                       uint32_t xb, beacon_stats_t *st) {
     uint32_t w[2][BEACON_SMAX], off[BEACON_SMAX];
     const uint32_t step = clk.period / S;
@@ -398,7 +387,7 @@ static uint32_t __attribute__((noinline, unused)) IRAM_ATTR beacon_loop(const ui
             p3 += 16;
         }
         cur ^= 1u;
-        t += sample_clock_next(clk, &phase);
+        t += frac_clock_step(clk, &phase);
         if (!(++n & 255u) && usb_serial_jtag_ll_rxfifo_data_available()) break;
     }
     portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
@@ -408,9 +397,9 @@ static uint32_t __attribute__((noinline, unused)) IRAM_ATTR beacon_loop(const ui
     return n;
 }
 
-/* Two 4-symbol tables (lut_build_g, ngroups 2), S 8 or 16. */
+/* Two 4-symbol tables (rrc_qpsk4), S 8 or 16. */
 static uint32_t __attribute__((noinline, unused)) IRAM_ATTR beacon_loop_g(const uint8_t *ring, uint32_t nsym, const int32_t *T, uint32_t S,
-                                                                  sample_clock_t clk, uint32_t xb, beacon_stats_t *st) {
+                                                                  frac_clock_t clk, uint32_t xb, beacon_stats_t *st) {
     uint32_t w[2][BEACON_SMAX];
     const uint32_t step = clk.period / S;                     /* the symbol's spare cycles go to its last sample */
     const int32_t *const T1 = T + 256u * S;
@@ -445,7 +434,7 @@ static uint32_t __attribute__((noinline, unused)) IRAM_ATTR beacon_loop_g(const 
         c = esp_cpu_get_cycle_count() - tj;
         if (c > end_max) end_max = c;
         cur ^= 1u;
-        t += sample_clock_next(clk, &phase);
+        t += frac_clock_step(clk, &phase);
         if (!(++n & 255u) && usb_serial_jtag_ll_rxfifo_data_available()) break;
     }
     portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
@@ -480,7 +469,7 @@ typedef struct {
     uint32_t *ring;                  /* VIDEO_RING bytes, VIDEO_LEAD of them filled from offset 0 and the read of the next 64 started */
 } flash_feed_t;
 
-static inline __attribute__((always_inline)) uint32_t b16_body(const uint8_t *ring, uint32_t nsym, const int32_t *T, sample_clock_t clk,
+static inline __attribute__((always_inline)) uint32_t b16_body(const uint8_t *ring, uint32_t nsym, const int32_t *T, frac_clock_t clk,
                                                                uint32_t xb, beacon_stats_t *st, flash_feed_t *ff, const bool fl) {
     const uint32_t step = clk.period / 16u;                   /* the symbol's spare cycles go to its last sample */
     const int32_t *const T1 = T + 256u * 16u;
@@ -512,7 +501,7 @@ static inline __attribute__((always_inline)) uint32_t b16_body(const uint8_t *ri
         B16_SLOT(6, np0 = T + (C & 255u) * 16u);
         B16_SLOT(7, np1 = T1 + (C >> 8 & 255u) * 16u);
         B16_SLOT(8, if (fl && (q & 255u) == 255u) fadr = ff->base + foff);
-        B16_SLOT(9, t1 = t + sample_clock_next(clk, &phase));
+        B16_SLOT(9, t1 = t + frac_clock_step(clk, &phase));
         B16_SLOT(10, if (fl && (q & 255u) == 255u) { foff += 64u; if (foff >= ff->bytes) foff -= ff->bytes; });
         B16_SLOT(11, brk = !(++n & 255u) && usb_serial_jtag_ll_rxfifo_data_available());
         B16_SLOT(12, if (fl && (q & 15u) == 8u) {             /* a word of the last read into the ring */
@@ -539,11 +528,11 @@ static inline __attribute__((always_inline)) uint32_t b16_body(const uint8_t *ri
 }
 
 static uint32_t __attribute__((noinline, unused)) IRAM_ATTR beacon_loop_16(const uint8_t *ring, uint32_t nsym, const int32_t *T,
-                                                                   sample_clock_t clk, uint32_t xb, beacon_stats_t *st) {
+                                                                   frac_clock_t clk, uint32_t xb, beacon_stats_t *st) {
     return b16_body(ring, nsym, T, clk, xb, st, NULL, false);
 }
 
-static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop_16f(flash_feed_t *ff, const int32_t *T, sample_clock_t clk, uint32_t xb,
+static uint32_t __attribute__((noinline)) IRAM_ATTR beacon_loop_16f(flash_feed_t *ff, const int32_t *T, frac_clock_t clk, uint32_t xb,
                                                                     beacon_stats_t *st) {
     return b16_body(NULL, 0, T, clk, xb, st, ff, true);
 }
@@ -567,26 +556,23 @@ static void beacon(int32_t amp, uint32_t S, float dci, float dcq, bool drain) {
     }
     uint8_t *ring = malloc(BEACON_SYMBOLS / 4u);
     const bool g4 = S == 8u || S == 16u;
-    int32_t *T = malloc(g4 ? 2u * 256u * S * sizeof(int32_t) : lutt_bytes(S));
-    float *hb = malloc(8u * S * sizeof(float));
-    if (!ring || !T || !hb) {
+    int32_t *T = malloc((g4 ? rrc_qpsk4_words(S) : rrc_qpsk2_words(S)) * sizeof(int32_t));
+    if (!ring || !T) {
         say("ERR no memory\r\n");
         free(ring);
         free(T);
-        free(hb);
         return;
     }
     memcpy(ring, beacon_bin_start, BEACON_SYMBOLS / 4u); /* flash reads would stall the loop */
-    if (g4) lut_build_g(T, S, 0, 0.35f, (float)amp, dci, dcq, 1.0f, 0.0f, 2u);
-    else lut_build_t(T, S, 0, 0.35f, (float)amp, dci, dcq, 1.0f, 0.0f, hb);
-    free(hb);
-    const sample_clock_t clk = sample_clock_init(CPU_HZ, BEACON_BAUD);
+    if (g4) rrc_qpsk4(T, S, (float)amp, dci, dcq);
+    else rrc_qpsk2(T, S, (float)amp, dci, dcq);
+    const frac_clock_t clk = frac_clock_init(CPU_HZ, BEACON_BAUD);
     tx_chain_on();
     say("BEACON %.3f MHz %lu Bd S %lu (%.3f MS/s, %lu cycles per sample) amp %ld scale %lu dc %.1f %.1f, QPSK %s: any key stops\r\n",
         fkhz / 1000.0, (unsigned long)BEACON_BAUD, (unsigned long)S, BEACON_BAUD * (double)S / 1e6, (unsigned long)(clk.period / S),
         (long)amp, (unsigned long)scale, (double)dci, (double)dcq, BEACON_FEC);
     beacon_stats_t st = {0};
-    const uint32_t xb = ((txdc_orig & ~TXDC_IQ) | TXDC_INJECT) ^ LUT_XOR;
+    const uint32_t xb = ((txdc_orig & ~TXDC_IQ) | TXDC_INJECT) ^ RRC_XOR;
     if (S == 16u) beacon_loop_16(ring, BEACON_SYMBOLS, T, clk, xb, &st);
     else if (g4) beacon_loop_g(ring, BEACON_SYMBOLS, T, S, clk, xb, &st);
     else beacon_loop(ring, BEACON_SYMBOLS, T, S, clk, xb, &st);
@@ -716,10 +702,10 @@ static bool video_play(bool drain) {
         free(ring);
         return true;
     }
-    lut_build_g(T, S, 0, 0.35f, (float)amp, dc_i, dc_q, 1.0f, 0.0f, 2u);
+    rrc_qpsk4(T, S, (float)amp, dc_i, dc_q);
     memcpy(ring, (const uint8_t *)v + VIDEO_HEADER, VIDEO_LEAD);    /* the lead through the cache, before the loop */
     flash_feed_t ff = {video_addr + VIDEO_HEADER, VIDEO_LEAD + 64u, v->nsym / 4u, ring};
-    const sample_clock_t clk = sample_clock_init(CPU_HZ, v->baud);
+    const frac_clock_t clk = frac_clock_init(CPU_HZ, v->baud);
     tx_chain_on();
     say("BEACON %.3f MHz %lu Bd S 16 (%lu cycles per sample) amp %ld scale %lu dc %.1f %.1f, stored loop %.31s MODCOD %u%s, %.1f s: any key stops\r\n",
         fkhz / 1000.0, (unsigned long)v->baud, (unsigned long)(clk.period / S), (long)amp, (unsigned long)scale, (double)dc_i, (double)dc_q,
@@ -729,7 +715,7 @@ static bool video_play(bool drain) {
     spimem_flash_ll_set_address(&SPIMEM1, video_addr + VIDEO_HEADER + VIDEO_LEAD);   /* the first read, done before its words are due */
     spimem_flash_ll_user_start(&SPIMEM1, false);
     beacon_stats_t st = {0};
-    beacon_loop_16f(&ff, T, clk, ((txdc_orig & ~TXDC_IQ) | TXDC_INJECT) ^ LUT_XOR, &st);
+    beacon_loop_16f(&ff, T, clk, ((txdc_orig & ~TXDC_IQ) | TXDC_INJECT) ^ RRC_XOR, &st);
     spi1_restore(&sv);
     uint8_t c;
     while (drain && usb_serial_jtag_ll_read_rxfifo(&c, 1)) {}
@@ -1067,8 +1053,8 @@ typedef struct {
     uint32_t qw, qr, under, late_max, late, end_max, symbols;
 } live_stats_t;
 
-/* QPSK, S 16: b16_body's slots (two 4-symbol tables, lut_build_g) with the ring from USB instead of the loop's symbols. */
-static uint32_t __attribute__((noinline)) IRAM_ATTR live_qpsk(uint8_t *qb, const int32_t *T, sample_clock_t clk, uint32_t xb,
+/* QPSK, S 16: b16_body's slots (two 4-symbol tables, rrc_qpsk4) with the ring from USB instead of the loop's symbols. */
+static uint32_t __attribute__((noinline)) IRAM_ATTR live_qpsk(uint8_t *qb, const int32_t *T, frac_clock_t clk, uint32_t xb,
                                                               uint32_t max_blk, live_stats_t *st) {
     const uint32_t step = clk.period / 16u;                   /* the symbol's spare cycles go to its last sample */
     const int32_t *const T1 = T + 256u * 16u;
@@ -1095,7 +1081,7 @@ static uint32_t __attribute__((noinline)) IRAM_ATTR live_qpsk(uint8_t *qb, const
             qb[qw & (LIVE_RING - 1u)] = (uint8_t)USB_SERIAL_JTAG.ep1.val;
             ++qw;
         });
-        B16_SLOT(9, t1 = t + sample_clock_next(clk, &phase));
+        B16_SLOT(9, t1 = t + frac_clock_step(clk, &phase));
         B16_SLOT(10, if (!(++n & 255u)) {
             const uint32_t c = esp_cpu_get_cycle_count();
             if (qw != qw_seen) { qw_seen = qw; t_rx = c; }
@@ -1131,79 +1117,99 @@ static uint32_t __attribute__((noinline)) IRAM_ATTR live_qpsk(uint8_t *qb, const
     return n;
 }
 
-/* 8PSK: the C3's narrowband loop (tx_p8_c) - lut_build_p8 tables (four groups of two symbols, 4 loads per sample, the row pointers
- * 64 words further per sample), a deadline per sample from the sample clock; symbol work in slots 0-2, USB in 3, 5 and 7. */
-static uint32_t __attribute__((noinline)) IRAM_ATTR live_p8(uint8_t *qb, const int32_t *T, uint32_t S, sample_clock_t clk, uint32_t xb,
+/* 8PSK: rrc_psk8 tables (four groups of two symbols: 4 loads per sample, the entries of the next sample 64 words further), a
+ * deadline for every sample from the fractional clock (baud x S does not divide the CPU clock). The ring holds a symbol per
+ * nibble, the low one first. Per symbol, sample j does one extra job:
+ *   0 take the next symbol into the history (or 0 on an empty ring)   1, 2 the table rows of the next symbol
+ *   3 look at the USB OUT FIFO   4 read a byte from it (with room in the ring)   5 every 256 symbols: host silent? time over?
+ *   6 the fill report: started every 2048 symbols, then a byte per symbol, then the flush
+ * S >= 8, so every job has its slot. */
+static uint32_t __attribute__((noinline)) IRAM_ATTR live_p8(uint8_t *qb, const int32_t *T, uint32_t S, frac_clock_t clk, uint32_t xb,
                                                             uint32_t max_blk, live_stats_t *st) {
-    const uint32_t gs = 64u * S;                              /* words from one group's tables to the next */
-    const int32_t *r0 = T, *r1 = T + gs, *r2 = T + 2u * gs, *r3 = T + 3u * gs, *n0 = r0, *n1 = r1, *n2 = r2, *n3 = r3;
-    uint32_t C = 0, qw = 0, qr = 0, qh = 0, under = 0, late = 0, late_max = 0, n = 0, qw_seen = 0, phase = 0, blk = 0;
-    uint32_t repw = 0, repn = 0, brk = 0;
-    bool have = false;
-    uint32_t word = ((uint32_t)*r0 + (uint32_t)*r1 + (uint32_t)*r2 + (uint32_t)*r3) ^ xb;
+    const uint32_t gw = 64u * S;                              /* words of one group's table */
+    const int32_t *row[4] = {T, T + gw, T + 2u * gw, T + 3u * gw}, *nrow[4] = {T, T + gw, T + 2u * gw, T + 3u * gw};
+    uint32_t hist = 0, qw = 0, qr = 0, nib = 0, under = 0, late = 0, late_max = 0, n = 0, blk = 0, acc = 0;
+    uint32_t seen = 0, rep = 0, repn = 0, stop = 0, ready = 0, o = 0;
+    uint32_t word = ((uint32_t)row[0][0] + (uint32_t)row[1][0] + (uint32_t)row[2][0] + (uint32_t)row[3][0]) ^ xb;
     const unsigned irq = portSET_INTERRUPT_MASK_FROM_ISR();
-    uint32_t tn = esp_cpu_get_cycle_count() + 20000u, t_rx = tn;
-    for (;;) {
-        const bool chk = (n & 255u) == 255u, rep = (n & 2047u) == 2047u;
+    uint32_t due = esp_cpu_get_cycle_count() + 20000u, quiet = due;
+    while (!stop) {
         for (uint32_t j = 0; j < S; ++j) {
             uint32_t now;
-            while ((int32_t)((now = esp_cpu_get_cycle_count()) - tn) < 0) {}
+            while ((int32_t)((now = esp_cpu_get_cycle_count()) - due) < 0) {}
             REG_WRITE(TXDC_REG, word);
-            now -= tn;
-            if (now > late_max) late_max = now;
-            if (now >= clk.period) ++late;
-            tn += sample_clock_next(clk, &phase);
-            if (j == 0) {                                     /* the symbol that the next one's history needs */
+            now -= due;
+            late_max = now > late_max ? now : late_max;
+            late += now >= clk.period;
+            due += frac_clock_step(clk, &acc);
+            switch (j) {
+            case 0: {
                 uint32_t sym = 0;
-                if (qw != qr) {
-                    sym = qb[qr & (LIVE_RING - 1u)] >> (qh * 4u) & 7u;
-                    qh ^= 1u;
-                    qr += !qh;
-                } else {
-                    under += !(n & 7u);                       /* per 8 symbols, as the C3's QPSK */
+                if (qr != qw) {
+                    sym = qb[qr & (LIVE_RING - 1u)] >> (nib * 4u) & 7u;
+                    qr += nib;                                /* the high nibble done: the next byte */
+                    nib ^= 1u;
+                } else if (!(n & 7u)) {
+                    ++under;                                  /* per 8 symbols, as the C3's QPSK */
                 }
-                C = (C << 3 | sym) & 0xFFFFFFu;
-            } else if (j == 1) {
-                n0 = T + (C & 63u);
-                n1 = T + gs + (C >> 6 & 63u);
-            } else if (j == 2) {
-                n2 = T + 2u * gs + (C >> 12 & 63u);
-                n3 = T + 3u * gs + (C >> 18 & 63u);
-            } else if (j == 3) {
-                have = USB_SERIAL_JTAG.ep1_conf.serial_out_ep_data_avail;   /* the USB registers are slow: look in one slot, read in another */
-            } else if (j == 4) {
-                if (chk) {
-                    const uint32_t c = esp_cpu_get_cycle_count();
-                    if (qw != qw_seen) { qw_seen = qw; t_rx = c; }
-                    else if (c - t_rx > (qw ? CPU_HZ / 2u : 3u * CPU_HZ)) brk = 1;
-                    if (++blk >= max_blk) brk = 1;
-                }
-                if (rep && USB_SERIAL_JTAG.ep1_conf.serial_in_ep_data_free) {
-                    const uint32_t fill = (qw - qr) >> 1;
-                    repw = 0xB7u | (fill & 255u) << 8 | (fill >> 8 & 255u) << 16 | (under > 255u ? 255u : under) << 24;
-                    repn = 5u;
-                }
-            } else if (j == 5) {
-                if (have && qw - qr < LIVE_RING - 64u) {      /* ring full: USB holds the host back */
+                hist = (hist << 3 | sym) & 0xFFFFFFu;
+                break;
+            }
+            case 1:
+                nrow[0] = T + (hist & 63u);
+                nrow[1] = T + gw + (hist >> 6 & 63u);
+                break;
+            case 2:
+                nrow[2] = T + 2u * gw + (hist >> 12 & 63u);
+                nrow[3] = T + 3u * gw + (hist >> 18 & 63u);
+                break;
+            case 3:
+                ready = USB_SERIAL_JTAG.ep1_conf.serial_out_ep_data_avail;   /* the USB registers are slow: look here, read next */
+                break;
+            case 4:
+                if (ready && qw - qr < LIVE_RING - 64u) {     /* ring full: USB holds the host back */
                     qb[qw & (LIVE_RING - 1u)] = (uint8_t)USB_SERIAL_JTAG.ep1.val;
                     ++qw;
                 }
-            } else if (j == 7) {                              /* the report, a byte per symbol, then the flush */
+                break;
+            case 5:
+                if (!(n & 255u)) {
+                    const uint32_t c = esp_cpu_get_cycle_count();
+                    if (qw != seen) {
+                        seen = qw;
+                        quiet = c;
+                    } else if (c - quiet > (qw ? CPU_HZ / 2u : 3u * CPU_HZ)) {
+                        stop = 1;
+                    }
+                    if (++blk >= max_blk) stop = 1;
+                }
+                break;
+            case 6:
                 if (repn > 1u) {
-                    USB_SERIAL_JTAG.ep1.val = repw & 255u;
-                    repw >>= 8;
+                    USB_SERIAL_JTAG.ep1.val = rep & 255u;     /* the whole register (a bit-field store reads it first) */
+                    rep >>= 8;
                     --repn;
                 } else if (repn == 1u) {
                     usb_serial_jtag_ll_txfifo_flush();
                     repn = 0;
+                } else if (!(n & 2047u) && n && USB_SERIAL_JTAG.ep1_conf.serial_in_ep_data_free) {
+                    const uint32_t fill = (qw - qr) >> 1;
+                    rep = 0xB7u | (fill & 255u) << 8 | (fill >> 8 & 255u) << 16 | (under > 255u ? 255u : under) << 24;
+                    repn = 5u;
                 }
+                break;
+            default:
+                break;
             }
-            if (j + 1u < S) { r0 += 64; r1 += 64; r2 += 64; r3 += 64; }
-            else { r0 = n0; r1 = n1; r2 = n2; r3 = n3; }
-            word = ((uint32_t)*r0 + (uint32_t)*r1 + (uint32_t)*r2 + (uint32_t)*r3) ^ xb;
+            if (j + 1u < S) {
+                o += 64u;
+            } else {
+                o = 0;
+                for (uint32_t g = 0; g < 4u; ++g) row[g] = nrow[g];
+            }
+            word = ((uint32_t)row[0][o] + (uint32_t)row[1][o] + (uint32_t)row[2][o] + (uint32_t)row[3][o]) ^ xb;
         }
         ++n;
-        if (brk) break;
     }
     portCLEAR_INTERRUPT_MASK_FROM_ISR(irq);
     *st = (live_stats_t){qw, qr, under, late_max, late, 0, n};
@@ -1251,19 +1257,16 @@ static void tx_live(const char *args, bool psk8) {
     int32_t a = (int32_t)(amp * 150 / 300);
     a = a < 1 ? 1 : a;
     uint8_t *ring = malloc(LIVE_RING);
-    int32_t *T = malloc(psk8 ? lutt8_bytes(S) : 2u * 256u * 16u * sizeof(int32_t));
-    float *hb = psk8 ? malloc(8u * S * sizeof(float)) : NULL;
-    if (!ring || !T || (psk8 && !hb)) {
+    int32_t *T = malloc((psk8 ? rrc_psk8_words(S) : rrc_qpsk4_words(16u)) * sizeof(int32_t));
+    if (!ring || !T) {
         say("ERR out of memory\r\n");
         free(ring);
         free(T);
-        free(hb);
         return;
     }
-    if (psk8) lut_build_p8(T, S, 0, 0.35f, (float)a, dci, dcq, 1.0f, 0.0f, hb);
-    else lut_build_g(T, 16u, 0, 0.35f, (float)a, dci, dcq, 1.0f, 0.0f, 2u);
-    free(hb);
-    const sample_clock_t clk = sample_clock_init(CPU_HZ, psk8 ? (uint32_t)baud * S : (uint32_t)baud);
+    if (psk8) rrc_psk8(T, S, (float)a, dci, dcq);
+    else rrc_qpsk4(T, 16u, (float)a, dci, dcq);
+    const frac_clock_t clk = frac_clock_init(CPU_HZ, psk8 ? (uint32_t)baud * S : (uint32_t)baud);
     const uint32_t max_blk = (uint32_t)((double)secs * baud / 256.0) + 1u;
     fkhz = fk;
     tx_chain_on();
@@ -1273,7 +1276,7 @@ static void tx_live(const char *args, bool psk8) {
         (double)baud * S, (long)a, (unsigned long)S, (unsigned long)(psk8 ? clk.period : clk.period / 16u), psk8 ? "8PSK" : "QPSK",
         (double)dci, (double)dcq);
     live_stats_t st;
-    const uint32_t xb = ((txdc_orig & ~TXDC_IQ) | TXDC_INJECT) ^ LUT_XOR;
+    const uint32_t xb = ((txdc_orig & ~TXDC_IQ) | TXDC_INJECT) ^ RRC_XOR;
     if (psk8) live_p8(ring, T, S, clk, xb, max_blk, &st);
     else live_qpsk(ring, T, clk, xb, max_blk, &st);
     tx_off();
