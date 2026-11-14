@@ -60,6 +60,7 @@ class Transmitter(private val ctx: android.content.Context, private val usbManag
             Thread.sleep(1200)                                  // opening the port may reset the C3
             val (id, beacon) = link.info() ?: throw java.io.IOException("no ESP32-DATV answer: is this the C3? (the S3 receiver is the same 303a:1001)")
             log("C3: $id${beacon?.let { " · $it" } ?: ""}${if (link.booted) " (reset by opening the port)" else ""}")
+            if (UsbBoards.isTrx(id)) UsbBoards.rememberTrx(ctx, usbManager, device)   // the RX screen then knows it is a C5
             if (link.c5 && !link.c5Live) throw java.io.IOException("this ESP32-C5 firmware has no live TX: write the current one (menu ⋮ → Firmware), or Save as beacon")
             if (!link.c5) {
                 UpdateCheck.rememberC3(ctx, UsbBoards.serial(usbManager, device), link.fw)

@@ -56,7 +56,7 @@ class FirmwareActivity : Activity() {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(TextView(this).apply {
             text = "Firmware for the board on USB, the current version from the web:\n" +
-                "• ESP32-S3 → receiver\n• ESP32-C5 → 6 cm receiver or transmitter (asked)\n• ESP32-C3 → transmitter (no built-in beacon: then store a loop with your callsign on the TX screen)\n" +
+                "• ESP32-S3 → receiver\n• ESP32-C5 → receiver or transceiver (RX + TX), 6 and 13 cm (asked)\n• ESP32-C3 → transmitter (no built-in beacon: then store a loop with your callsign on the TX screen)\n" +
                 "The board is put into its ROM loader, which tells the chip; it then appears on USB again (allow access if asked)."
             textSize = 13f
         })
@@ -170,7 +170,7 @@ class FirmwareActivity : Activity() {
             }
             // the C5 is either: asked (the ROM loader waits)
             val image = if (chip == "ESP32-C5" && askC5Transmitter()) FirmwareStore.C5_TX else chip
-            log("chip: $chip (${if (chip == "ESP32-C3" || image == FirmwareStore.C5_TX) "transmitter" else "receiver"})")
+            log("chip: $chip (${if (chip == "ESP32-C3") "transmitter" else if (image == FirmwareStore.C5_TX) "transceiver" else "receiver"})")
             progress("$chip: getting the firmware…", 0.0)
             val fw = store().get(image) { log(it) }
             rom.attachFlash()
@@ -246,12 +246,12 @@ class FirmwareActivity : Activity() {
 
     // ---- UI
 
-    /** On the worker thread: receiver (false) or transmitter (true) for this ESP32-C5; Cancel throws. */
+    /** On the worker thread: receiver (false) or transceiver (true) for this ESP32-C5; Cancel throws. */
     private fun askC5Transmitter(): Boolean {
         val answer = java.util.concurrent.LinkedBlockingQueue<Int>()
         runOnUiThread {
             android.app.AlertDialog.Builder(this).setTitle("ESP32-C5: which firmware?")
-                .setItems(arrayOf("6 cm receiver", "6 cm transmitter")) { _, k -> answer.put(k) }
+                .setItems(arrayOf("receiver", "transceiver (RX + TX)")) { _, k -> answer.put(k) }
                 .setOnCancelListener { answer.put(-1) }.show()
         }
         return when (answer.take()) { 0 -> false; 1 -> true; else -> throw IOException("cancelled") }

@@ -34,7 +34,7 @@ Na 6 cm místo S3 a C3 slouží dvě desky **ESP32-C5**: přijímač pro tutéž
 **Z aplikace (bez počítače):** nejdřív nainstaluj aplikaci (kapitola 2). Připoj desku přes OTG, otevři menu **⋮ →
 Firmware** a klepni na **Write firmware into the connected board**. Aplikace přepne desku do zavaděče v ROM,
 ten prozradí čip – **ESP32-S3 → přijímač**, **ESP32-C3 → vysílač**, splést se nedají; u **ESP32-C5** se zeptá:
-*6 cm receiver* nebo *6 cm transmitter* –, stáhne aktuální firmware z webu
+*receiver* nebo *transceiver (RX + TX)* –, stáhne aktuální firmware z webu
 (uloží si ho i pro práci bez sítě), zapíše ho s ukazatelem průběhu, ověří (MD5) a desku restartuje. Android se na
 přístup k USB zeptá dvakrát (deska se v zavaděči objeví znovu). Nový firmware na webu nepotřebuje novou aplikaci.
 **Check versions on the web** ukáže aktuální verze a které tvoje desky (ty, do kterých aplikace zapisovala nebo s nimi
@@ -157,7 +157,7 @@ s PC). C3 potřebuje firmware vysílače (kapitola 1); příkaz z USB zastaví b
    položený vedle něj dával signál o 20 dB slabší a nedekódoval se.
 2. Nahoře přepni na **TX**, povol přístup k USB (a ke kameře, když ji použiješ).
 3. **Preset…** nastaví pole níže najednou (pro 13 cm předvolby C3, pro 6 cm předvolby C5; vlastní **Save** / **Delete**).
-   Nastav kmitočet (2300–2450 MHz, jinak ho firmware odmítne; 5650–5900 MHz pro C5), symbolovou rychlost, **QPSK / 8PSK**, kódový poměr,
+   Nastav kmitočet (2300–2450 MHz, jinak ho firmware odmítne; 2300–2450 nebo 5650–5900 MHz pro C5), symbolovou rychlost, **QPSK / 8PSK**, kódový poměr,
    velikost rámců (**short** dá při nízkých rychlostech první obraz 4× dřív), piloty, **značku**, **AMP** (300 = 0 dB,
    pár mW; 13 = −27 dB; 8PSK až 420), **obraz** (testkarta, zadní nebo přední kamera, nebo **soubor s obrázkem či
    videem**) a **zvuk**: vypnutý, mikrofon, CW ID (tvoje značka v Morseovce, 20 WPM, 700 Hz, každých 30 s), mikrofon
@@ -217,8 +217,9 @@ mezitím neodpojovat (aplikace ho neresetuje, kalibrace tedy platí, dokud C3 ne
 přijímač pro tuto aplikaci, druhý jako vysílač (maják i živé vysílání). I zde je k vysílání nutná koncese. Podrobnosti a měření:
 [6 cm s ESP32-C5](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/6cm-c5.cs.md).
 
-1. **Firmware:** připoj C5 přes OTG, menu ⋮ → **Firmware** → *Write firmware…*; aplikace se zeptá *6 cm receiver*, nebo
-   *6 cm transmitter*. Nebo [webový flasher](flasher/) (tlačítko pro každý).
+1. **Firmware:** připoj C5 přes OTG, menu ⋮ → **Firmware** → *Write firmware…*; aplikace se zeptá *receiver*, nebo
+   *transceiver (RX + TX)*. Nebo [webový flasher](flasher/) (tlačítko pro každý). Transceiver je jedna deska pro RX i TX
+   obrazovku (aplikace ho pozná, i na hubu) a funguje i na 13 cm (2300–2450 MHz).
 2. **Maják:** vysílací C5 na OTG, přepni na **TX**, zvol předvolbu *5715.000 6 cm beacon … (C5)* (40k, 66,7k short,
    125k, 250k short), nastav **značku**, obraz a délku a klepni na **Save as beacon** (jako v kapitole 4). Odpojený
    a napájený z portu počítače nebo nabíječky vysílá smyčku po každém zapnutí; po přerušení (např. když počítač otevře
@@ -228,8 +229,8 @@ přijímač pro tuto aplikaci, druhý jako vysílač (maják i živé vysílán�
    Vyzkoušeno: 40k a 66,7k QPSK se zvukem, 250k 8PSK s kamerou a mikrofonem, 3 min se zhasnutým displejem bez chyby TS.
 3. **Příjem:** přijímací C5 na OTG, **RX**, předvolba *5715.000 Beacon 250k QPSK 3/4* (nebo 125k), **Start**. Aplikace C5
    rozpozná sama (vždy cs4: 250 ksps do 148 kS/s, 333 ksps do 197 kS/s, 400 ksps do 250 kS/s) a hledá v ±300 kHz –
-   krystaly dvou C5 se na 5,7 GHz liší až o ~150 kHz. Přijímač C5 se spustí jen na 6 cm (5650–5900 MHz), S3 jen
-   na 13 cm. Kódový poměr a rámce musí odpovídat vysílači.
+   krystaly dvou C5 se na 5,7 GHz liší až o ~150 kHz. Přijímač C5 bere 2300–2450 i 5650–5900 MHz, S3 jen
+   13 cm. Kódový poměr a rámce musí odpovídat vysílači.
 4. **Gain:** C5 se na krátkou vzdálenost zahlcuje (zblízka horší příjem než zdálky) – na stole začni nízko a přidávej.
    Vyzkoušeno: 3 m od sebe s nalepovacími anténami, 250 kS/s, MER 13–17 dB.
 
@@ -254,8 +255,8 @@ C5 nemá výstup pro PA (C3 má GPIO3, viz README). Kompenzace nosné C5 se zat�
 | RX: `audio … not supported` | AAC v LATM nebo AC-3: obraz jde, zvuk ne (AAC v ADTS, MP2 a MP3 hrají) |
 | C3 sám nic nevysílá | ještě v něm není maják: TX → Save as beacon |
 | 6 cm: na krátkou vzdálenost horší příjem | přijímač C5 se zahlcuje – snížit gain |
-| 6 cm: Start TX hlásí, že firmware C5 neumí živé vysílání | nahrajte aktuální: menu ⋮ → Firmware → *6 cm transmitter* |
-| RX: *the ESP32-C5 receiver is for 6 cm* | C5 na 13 cm: 5715.000 MHz, nebo pro 13 cm S3 (a obráceně *6 cm needs the ESP32-C5 receiver*) |
+| 6 cm: Start TX hlásí, že firmware C5 neumí živé vysílání | nahrajte aktuální: menu ⋮ → Firmware → *transceiver (RX + TX)* |
+| RX: *6 cm needs the ESP32-C5 receiver* | S3 je jen pro 13 cm: na 6 cm C5 |
 | 6 cm: maják ve spektru je, rámce ne | kódový poměr / rámce RX předvolby se liší od majáku (např. uložen s 2/3) |
 | 6 cm: C5 po připojení neodpovídá | zůstal v zavaděči ROM (LED nesvítí): stiskni jeho RESET |
 | *this C3 firmware cannot store a loop* | nahraj aktuální firmware: menu ⋮ → Firmware |

@@ -119,8 +119,24 @@ C5 **nemá výstup pro PA** (`PA 0` odpoví jako C3, `PA 1` odmítne – PA enab
 
 ## Android
 
-Oba firmwary jde nahrát z telefonu: menu → Firmware se u ESP32-C5 zeptá, jestli bude přijímač, nebo vysílač pro 6 cm (nebo
+Oba firmwary jde nahrát z telefonu: menu → Firmware se u ESP32-C5 zeptá, jestli bude přijímač, nebo transceiver (nebo
 webový flasher, který má tlačítko pro každý).
+
+## Transceiver: jedna C5 pro RX i TX, 13 i 6 cm
+`tx/c5cw` přeloží do svého obrazu i přijímač (`rx/c5rx/main/main.c` s `C5_TRX`): jedna deska odpovídá na textové příkazy
+vysílače (jako C3) i na binární protokol přijímače (jako S3, 0xB4 na začátku řádku), takže ji vezme RX i TX obrazovka aplikace
+(INFO `ESP32DATV 1 C5 RXTX`). Fungují na ní i `G`, `CAP`, `STREAM` přijímače; `F` a `ANT` nastaví obojí. Po vysílání přijímač
+před dalším během znovu nastaví rádio. `CAP` vezme méně vzorků, když se buffer nevejde (24576 místo 32768; `rx/c5_play.sh`
+i `tx/c5_dccal.py` počet čtou z odpovědi).
+14. 11. 2026, obě C5 s obrazem transceiveru, z PC: B3 → A3 i A3 → B3 na 5715 MHz (250k QPSK, 250k 8PSK) a 2345 MHz (125k,
+250k QPSK), každá deska přepínala TX → RX i RX → TX bez resetu: vše dekódováno (OK1CDJ, bez chyby TS).
+
+**13 cm:** C5 vysílá i přijímá i 2300–2450 MHz. 14. 11. 2026, C5 → C5 na 2345 MHz z PC: 40k, 50k, 66,7k, 100k, 125k, 250k QPSK
+a 250k 8PSK, vše bez chyby TS (odskok krystalů +13…+29 kHz). Únik nosné asi 1,5 kódu DAC (≈ −40 dB pod špičkou majáku) na obou
+pásmech, podle korekce z `tx/c5_dccal.py`.
+
+Tabulky modulátoru a zlomkové hodiny vzorků jsou vlastní (`tx/common/rrc_tables.h`, `tx/common/frac_clock.h`, GPL-3);
+firmware C5 nebere nic z ESP32-DATV-SA.
 
 Aplikace přijímač C5 pozná podle příznaků v `CTL_INFO 3` a zapamatuje si ho: vždy cs4, 250 ksps do 148 kS/s, 333 ksps
 do 197 kS/s a 400 ksps do 250 kS/s (s firmwarem, který to umí). Hledání signálu sahá do ±300 kHz. Kmitočet zadejte

@@ -35,7 +35,7 @@ On 6 cm two **ESP32-C5** boards take the S3's and the C3's place: a receiver for
 **From the app (no computer):** install the app first (section 2). Connect the board through OTG, open the menu **⋮ →
 Firmware** and tap **Write firmware into the connected board**. The app puts the board into its ROM loader,
 which tells the chip – **ESP32-S3 → receiver**, **ESP32-C3 → transmitter**, they cannot be mixed up; for an
-**ESP32-C5** it asks: *6 cm receiver* or *6 cm transmitter* – downloads the
+**ESP32-C5** it asks: *receiver* or *transceiver (RX + TX)* – downloads the
 current firmware from the web (kept for use without a network), writes it with a progress bar, checks it (MD5) and
 restarts the board. Android asks for USB access twice (the board appears again in its loader). A new firmware on the
 web needs no new app. **Check versions on the web** shows the current versions and which of your boards
@@ -164,7 +164,7 @@ beacon and starts the live mode.
    antenna **away from the phone** – lying next to it the signal came 20 dB weaker and did not decode.
 2. Switch to **TX** at the top, allow USB access (and the camera when you use it).
 3. A **Preset…** sets the fields below at once (13 cm presets for the C3, 6 cm ones for the C5; **Save** / **Delete**
-   your own). Set frequency (2300–2450 MHz, the firmware refuses anything else; 5650–5900 MHz for the C5), symbol rate, **QPSK / 8PSK**, code rate,
+   your own). Set frequency (2300–2450 MHz, the firmware refuses anything else; 2300–2450 or 5650–5900 MHz for the C5), symbol rate, **QPSK / 8PSK**, code rate,
    frame size (**short** gives the first picture 4× sooner at low rates), pilots, **callsign**, **AMP** (300 = 0 dB,
    a few mW; 13 = −27 dB; 8PSK up to 420), the **picture** (test card, back or front camera, or **picture / video
    file**) and the **sound**: off, microphone, CW ID (your callsign in Morse, 20 WPM, 700 Hz, every 30 s), mic + CW ID
@@ -228,8 +228,9 @@ The **Waveshare ESP32-C5-Zero** (the only ESP32 with 5 GHz) works on **5715.000 
 as a receiver for this app, a second one as a transmitter (beacon or live). Transmitting needs a licence here too. Details and
 measurements: [6 cm with the ESP32-C5](https://github.com/ok1cdj/ESP32-ATV/blob/master/docs/6cm-c5.en.md).
 
-1. **Firmware:** connect the C5 through OTG, menu ⋮ → **Firmware** → *Write firmware…*; the app asks *6 cm receiver* or
-   *6 cm transmitter*. Or the [web flasher](flasher/) (a button for each).
+1. **Firmware:** connect the C5 through OTG, menu ⋮ → **Firmware** → *Write firmware…*; the app asks *receiver* or
+   *transceiver (RX + TX)*. Or the [web flasher](flasher/) (a button for each). The transceiver is one board for both the
+   RX and the TX screen (the app recognises it, also on a hub); it works on 13 cm (2300–2450 MHz) too.
 2. **Beacon:** the transmitter C5 on OTG, switch to **TX**, pick a preset *5715.000 6 cm beacon … (C5)* (40k, 66.7k
    short, 125k, 250k short), set your **callsign**, the picture and the length, then **Save as beacon** (as in
    section 4). Unplugged and powered from a computer port or a charger it transmits the loop after every power-up;
@@ -241,7 +242,7 @@ measurements: [6 cm with the ESP32-C5](https://github.com/ok1cdj/ESP32-ATV/blob/
 3. **Receiving:** the receiver C5 on OTG, **RX**, the preset *5715.000 Beacon 250k QPSK 3/4* (or 125k), **Start**. The
    app recognises the C5 by itself (always cs4: 250 ksps up to 148 kS/s, 333 ksps up to 197 kS/s, 400 ksps up to
    250 kS/s) and searches ±300 kHz – the two C5s' crystals differ by up to ~150 kHz at 5.7 GHz. The C5 receiver
-   starts only on 6 cm (5650–5900 MHz), the S3 only on 13 cm. Code rate and frames must match the transmitter.
+   takes 2300–2450 and 5650–5900 MHz, the S3 only 13 cm. Code rate and frames must match the transmitter.
 4. **The gain:** the C5 overloads at short range (worse reception close by than further away) – on a desk start
    low and go up. Tested: 3 m apart with the stick-on antennas, 250 kS/s, MER 13–17 dB.
 
@@ -266,8 +267,8 @@ The C5 has no PA output (the C3's is GPIO3, see the README). The C5's carrier tr
 | RX: `audio … not supported` | AAC in LATM or AC-3: the picture plays, the sound not (AAC in ADTS, MP2 and MP3 do) |
 | the C3 transmits nothing on its own | no beacon stored yet: TX → Save as beacon |
 | 6 cm: worse reception at short range | the C5 receiver overloads – turn the gain down |
-| 6 cm: Start TX says the C5 firmware has no live TX | write the current one: menu ⋮ → Firmware → *6 cm transmitter* |
-| RX: *the ESP32-C5 receiver is for 6 cm* | a C5 on 13 cm: 5715.000 MHz, or the S3 for 13 cm (and *6 cm needs the ESP32-C5 receiver* the other way round) |
+| 6 cm: Start TX says the C5 firmware has no live TX | write the current one: menu ⋮ → Firmware → *transceiver (RX + TX)* |
+| RX: *6 cm needs the ESP32-C5 receiver* | the S3 is for 13 cm only: a C5 for 6 cm |
 | 6 cm: beacon on air (spectrum) but no frames | code rate / frames of the RX preset differ from the beacon's (e.g. stored with 2/3) |
 | 6 cm: the C5 does not answer after plugging in | it stayed in its ROM loader (LED dark): press its RESET |
 | *this C3 firmware cannot store a loop* | write the current firmware: menu ⋮ → Firmware |

@@ -294,8 +294,8 @@ class TxActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFY)
         val mhz = freq.text.toString().replace(',', '.').toDoubleOrNull() ?: return null.also { log("frequency?") }
-        // the C3 on 13 cm; the ESP32-C5 on 6 cm
-        if (mhz !in 2300.0..2450.0 && mhz !in 5650.0..5900.0) return null.also { log("the C3 transmits in 2300..2450 MHz, the C5 in 5650..5900 MHz") }
+        // the C3 on 13 cm; the ESP32-C5 on 13 and 6 cm
+        if (mhz !in 2300.0..2450.0 && mhz !in 5650.0..5900.0) return null.also { log("the C3 transmits in 2300..2450 MHz, the C5 in 2300..2450 or 5650..5900 MHz") }
         UsbBoards.serial(usbManager, dev)?.let { mac ->
             if (DcStore.all(this, mac).isNotEmpty() && DcStore.near(this, mac, mhz, CAL_NEAR_MHZ) == null)
                 log("no calibration of the C3 within %.0f MHz of %.3f: RX screen, menu → Transmitter calibration".format(CAL_NEAR_MHZ, mhz))

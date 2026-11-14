@@ -18,8 +18,8 @@ class FirmwareStore(private val ctx: Context, private val base: String = DEFAULT
     class Firmware(val chip: String, val name: String, val version: String, val parts: List<Part>, val fromCache: Boolean)
 
     /**
-     * The manifest of the board's firmware: ESP32-S3 the receiver, ESP32-C3 the transmitter, ESP32-C5 the 6 cm receiver and
-     * "ESP32-C5 TX" the 6 cm transmitter (the same chip family in its manifest).
+     * The manifest of the board's firmware: ESP32-S3 the receiver, ESP32-C3 the transmitter, ESP32-C5 the receiver and
+     * "ESP32-C5 TX" the transceiver (receiver + transmitter; the same chip family in its manifest).
      */
     private fun manifestUrl(chip: String) = when (chip) {
         "ESP32-C3" -> "$base/c3/manifest.json"; "ESP32-C5" -> "$base/c5/manifest.json"; C5_TX -> "$base/c5tx/manifest.json"

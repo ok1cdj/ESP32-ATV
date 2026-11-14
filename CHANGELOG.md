@@ -2,6 +2,18 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## Unreleased
+
+### The ESP32-C5 transceiver: one board for RX and TX, 13 and 6 cm
+- **One C5 for both screens:** the C5 transmitter firmware now has the receiver in it (`tx/c5cw` + `rx/c5rx`): the app's RX and
+  TX screens both take the same board (INFO `ESP32DATV 1 C5 RXTX`, also on a hub). Checked from a PC with two C5s: each board
+  switched TX → RX and RX → TX without a reset, all decoded. Firmware menu and web flasher: *receiver* or *transceiver (RX + TX)*.
+- **13 cm on the C5:** C5 → C5 on 2345 MHz decoded at 40k–250k QPSK and 250k 8PSK without a TS error; the app takes the C5 on
+  2300–2450 MHz as well as 5650–5900 MHz (RX, TX, Save as beacon).
+- **Own GPL-3 modulator tables** (`tx/common/rrc_tables.h`, `tx/common/frac_clock.h`) and 8PSK loop: the C5 firmware no longer
+  uses ESP32-DATV-SA's PolyForm Noncommercial code. The tables are identical code for code; the 8PSK loop is now at worst
+  41 cycles late (58 before).
+
 ## 0.20-beta – 2026-11-14
 
 ### 6 cm: the ESP32-C5 transmitter does what the C3 does

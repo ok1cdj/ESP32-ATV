@@ -14,10 +14,11 @@ import android.os.Build
  * MAC is found once by asking the board (the C3 answers INFO, the S3 the receiver's protocol) and remembered.
  * Android lets the app read a serial number only with the permission for that device, so [pick] asks for it device by
  * device. With a single board connected nothing changes: it is used for either role, as before.
- * A receiver is an ESP32-S3 or the ESP32-C5 (6 cm, rx/c5rx): which one is remembered too ([isC5]), from its build flags.
+ * A receiver is an ESP32-S3 or the ESP32-C5 (rx/c5rx): which one is remembered too ([isC5]), from its build flags.
+ * The ESP32-C5 transceiver (tx/c5cw with the receiver, INFO "ESP32DATV 1 C5 RXTX") is one board for both roles ([Role.TRX]).
  */
 object UsbBoards {
-    enum class Role(val label: String) { S3("receiver (ESP32-S3 / C5)"), C3("transmitter (ESP32-C3 / C5)") }
+    enum class Role(val label: String) { S3("receiver (ESP32-S3 / C5)"), C3("transmitter (ESP32-C3 / C5)"), TRX("transceiver (ESP32-C5)") }
 
     sealed interface Pick {
         class Found(val dev: UsbDevice) : Pick
@@ -62,6 +63,7 @@ object UsbBoards {
         devs.firstOrNull { !m.hasPermission(it) }?.let { return Pick.Ask(it) }
         val known = devs.map { d -> d to serial(m, d)?.let { remembered(activity, it) } }
         known.firstOrNull { it.second == role }?.let { return Pick.Found(it.first) }
+        known.firstOrNull { it.second == Role.TRX }?.let { return Pick.Found(it.first) }          // the C5 transceiver: either role
         val unknown = known.filter { it.second == null }.map { it.first }
         if (unknown.isEmpty()) {
             val others = known.joinToString { "${it.second?.label} ${serial(m, it.first)}" }
@@ -90,9 +92,15 @@ object UsbBoards {
         val role = try {
             val conn = m.openDevice(dev) ?: return null
             val c3 = C3Link(UsbCdc(conn, dev))
-            val isC3 = try { Thread.sleep(1200); (c3.info() != null).also { if (it) UpdateCheck.rememberC3(ctx, mac, c3.fw) } }
-                finally { c3.close() }                                                               // opening may reset the C3
-            if (isC3) Role.C3 else {
+            var trx = false
+            val isC3 = try {
+                Thread.sleep(1200)                                                                   // opening may reset the C3
+                val id = c3.info()
+                trx = id != null && isTrx(id.first)
+                (id != null).also { if (it && !trx) UpdateCheck.rememberC3(ctx, mac, c3.fw) }
+            } finally { c3.close() }
+            if (trx) Role.TRX.also { rememberC5(ctx, mac, true) }
+            else if (isC3) Role.C3 else {
                 val conn2 = m.openDevice(dev) ?: return null
                 val l = EspLink(UsbCdc(conn2, dev))
                 try {
@@ -104,6 +112,16 @@ object UsbBoards {
         } catch (_: Exception) { null }
         if (role != null) remember(ctx, mac, role)
         return role
+    }
+
+    /** The INFO identity line of the ESP32-C5 transceiver ("ESP32DATV 1 C5 RXTX"). */
+    fun isTrx(id: String) = id.trim().split(' ').let { "C5" in it && "RXTX" in it }
+
+    /** After the board answered INFO as the transceiver: both roles, and its receiver is a C5. */
+    fun rememberTrx(ctx: Context, m: UsbManager, dev: UsbDevice) {
+        val mac = serial(m, dev) ?: return
+        remember(ctx, mac, Role.TRX)
+        rememberC5(ctx, mac, true)
     }
 
     /** A line for the log: what is connected. */

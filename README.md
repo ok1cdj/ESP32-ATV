@@ -37,7 +37,7 @@ XIAO ESP32-C3 (ESP32-DATV-SA beacon, DVB-S2 QPSK 3/4, 40–500 kS/s, 2345.000 MH
 XIAO ESP32-S3 (ESP32-DATV-RX firmware: radio dump 16 MS/s -> 500 ksps cs4 / 333 ksps cs8 over native USB; receives 40–400 kS/s)
    -> Android: ATV RX/TX (leandvb + ldpc_tool, MediaCodec)      or      PC: rx/rx.sh (rx_dvbs2.py, leandvb, ffplay)
 
-ESP32-C5-Zero (tx/c5cw: a loop stored from the app or live TX, DVB-S2 QPSK / 8PSK, 5715.000 MHz)
+ESP32-C5-Zero (tx/c5cw: transceiver - live TX or a stored loop, DVB-S2 QPSK / 8PSK, and the receiver below; 13 and 6 cm)
    ~ 6 cm ~>
 ESP32-C5-Zero (rx/c5rx: IQ estimator -> cs4 250 / 333 / 400 ksps over USB, the S3's protocol)
    -> Android: ATV RX/TX (the same app)      or      PC: rx/c5_play.sh
@@ -194,7 +194,7 @@ Two **Waveshare ESP32-C5-Zero** boards (ESP32-C5, the only Espressif chip with 5
 
 <p align="center"><img src="docs/img/atvrx-6cm.png" alt="6 cm: the TX presets for the ESP32-C5 and reception of the C5 beacon on 5715 MHz" width="640"></p>
 
-- **Firmware:** from the app (menu ⋮ → Firmware asks *6 cm receiver* or *6 cm transmitter* for an ESP32-C5) or the
+- **Firmware:** from the app (menu ⋮ → Firmware asks *receiver* or *transceiver (RX + TX)* for an ESP32-C5) or the
   [web flasher](https://ok1cdj.github.io/ESP32-ATV/flasher/); on a PC `rx/c5rx/flash.sh`, `tx/c5cw/flash.sh none`.
 - **Receiver** (`rx/c5rx`): the IQ estimator read on a fixed clock, a halfband FIR, cs4 at 250 / 333 / 400 ksps in the S3
   receiver's packets and protocol – the app and `espdr nb.py` drive it unchanged. Symbol rates up to 250 kS/s.

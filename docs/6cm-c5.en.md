@@ -123,8 +123,24 @@ The C5 has **no PA output** (`PA 0` is answered as on the C3, `PA 1` refused –
 
 ## Android
 
-Both firmwares can be written from the phone: menu → Firmware asks, for an ESP32-C5, whether it becomes the 6 cm receiver or
-transmitter (or the web flasher, which has a button for each).
+Both firmwares can be written from the phone: menu → Firmware asks, for an ESP32-C5, whether it becomes the receiver or the
+transceiver (or the web flasher, which has a button for each).
+
+## Transceiver: one C5 for RX and TX, 13 and 6 cm
+`tx/c5cw` builds the receiver (`rx/c5rx/main/main.c` with `C5_TRX`) into its image: one board answers the transmitter's text
+commands (as the C3) and the receiver's binary protocol (as the S3, 0xB4 at the start of a line), so the app's RX and TX screens
+both take it (INFO `ESP32DATV 1 C5 RXTX`). The receiver's `G`, `CAP`, `STREAM` work on it too; `F` and `ANT` set both. After a
+transmission the receiver sets the radio up again before its next run. `CAP` takes fewer samples when its buffer does not fit
+(24576 instead of 32768; `rx/c5_play.sh` and `tx/c5_dccal.py` read the count).
+2026-11-14, both C5s with the transceiver image, from a PC: B3 → A3 and A3 → B3 on 5715 MHz (250k QPSK, 250k 8PSK) and 2345 MHz
+(125k, 250k QPSK), each board switching TX → RX and RX → TX without a reset: all decoded (OK1CDJ, no TS error).
+
+**13 cm:** the C5 transmits and receives 2300–2450 MHz as well. 2026-11-14, C5 → C5 on 2345 MHz from a PC: 40k, 50k, 66.7k,
+100k, 125k, 250k QPSK and 250k 8PSK all decoded without a TS error (frequency offset of the two crystals +13…+29 kHz). Carrier
+leakage about 1.5 DAC codes (≈ −40 dB under the beacon's peak level) on both bands, by the trim of `tx/c5_dccal.py`.
+
+The modulator tables and the fractional sample clock are our own (`tx/common/rrc_tables.h`, `tx/common/frac_clock.h`, GPL-3);
+the C5 firmware takes nothing from ESP32-DATV-SA.
 
 The app recognises the C5 receiver by the flags of `CTL_INFO 3` and remembers it: always cs4, 250 ksps up to 148 kS/s,
 333 ksps up to 197 kS/s and 400 ksps up to 250 kS/s (with a firmware that has it). The signal search reaches ±300 kHz.
