@@ -23,7 +23,7 @@ ESP32-C5 transceiver (tx/c5cw + rx/c5rx in one image)
 **Status**
 - v0.19-beta (2026-11-11): 6 cm receiver and stored beacon, both firmwares from the app and the web flasher.
 - v0.20-beta (2026-11-14): live TX through the C5, carrier trim per frequency, beacon restart as on the C3.
-- Next version (branch `trx`): **the transceiver** (one board for RX and TX), **13 cm on the C5**, our own GPL-3 modulator
+- v0.21-beta (2026-11-14): **the transceiver** (one board for RX and TX), **13 cm on the C5**, our own GPL-3 modulator
   tables. Tested 2026-11-14 ([test report](2026-11-14-c5-transceiver.en.md)): C5 → C5 on 13 and 6 cm at 40–250 kBd, and a
   QSO with the IZ7PDX parrot made with a single C5.
 

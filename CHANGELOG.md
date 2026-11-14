@@ -2,7 +2,7 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
-## Unreleased
+## 0.21-beta – 2026-11-14
 
 ### The ESP32-C5 transceiver: one board for RX and TX, 13 and 6 cm
 - **One C5 for both screens:** the C5 transmitter firmware now has the receiver in it (`tx/c5cw` + `rx/c5rx`): the app's RX and

@@ -22,7 +22,7 @@ transceiver ESP32-C5 (tx/c5cw + rx/c5rx v jednom obrazu)
 **Stav**
 - v0.19-beta (11. 11. 2026): přijímač a uložený maják pro 6 cm, oba firmwary z aplikace i webového flasheru.
 - v0.20-beta (14. 11. 2026): živé vysílání přes C5, korekce nosné podle kmitočtu, návrat majáku jako u C3.
-- Příští verze (větev `trx`): **transceiver** (jedna deska pro RX i TX), **13 cm na C5**, vlastní GPL-3 tabulky modulátoru.
+- v0.21-beta (14. 11. 2026): **transceiver** (jedna deska pro RX i TX), **13 cm na C5**, vlastní GPL-3 tabulky modulátoru.
   Vyzkoušeno 14. 11. 2026 ([testovací zpráva](2026-11-14-c5-transceiver.cs.md)): C5 → C5 na 13 i 6 cm při 40–250 kBd a
   spojení s parrotem IZ7PDX jedinou C5.
 

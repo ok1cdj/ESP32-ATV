@@ -191,7 +191,7 @@ Other tools: `rx/level_sweep.sh` (sensitivity sweep, `FRAME=short` for short fra
 The **Waveshare ESP32-C5-Zero** (ESP32-C5, the only Espressif chip with 5 GHz, and 2.4 GHz too; U.FL antenna) transmits and
 receives DVB-S2 on **13 cm (2300–2450 MHz) and 6 cm (5650–5900 MHz)**, e.g. 2345.000 and 5715.000 MHz.
 **Transmitting needs an amateur radio licence.** 6 cm since v0.19-beta, live TX since v0.20-beta; the transceiver and 13 cm
-in the next version (branch `trx`). Guide with the details: [English](docs/6cm-c5.en.md), [česky](docs/6cm-c5.cs.md);
+since v0.21-beta. Guide with the details: [English](docs/6cm-c5.en.md), [česky](docs/6cm-c5.cs.md);
 [test report 2026-11-14](docs/2026-11-14-c5-transceiver.en.md).
 
 <p align="center"><img src="docs/img/atvrx-6cm.png" alt="6 cm: the TX presets for the ESP32-C5 and reception of the C5 beacon on 5715 MHz" width="640"></p>
