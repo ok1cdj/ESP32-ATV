@@ -95,7 +95,7 @@ def run(c, seed):
            "--fd-info", str(info_w)]
     if c["rate"] < 100e3:
         cmd += ["--sampler", "rrc", "--rrc-rej", "50"]
-    if FS > 3 * c["rate"]:
+    if FS >= 4 * c["rate"]:
         cmd += ["--cnr"]
     cmd += c["extra"].split()
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, pass_fds=(info_w,))

@@ -83,8 +83,9 @@ class Receiver(
     private val format = replayHead?.let { it[2].toInt() and 0xFF } ?: if (cfg.c5 || cfg.sr > 200_000) EspLink.FMT_CS4 else EspLink.FMT_CS8
     private val wide = format == EspLink.FMT_CS4
     val fs = EspLink.rate(decim)
-    // leandvb's CNR needs noise on both sides of the signal: a window at least 3 x SR wide (none at 400 kS/s in 500 ksps)
-    val cnrMeasured = fs > 3 * cfg.sr
+    // leandvb's CNR needs noise on both sides of the signal: a window at least 4 x SR wide (with --cnr 100 kS/s in
+    // 333 ksps, 3.33 samples per symbol, never locked; 66.7 kS/s, 5 per symbol, does; 2026-11-23)
+    val cnrMeasured = fs >= 4 * cfg.sr
     // below 100 kS/s the signal is kept LO_OFFSET_HZ below the LO (a narrow signal fits in the 333 ksps window beside it)
     private val loOffset = !wide && cfg.sr < 100_000
     // two 48 MHz crystals at 5.7 GHz differ by up to ~150 kHz, and the transmitter warms up by ~100 kHz
