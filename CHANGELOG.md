@@ -2,6 +2,17 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## 0.21.1-beta – 2026-11-23
+
+### Fixes
+- **100 kS/s on the S3 locks again:** leandvb's CNR measurement (`--cnr`) was on from 3 samples per symbol and at
+  100 kS/s in the 333 ksps window (3.33 per symbol) the receiver never locked. CNR is now measured from 4 samples per
+  symbol (up to 83 kS/s on the S3, 62.5 kS/s on the C5); also in `rx_dvbs2.py`. Checked from the phone: 100k locks
+  without CNR, 66.7k with CNR.
+- **RX takes normal and short frames by default:** a transmitter with short frames gave MER but no picture on a
+  receiver set to normal frames ([issue #3](https://github.com/ok1cdj/ESP32-ATV/issues/3)). Stored settings and presets
+  keep their frame size.
+
 ## 0.21-beta – 2026-11-14
 
 ### The ESP32-C5 transceiver: one board for RX and TX, 13 and 6 cm
