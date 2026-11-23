@@ -194,7 +194,8 @@ class MainActivity : Activity() {
             }
             override fun onNothingSelected(a: android.widget.AdapterView<*>?) {}
         }
-        frames = spinner(frameChoices.map { Receiver.frameSizeName(it) }, Receiver.frameSizeName(prefs.getInt("frames", Receiver.FRAMES_NORMAL)))
+        // both sizes by default: a short-frame TX (the C3 default) gives MER but no frame on a normal-only RX (issue #3); rx/sim_lock.py: no slower
+        frames = spinner(frameChoices.map { Receiver.frameSizeName(it) }, Receiver.frameSizeName(prefs.getInt("frames", Receiver.FRAMES_BOTH)))
         body.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(constel, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
