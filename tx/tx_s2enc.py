@@ -4,9 +4,11 @@
 for checking them on a PC. QPSK only.
 
     third_party/ESP32-DATV-RX/.venv/bin/python tx/tx_s2enc.py TS_FILE [--baud 50000] [--rate 3/4] [--frame short]
-        [--pilots] [--amp 300] [--seconds 40] [--freq 2345.000] [--port /dev/...]
+        [--no-pilots] [--amp 300] [--seconds 40] [--freq 2345.000] [--port /dev/...]
 
 The TS file is looped until --seconds (it should be a constant-rate stream at about the channel rate, e.g. a beacon.ts).
+Pilots are on, as in the beacons and the app: a C3 warming up drifts ~500 Hz/s and without them leandvb loses lock
+about 2.5 dB sooner (C3 Zero on the air, 2026-11-24: 20-25 % of the TS lost without pilots, 0.2-0.3 % with them).
 """
 import argparse
 import os
@@ -74,7 +76,7 @@ def main():
     ap.add_argument("--baud", type=int, default=50000)
     ap.add_argument("--rate", default="3/4")
     ap.add_argument("--frame", default="short", choices=("normal", "short"))
-    ap.add_argument("--pilots", action="store_true")
+    ap.add_argument("--no-pilots", action="store_true", help="no pilot blocks (pilots are on by default, as in the beacons)")
     ap.add_argument("--amp", type=int, default=300)
     ap.add_argument("--seconds", type=float, default=40)
     ap.add_argument("--freq", type=float, default=2345.000)
@@ -92,7 +94,7 @@ def main():
     tmp_ts, tmp_sym = "/tmp/tx_s2enc.ts", "/tmp/tx_s2enc.sym"
     open(tmp_ts, "wb").write(ts * loops)
     r = subprocess.run([S2ENC, "--rate", a.rate, "--frame", a.frame, "--stream", "--format", "qpsk"]
-                       + (["--pilots"] if a.pilots else []) + [tmp_ts, tmp_sym], capture_output=True, text=True)
+                       + ([] if a.no_pilots else ["--pilots"]) + [tmp_ts, tmp_sym], capture_output=True, text=True)
     if r.returncode:
         sys.exit(r.stderr)
     print(r.stderr.strip())
