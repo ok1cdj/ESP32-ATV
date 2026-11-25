@@ -117,7 +117,7 @@ Where: **Download/ATV RX/** (Android 10+, e.g. `ATV_2026-10-18_153012_2345.000MH
 | `CNR` | carrier-to-noise ratio (only when the sample rate is ≥ 4× the symbol rate, i.e. up to 83 kS/s; not shown above that) |
 | `frames ok / fixed / bad` | frames without errors / corrected by BCH / not decoded |
 | `TS`, `TEI`, `CC` | transport stream rate (10 s average), packets with errors, continuity counter breaks |
-| `service`, `video` | service and provider name from the SDT, codec and resolution; `A/V sync` = the picture follows the sound, `late … ms` = it comes later than its sound |
+| `service`, `video` | service and provider name from the SDT, codec and resolution; `A/V sync` = the picture follows the sound, `late … ms` = it comes later than its sound; `… not supported` for a video the phone cannot play (VVC / H.266, MPEG-4, VC-1 …): the picture stays black |
 | `audio` | the sound: codec, rate, channels (`(off)` = muted); `… not supported` for LATM / AC-3 |
 | `USB lost`, `ESP drop`, `queue` | losses on USB, in the ESP32-S3 and in the queue to the demodulator – should be 0 |
 | constellation (square) | symbol points: QPSK 4 clusters, 8PSK 8 clusters; a ring = too little signal or phase noise |
@@ -271,6 +271,7 @@ The C5 has no PA output (the C3's is GPIO3, see the README). The C5's carrier tr
 | TX: received weak, MER low | move the C3 and its antenna away from the phone |
 | TX: no sound at 40–50 kS/s | *auto* sends none below 80 kb/s of TS – choose kb/s (12) next to *sound* |
 | RX: `audio … not supported` | AAC in LATM or AC-3: the picture plays, the sound not (AAC in ADTS, MP2 and MP3 do) |
+| RX: `video … not supported`, black picture | the transmission is in a codec the phone cannot play (e.g. VVC / H.266): H.264, HEVC and MPEG-2 play |
 | the C3 transmits nothing on its own | no beacon stored yet: TX → Save as beacon |
 | 6 cm: worse reception at short range | the C5 receiver overloads – turn the gain down |
 | 6 cm: Start TX says the C5 firmware has no live TX | write the current one: menu ⋮ → Firmware → *transceiver (RX + TX)* |

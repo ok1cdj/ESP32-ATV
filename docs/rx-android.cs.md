@@ -112,7 +112,7 @@ Přehraješ ho ve **VLC** nebo mpv (telefon i PC; VLC si .srt najde sám; VLC na
 | `CNR` | poměr nosná/šum (jen když vzorkování ≥ 4× symbolová rychlost, tj. do 83 kS/s; nad tím se nezobrazuje) |
 | `frames ok / fixed / bad` | rámce bez chyb / opravené kódem BCH / nedekódované |
 | `TS`, `TEI`, `CC` | tok transport streamu (průměr 10 s), pakety s chybou, nespojitosti čítače |
-| `service`, `video` | název služby a poskytovatele z SDT, kodek a rozlišení; `A/V sync` = obraz se řídí zvukem, `late … ms` = obraz přichází později než jeho zvuk |
+| `service`, `video` | název služby a poskytovatele z SDT, kodek a rozlišení; `A/V sync` = obraz se řídí zvukem, `late … ms` = obraz přichází později než jeho zvuk; `… not supported` u videa, které telefon neumí přehrát (VVC / H.266, MPEG-4, VC-1 …): obraz zůstane černý |
 | `audio` | zvuk: kodek, vzorkování, kanály (`(off)` = ztlumeno); `… not supported` u LATM / AC-3 |
 | `USB lost`, `ESP drop`, `queue` | ztráty na USB, v ESP32-S3 a ve frontě k demodulátoru – mají být 0 |
 | konstelace (čtverec) | body symbolů: QPSK 4 shluky, 8PSK 8 shluků; prstenec = málo signálu nebo fázový šum |
@@ -260,6 +260,7 @@ C5 nemá výstup pro PA (C3 má GPIO3, viz README). Kompenzace nosné C5 se zat�
 | TX: příjem slabý, nízké MER | dej C3 s anténou dál od telefonu |
 | TX: při 40–50 kS/s není zvuk | *auto* pod 80 kb/s TS zvuk neposílá – vedle *sound* zvol kb/s (12) |
 | RX: `audio … not supported` | AAC v LATM nebo AC-3: obraz jde, zvuk ne (AAC v ADTS, MP2 a MP3 hrají) |
+| RX: `video … not supported`, černý obraz | vysílání je v kodeku, který telefon neumí přehrát (např. VVC / H.266): H.264, HEVC a MPEG-2 hrají |
 | C3 sám nic nevysílá | ještě v něm není maják: TX → Save as beacon |
 | 6 cm: na krátkou vzdálenost horší příjem | přijímač C5 se zahlcuje – snížit gain |
 | 6 cm: Start TX hlásí, že firmware C5 neumí živé vysílání | nahrajte aktuální: menu ⋮ → Firmware → *transceiver (RX + TX)* |
