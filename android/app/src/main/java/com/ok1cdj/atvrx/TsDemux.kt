@@ -14,6 +14,7 @@ class TsDemux(private val onVideo: (streamType: Int, es: ByteArray, pts: Long) -
     @Volatile var provider: String? = null; private set
     @Volatile var videoPid = -1; private set
     @Volatile var videoType = -1; private set
+    @Volatile var otherVideoType = -1; private set   // a video stream we cannot play (VVC, MPEG-4, ...) when there is no other
     @Volatile var packets = 0L; private set
     @Volatile var errorPackets = 0L; private set     // transport_error_indicator set by the demodulator
     @Volatile var ccErrors = 0L; private set
@@ -103,7 +104,8 @@ class TsDemux(private val onVideo: (streamType: Int, es: ByteArray, pts: Long) -
         var i = s + 12 + (((u8(b, s + 10) and 0x0F) shl 8) or u8(b, s + 11))
         val e = sectionEnd(b, s)
         var video = false
-        var playable: Pair<Int, Int>? = null; var other: Pair<Int, Int>? = null     // (pid, kind)
+        var other = -1
+        var playable: Pair<Int, Int>? = null; var otherAudio: Pair<Int, Int>? = null     // (pid, kind)
         while (i + 5 <= e) {
             val type = u8(b, i)
             val pid = ((u8(b, i + 1) and 0x1F) shl 8) or u8(b, i + 2)
@@ -112,13 +114,14 @@ class TsDemux(private val onVideo: (streamType: Int, es: ByteArray, pts: Long) -
                 if (pid != videoPid) { videoPid = pid; pes.reset(); pesOk = false }
                 videoType = type
                 video = true
-            }
+            } else if (other < 0 && type in OTHER_VIDEO) other = type
             val a = audioOf(type, b, i + 5, minOf(e, i + 5 + esInfo))
-            if (a in PLAYABLE) { if (playable == null) playable = pid to a } else if (a != 0 && other == null) other = pid to a
+            if (a in PLAYABLE) { if (playable == null) playable = pid to a } else if (a != 0 && otherAudio == null) otherAudio = pid to a
             i += 5 + esInfo
         }
         // audio: the first one we can play, else the first one there is (shown as not supported)
-        (playable ?: other)?.let { (pid, a) ->
+        otherVideoType = if (video) -1 else other
+        (playable ?: otherAudio)?.let { (pid, a) ->
             if (pid != audioPid) { audioPid = pid; apes.reset(); apesOk = false; aLastCc = -1 }
             audioType = a
         }
@@ -221,6 +224,9 @@ class TsDemux(private val onVideo: (streamType: Int, es: ByteArray, pts: Long) -
         const val ST_MPEG1_AUDIO = 0x03; const val ST_MPEG2_AUDIO = 0x04; const val ST_AAC_ADTS = 0x0F; const val ST_AAC_LATM = 0x11
         const val AC3 = 0x100                                     // AC-3 / E-AC-3, whatever the stream type
         val PLAYABLE = setOf(ST_MPEG1_AUDIO, ST_MPEG2_AUDIO, ST_AAC_ADTS)
+        /** video stream types we know but cannot play (H.222.0 / ISO 13818-1) */
+        val OTHER_VIDEO = mapOf(0x01 to "MPEG-1 video", 0x10 to "MPEG-4 video", 0x1F to "H.264 SVC", 0x20 to "H.264 MVC",
+            0x33 to "VVC (H.266)", 0x42 to "AVS", 0xD1 to "Dirac", 0xEA to "VC-1")
 
         /** a - b of two 33-bit PTS (90 kHz), across the wrap */
         fun ptsDiff(a: Long, b: Long): Long = ((a - b + (1L shl 32)) and ((1L shl 33) - 1)) - (1L shl 32)

@@ -524,7 +524,9 @@ class MainActivity : Activity() {
                 append("frames ok %d fixed %d bad %d locks %d\n".format(s.framesOk, s.framesFixed, s.framesBad, s.locks))
                 append("TS %.0f kb/s  %d pkts  TEI %d  CC %d\n".format(tsRate, d.packets, d.errorPackets, d.ccErrors))
                 append("service %s / %s\n".format(d.service ?: "–", d.provider ?: "–"))
-                append("video %s %dx%d  %d frames%s%s\n".format(v?.mime?.substringAfter('/') ?: "–", v?.width ?: 0, v?.height ?: 0,
+                if (v?.mime == null && d.otherVideoType >= 0)
+                    append("video %s – not supported\n".format(TsDemux.OTHER_VIDEO[d.otherVideoType]))
+                else append("video %s %dx%d  %d frames%s%s\n".format(v?.mime?.substringAfter('/') ?: "–", v?.width ?: 0, v?.height ?: 0,
                     v?.frames ?: 0, v?.avMs?.let { if (it > 0) "  late %d ms".format(it) else "  A/V sync" } ?: "",
                     v?.error?.let { "  ERR $it" } ?: ""))
                 val a = service?.audio
