@@ -508,7 +508,10 @@ class MainActivity : Activity() {
             val tsRate = if (now > t0) (s.tsBytes - b0) * 8 / ((now - t0) / 1e9) / 1e3 else 0.0
             specView.update(r.spectrum, r.fs, if (s.searchDb >= 6) s.offsetHz else Double.NaN, r.cfg.sr)
             val d = r.demux; val v = service?.video
-            if ((v?.frames ?: 0) > 0) blank.visibility = View.GONE
+            // a video we cannot play (e.g. VVC after the H.264 beacon): black, not the last picture; the decoder starts
+            // again (and the black goes) at the next playable video
+            if (d.otherVideoType >= 0) { if (blank.visibility != View.VISIBLE) { blank.visibility = View.VISIBLE; v?.reset() } }
+            else if ((v?.frames ?: 0) > 0) blank.visibility = View.GONE
             val usb = r.link?.stats
             // leandvb's FREQ means something only while frames come through (it reports noise as well)
             val live = r.alive() && s.mer > 3.0

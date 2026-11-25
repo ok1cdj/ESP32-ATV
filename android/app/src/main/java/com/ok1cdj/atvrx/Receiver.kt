@@ -120,7 +120,7 @@ class Receiver(
     private var constFd: java.io.FileDescriptor? = null
     // ~4 s of samples to leandvb: it stops reading while ldpc_tool works on a batch of 32 frames
     private val queue = ArrayBlockingQueue<ByteArray>(4096)
-    private var proc: Process? = null
+    @Volatile private var proc: Process? = null
     private val threads = mutableListOf<Thread>()
 
     fun start() {
@@ -486,6 +486,7 @@ class Receiver(
 
     private fun startDemod() {
         val modcod = MODCODS[cfg.const to cfg.cr] ?: throw IOException("no MODCOD for ${cfg.const} ${cfg.cr}")
+        queue.clear()                                // a restart: not the seconds queued while no leandvb took them
         // --fd-info goes to a FIFO (fd 3 through sh), so that stderr carries only leandvb's frame marks and messages
         fun fifo(name: String): Pair<File, java.io.FileDescriptor> {
             val f = File(workDir, name)
@@ -535,7 +536,7 @@ class Receiver(
         thread("rx-watch") {
             // no frame lock for 10 s: the signal has moved further than the drift tracking follows; search again
             try {
-                while (running) {
+                while (running && proc === p) {
                     Thread.sleep(1000)
                     // leandvb prints FRAMELOCK only on a change, so it can stay "1" after the signal is gone:
                     // what counts is good frames coming out of the LDPC/BCH decoders
@@ -553,7 +554,7 @@ class Receiver(
         thread("rx-feed") {
             try {
                 val out = p.outputStream
-                while (running) {
+                while (running && proc === p) {
                     val b = queue.poll(200, TimeUnit.MILLISECONDS) ?: continue
                     out.write(b)
                 }
@@ -580,7 +581,18 @@ class Receiver(
                     }
                 }
             } catch (_: Throwable) {}
-            if (running) { status.state = "leandvb ended"; log("leandvb ended (exit ${try { p.exitValue() } catch (_: Throwable) { "?" }})") }
+            if (running && proc === p) {
+                // it ended while receiving (seen after a false normal-frame PLS in noise once a transmission stopped):
+                // search again and start a new one, instead of feeding the samples to nothing until Stop
+                log("leandvb ended (exit ${try { p.waitFor(1, TimeUnit.SECONDS); p.exitValue() } catch (_: Throwable) { "?" }}): searching, then starting it again")
+                try { android.system.Os.close(fd) } catch (_: Throwable) {}
+                try { android.system.Os.close(cfd) } catch (_: Throwable) {}
+                status.state = "leandvb ended: searching again"
+                status.researches++
+                proc = null
+                searchFill = 0
+                searching = true
+            }
         }
         thread("rx-info") {
             // leandvb -d: marks without newlines – '_' clean frame, '.' corrected, '!' / ':' failed, 'C' TS packet with a bad
