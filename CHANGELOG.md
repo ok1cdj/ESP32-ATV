@@ -14,6 +14,9 @@ ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the
 - **A video the app cannot play is named** ("video VVC (H.266) – not supported", also MPEG-4, VC-1 and others) and the picture
   goes black instead of keeping the last one; when the transmission switches back to H.264 the picture returns.
 
+- **About** updated: the ESP32-C5 (one board for RX and TX, 13 and 6 cm), the 6 cm band in the licence note, credits and
+  licence of the C5 firmware. The guide lists `video … not supported`.
+
 ### Transmitter tools
 - `tx/tx_s2enc.py` transmits with pilots by default (`--no-pilots`), like the beacons, loops and the app. Without pilots a
   drifting C3 lost 20–25 % of the TS on the air at QPSK 1/2, with them 0.2–0.3 %.
