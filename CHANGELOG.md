@@ -2,6 +2,22 @@
 
 ATV RX (the Android app), the beacon tools and the PC receiver. Versions are the app's release tags.
 
+## 0.22-beta – 2026-11-25
+
+### Receiver
+- **leandvb's RRC sampler at every symbol rate** (the app, `rx_dvbs2.py`, `rx/c5_play.sh`), not only below 100 kS/s. Near the
+  threshold at 333 kS/s on the air (C3 Zero drifting ~500 Hz/s while it warms up, QPSK 3/4 short with pilots, S3 at 500 ksps
+  4 bit): 0.7–0.9 % of the TS lost instead of 5.5–6.0 %, one lock instead of three. On a OnePlus NE2213 leandvb stays 9–12× faster
+  than real time at 333 kS/s with it. `rx_dvbs2.py --sampler linear` keeps the old one.
+- **leandvb started again when it ends:** after a fade a false normal-frame header (frames normal+short) made leandvb exit a few
+  seconds later, and until now reception stayed dead until Stop. The app now searches and starts it again (back in 1–2 s).
+- **A video the app cannot play is named** ("video VVC (H.266) – not supported", also MPEG-4, VC-1 and others) and the picture
+  goes black instead of keeping the last one; when the transmission switches back to H.264 the picture returns.
+
+### Transmitter tools
+- `tx/tx_s2enc.py` transmits with pilots by default (`--no-pilots`), like the beacons, loops and the app. Without pilots a
+  drifting C3 lost 20–25 % of the TS on the air at QPSK 1/2, with them 0.2–0.3 %.
+
 ## 0.21.1-beta – 2026-11-23
 
 ### Fixes
