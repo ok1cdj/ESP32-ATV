@@ -121,6 +121,8 @@ class TsDemux(private val onVideo: (streamType: Int, es: ByteArray, pts: Long) -
         }
         // audio: the first one we can play, else the first one there is (shown as not supported)
         otherVideoType = if (video) -1 else other
+        if (!video && videoPid >= 0) { videoPid = -1; videoType = -1; pes.reset(); pesOk = false }   // the service changed:
+                                                    // no video we can play (e.g. VVC on the old H.264 PID) goes to the decoder
         (playable ?: otherAudio)?.let { (pid, a) ->
             if (pid != audioPid) { audioPid = pid; apes.reset(); apesOk = false; aLastCc = -1 }
             audioType = a
