@@ -17,10 +17,11 @@ class AboutActivity : Activity() {
             movementMethod = LinkMovementMethod.getInstance()
             text = android.text.Html.fromHtml("""
                 <h2>ATV RX/TX ${BuildConfig.VERSION_NAME}</h2>
-                <p>DVB-S2 amateur television on 13 cm: an ESP32-S3 (XIAO) on USB-OTG as the receiver, an ESP32-C3
-                (XIAO) as the transmitter, leandvb, ldpc_tool and our DVB-S2 encoder on the phone. Beta.</p>
-                <p><b>⚠ Transmitting needs an amateur radio licence.</b> The TX mode transmits on the 13 cm amateur
-                band (2.3–2.45 GHz): only with your own callsign, on frequencies and at power levels your licence and
+                <p>DVB-S2 amateur television on 13 cm and 6 cm: an ESP32-S3 on USB-OTG as the receiver and an ESP32-C3
+                as the transmitter (13 cm), or one ESP32-C5 for both (13 and 6 cm); leandvb, ldpc_tool and our DVB-S2
+                encoder on the phone. Beta.</p>
+                <p><b>⚠ Transmitting needs an amateur radio licence.</b> The TX mode transmits on the 13 cm (2.3–2.45 GHz)
+                or 6 cm (5.65–5.85 GHz) amateur band: only with your own callsign, on frequencies and at power levels your licence and
                 national band plan allow. Without a licence it is illegal and disturbs other users of the band
                 (Wi-Fi …). Receiving needs no licence.</p>
                 <p>Guide / návod: <a href="$GUIDE">$GUIDE</a><br>
@@ -35,6 +36,8 @@ class AboutActivity : Activity() {
                 <b>h0m3us3r</b> – <a href="https://github.com/h0m3us3r/eSpDR">eSpDR</a>, the ESP32-S3 as an SDR.<br>
                 <b>Jochen Hammes</b> – <a href="https://github.com/jochenhammes/esp32-sdr-trx">esp32-sdr-trx</a>, the
                 receiver firmware.<br>
+                <b>fedaykinofdune</b> – <a href="https://github.com/fedaykinofdune/esp32-C5-sdr-tx">esp32-C5-sdr-tx</a>,
+                the ESP32-C5's transmit and receive paths.<br>
                 <b>pabr</b> – <a href="https://github.com/pabr/leansdr">leansdr / leandvb</a>, the DVB-S2 demodulator.<br>
                 <b>Ahmet Inan</b> – <a href="https://github.com/xdsopl/LDPC">LDPC</a>, and <b>Blockstream</b> –
                 <a href="https://github.com/Blockstream/LDPC">its fork</a>: ldpc_tool and the LDPC tables.<br>
@@ -47,7 +50,9 @@ class AboutActivity : Activity() {
                 <b>ESP32-DATV-RX</b> (Baris Dinc) – BSD-3-Clause; <b>esp32-sdr-trx / eSpDR</b> – 0BSD
                 (the receiver firmware of the ESP32-S3, not part of this app).<br>
                 <b>ESP32-DATV-SA</b> (SP8ESA, Baris Dinc) – PolyForm Noncommercial (the transmitter firmware of the
-                ESP32-C3, downloaded by the Firmware screen, not part of this app).</p>
+                ESP32-C3, downloaded by the Firmware screen, not part of this app).<br>
+                <b>ESP32-C5 receiver and transceiver firmware</b> (ours, after esp32-C5-sdr-tx) – GNU GPL v3 (downloaded
+                by the Firmware screen, not part of this app).</p>
                 <p>This program comes with ABSOLUTELY NO WARRANTY. It is free software, and you are welcome to
                 redistribute it under the conditions of the GPL v3: <a href="https://www.gnu.org/licenses/gpl-3.0.html">gnu.org/licenses/gpl-3.0</a>.</p>
             """.trimIndent(), android.text.Html.FROM_HTML_MODE_COMPACT)
