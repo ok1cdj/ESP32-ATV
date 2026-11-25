@@ -84,8 +84,7 @@ EOF
 fi
 FHZ=$("$PY" -c "print(int(round($FREQ * 1e6 + $OFF)))")
 echo "C5 $PORT: LO $(echo "$FHZ" | awk '{printf "%.3f", $1 / 1e6}') MHz, SR $SR, $FS sps cs4, gain $GAIN" >&2
-SAMPLER=
-[ "$SR" -lt 100000 ] && SAMPLER="--sampler rrc --rrc-rej 50"   # as rx/raw2cf32.py
+SAMPLER="--sampler rrc --rrc-rej 50"   # at every rate, as rx_dvbs2.py and the app
 (cd "$RX/esp32-sdr-trx/src" && exec "$PY" -W ignore -m espdr.nb -p "$PORT" run --freq "$FHZ" --decim "$DECIM" --format cs4 \
     --gain "$GAIN" --seconds "$SECONDS_" --convert cf32 -o -) |
     "$RX/build/leansdr/src/apps/leandvb" --f32 --float-scale 512 -f "$FS" --sr "$SR" --standard DVB-S2 --const QPSK --cr "$CR" \

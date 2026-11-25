@@ -84,7 +84,7 @@ remote `upstream`. Update: `git -C third_party/<repo> fetch upstream && git -C t
 | Fork | Changes |
 |---|---|
 | ESP32-DATV-SA | beacon 40–500 kS/s (rate table, default rate from `BEACON_BAUD`, `make_beacon.py`); DC/IQ correction of the beacon (`--cal`, `BDC` command); DVB-S2 short frames (`--frame short`); branch `xiao-panel` (the one used here): front panel pins for the XIAO ESP32-C3, upstream's video from the flash merged, loops from the flash at any rate / QPSK code rate / frame size with frequency and level (header version 3), `VIDW` to store a loop over USB, `CONFIG_DATV_BUILTIN_BEACON=n` for the web build, `FW` line in `INFO` |
-| ESP32-DATV-RX | `rx_dvbs2.py --sampler auto/linear/rrc`, `--rrc-rej` (RRC below 100 kS/s), `--device`, `--frame normal/short/auto`, DC removal in the 8-bit mode, MER / CNR in the status line, `--decimate` (experimental); `espdr nb.py --decim 25` (400 ksps of the ESP32-C5 receiver) |
+| ESP32-DATV-RX | `rx_dvbs2.py --sampler auto/linear/rrc`, `--rrc-rej` (RRC at every rate), `--device`, `--frame normal/short/auto`, DC removal in the 8-bit mode, MER / CNR in the status line, `--decimate` (experimental); `espdr nb.py --decim 25` (400 ksps of the ESP32-C5 receiver) |
 
 ## One-time setup (PC, Linux)
 ```sh
@@ -177,9 +177,10 @@ records the phone's TX mux without the C3 – a white flash and a beep every 2 s
 3. Receive:
    - `rx/rx.sh` – beacon 333 kS/s, `--wide` mode (500 ksps, 4 bit)
    - `rx/rx.sh 125000` – 125 kS/s (333 ksps, 8 bit)
-   - `rx/rx.sh 66666` / `50000` / `40000` – low rates: 8 bit, RRC sampler of leandvb below 100 kS/s; the first picture
+   - `rx/rx.sh 66666` / `50000` / `40000` – low rates: 8 bit; the first picture
      after ~32 frames (66 kS/s ≈ 16 s), with `--ldpc bitflip` at once but ~5 dB less sensitive
    - `rx/rx.sh 40000 --frame short` – a beacon with short frames (`FRAME=short tx/make_beacons.sh 40000`)
+   - leandvb's RRC sampler at every rate (the linear one with `--sampler linear`)
    - options: `--gain 10`, `--ppm X`, `--record x.ts`, `--no-sound`, `-v`
    - sound plays with the picture when the service has it (ffplay on the TS, synchronised to the sound); a service
      without sound (the built-in beacon) is retimed by ffmpeg as before

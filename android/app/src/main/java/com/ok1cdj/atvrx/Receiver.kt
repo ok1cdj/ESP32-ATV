@@ -503,9 +503,12 @@ class Receiver(
             "--const", cfg.const, "--cr", cfg.cr, "--fastdrift", "-d",
             "--modcods", (1L shl modcod).toString(), "--framesizes", cfg.frameSizes.toString(),
             "--ldpc-helper", File(nativeDir, "libldpc_tool.so").path, "--fd-info", "3", "--fd-const", "4")
+        // RRC sampler at every rate: below 100 kS/s the linear one keeps all the out-of-band noise, and at 333 kS/s
+        // (1.5 samples per symbol) it lost 0.8 % of the TS instead of 6 % near the threshold with a drifting C3
+        cmd += listOf("--sampler", "rrc", "--rrc-rej", "50")
         // --fastlock: no ~5 normal frames of data thrown away before each new search (4 s at 40 kS/s); the first lock on
         // normal frames is often a false one (MER < 0), and this gets out of it sooner (rx/sim_lock.py)
-        if (cfg.sr < 100_000) cmd += listOf("--sampler", "rrc", "--rrc-rej", "50", "--fastlock")
+        if (cfg.sr < 100_000) cmd += "--fastlock"
         if (cnrMeasured) cmd += "--cnr"
         // 2000 ppm instead of leandvb's 100: a C3 loop from the flash runs at 160 MHz / whole cycles (333 333 Bd for 333 k)
         cmd += listOf("--sr-tol", "0.002")

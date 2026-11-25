@@ -13,7 +13,7 @@ $A push "$ROOT/android/app/src/main/jniLibs/arm64-v8a/libldpc_tool.so" $T/ldpc_t
 [ -f "$B/ldpc_tool_generic" ] && $A push "$B/ldpc_tool_generic" $T/ldpc_tool_generic >/dev/null
 $A shell "[ -f $T/rec.cf32 ] && [ \$(stat -c%s $T/rec.cf32) = $(stat -c%s "$REC") ]" 2>/dev/null || $A push "$REC" $T/rec.cf32
 $A shell chmod 755 $T/leandvb $T/ldpc_tool $T/ldpc_tool_generic 2>/dev/null || true
-SAMPLER=; [ "$SR" -lt 100000 ] && SAMPLER="--sampler rrc --rrc-rej 50" || true
+SAMPLER="--sampler rrc --rrc-rej 50"   # at every rate, as the app
 for tool in ldpc_tool ldpc_tool_generic; do
   $A shell "cd $T && [ -x $tool ] || exit 0
     s=\$(cat /proc/uptime)
